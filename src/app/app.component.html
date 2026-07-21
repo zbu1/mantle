@@ -1,0 +1,47 @@
+<main class="m-0 flex flex-col justify-center pt-[10vh] text-center">
+  <h1 class="text-center">Welcome to Tauri + Angular!</h1>
+
+  <div class="flex justify-center">
+    <a
+      href="https://tauri.app"
+      target="_blank"
+      class="font-medium text-[#646cff] hover:text-[#535bf2] dark:hover:text-[#24c8db]"
+    >
+      <img
+        src="/assets/tauri.svg"
+        class="h-24 p-6 transition-[filter] duration-[750ms] will-change-[filter] hover:drop-shadow-[0_0_2em_#24c8db]"
+        alt="Tauri logo"
+      />
+    </a>
+    <a
+      href="https://angular.io"
+      target="_blank"
+      class="font-medium text-[#646cff] hover:text-[#535bf2] dark:hover:text-[#24c8db]"
+    >
+      <img
+        src="/assets/angular.svg"
+        class="h-24 p-6 transition-[filter] duration-[750ms] will-change-[filter] hover:drop-shadow-[0_0_2em_#e32727]"
+        alt="Angular logo"
+      />
+    </a>
+  </div>
+  <p>Click on the logos to learn more about the frameworks</p>
+
+  <form class="flex justify-center" (submit)="greet($event, greetInput.value)">
+    <input
+      #greetInput
+      id="greet-input"
+      placeholder="Enter a name..."
+      class="mr-[5px] rounded-lg border border-transparent bg-white px-[1.2em] py-[0.6em] font-medium text-[#0f0f0f] shadow-[0_2px_2px_rgba(0,0,0,0.2)] outline-none transition-colors dark:bg-[#0f0f0f98] dark:text-white"
+    />
+    <button
+      type="submit"
+      class="cursor-pointer rounded-lg border border-transparent bg-white px-[1.2em] py-[0.6em] font-medium text-[#0f0f0f] shadow-[0_2px_2px_rgba(0,0,0,0.2)] outline-none transition-colors hover:border-[#396cd8] active:border-[#396cd8] active:bg-[#e8e8e8] dark:bg-[#0f0f0f98] dark:text-white dark:active:bg-[#0f0f0f69]"
+    >
+      Greet
+    </button>
+  </form>
+  <p>{{ greetingMessage() }}</p>
+
+  <router-outlet />
+</main>
