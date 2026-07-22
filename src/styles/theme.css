@@ -1,0 +1,31 @@
+:root {
+  --bg: #f6f6f6;
+  --surface: #ffffff;
+  --fg: #0f0f0f;
+  --muted: #6b6b6b;
+  --border: #e0e0e0;
+  --accent: #396cd8;
+  --accent-fg: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #2f2f2f;
+    --surface: #242424;
+    --fg: #f6f6f6;
+    --muted: #a3a3a3;
+    --border: #3f3f3f;
+    --accent: #6c8ef0;
+    --accent-fg: #0f0f0f;
+  }
+}
+
+@theme {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+}
