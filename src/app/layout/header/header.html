@@ -1,3 +1,37 @@
-<header class="flex h-14 shrink-0 items-center border-b border-border bg-surface px-4">
-  <span class="text-lg font-semibold text-fg">Stash</span>
+<header class="grid h-9 shrink-0 grid-cols-[1fr_auto] select-none border-b border-border bg-surface">
+  <div data-tauri-drag-region class="flex items-center pl-4 text-sm font-semibold text-fg [app-region:drag]">
+    Stash
+  </div>
+  <div class="flex">
+    <button
+      type="button"
+      title="Minimize"
+      (click)="minimize()"
+      class="inline-flex w-11 items-center justify-center text-fg hover:bg-bg"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24">
+        <path fill="currentColor" d="M19 13H5v-2h14z" />
+      </svg>
+    </button>
+    <button
+      type="button"
+      title="Maximize"
+      (click)="toggleMaximize()"
+      class="inline-flex w-11 items-center justify-center text-fg hover:bg-bg"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24">
+        <path fill="currentColor" d="M4 4h16v16H4zm2 4v10h12V8z" />
+      </svg>
+    </button>
+    <button
+      type="button"
+      title="Close"
+      (click)="close()"
+      class="inline-flex w-11 items-center justify-center text-fg hover:bg-red-500 hover:text-white"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24">
+        <path fill="currentColor" d="M13.46 12L19 17.54V19h-1.46L12 13.46L6.46 19H5v-1.46L10.54 12L5 6.46V5h1.46L12 10.54L17.54 5H19v1.46z" />
+      </svg>
+    </button>
+  </div>
 </header>

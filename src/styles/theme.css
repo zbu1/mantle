@@ -28,4 +28,6 @@
   --color-border: var(--border);
   --color-accent: var(--accent);
   --color-accent-fg: var(--accent-fg);
+
+  --font-sans: Inter, Avenir, Helvetica, Arial, sans-serif;
 }
