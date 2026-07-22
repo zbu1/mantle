@@ -1,0 +1,11 @@
+<button type="button" [title]="label()"
+  class="flex items-center gap-2 rounded-md text-xs text-foreground/80 hover:bg-background hover:text-foreground"
+  [class]="collapsed() ? 'h-9 w-full justify-center' : 'w-full px-2 py-1.5 text-left'">
+  <span class="shrink-0 text-muted-foreground">
+    <ng-content select="[sidebarItemIcon]" />
+  </span>
+  @if (!collapsed()) {
+  <span class="flex-1 truncate">{{ label() }}</span>
+  <ng-content select="[sidebarItemTrailing]" />
+  }
+</button>

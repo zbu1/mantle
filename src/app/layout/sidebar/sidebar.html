@@ -10,7 +10,7 @@
           routerLinkActive="bg-accent text-accent-foreground hover:bg-accent"
           [routerLinkActiveOptions]="{ exact: item.path === '/' }"
           [title]="item.label"
-          class="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-foreground hover:bg-background"
+          class="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-foreground hover:bg-background"
           [class.justify-center]="state.collapsed()"
         >
           @if (item.path === '/') {
@@ -36,73 +36,69 @@
 
     @if (state.collapsed()) {
       <div class="flex flex-col gap-1">
-        <button type="button" title="Favorites" class="flex h-9 w-full items-center justify-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground">
-          <svg width="14" height="14" viewBox="0 0 24 24">
+        <app-sidebar-item-button label="Favorites" [collapsed]="true">
+          <svg sidebarItemIcon width="14" height="14" viewBox="0 0 24 24">
             <path fill="currentColor" d="M12 2l2.9 6.6L22 9.3l-5 4.9 1.2 7.1L12 17.8l-6.2 3.5L7 14.2 2 9.3l7.1-.7z" />
           </svg>
-        </button>
-        <button type="button" title="Recent Files" class="flex h-9 w-full items-center justify-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground">
-          <svg width="14" height="14" viewBox="0 0 24 24">
+        </app-sidebar-item-button>
+        <app-sidebar-item-button label="Recent Files" [collapsed]="true">
+          <svg sidebarItemIcon width="14" height="14" viewBox="0 0 24 24">
             <path fill="currentColor" d="M12 2a10 10 0 100 20 10 10 0 000-20zm1 5v5.4l4.2 2.5-.8 1.3-5-3V7z" />
           </svg>
-        </button>
-        <button type="button" title="Vault" class="flex h-9 w-full items-center justify-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground">
-          <svg width="14" height="14" viewBox="0 0 24 24">
+        </app-sidebar-item-button>
+        <app-sidebar-item-button label="Vault" [collapsed]="true">
+          <svg sidebarItemIcon width="14" height="14" viewBox="0 0 24 24">
             <path fill="currentColor" d="M3 5a1 1 0 011-1h5l2 2h9a1 1 0 011 1v11a1 1 0 01-1 1H4a1 1 0 01-1-1z" />
           </svg>
-        </button>
-        <button type="button" title="Tags" class="flex h-9 w-full items-center justify-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground">
-          <svg width="14" height="14" viewBox="0 0 24 24">
+        </app-sidebar-item-button>
+        <app-sidebar-item-button label="Tags" [collapsed]="true">
+          <svg sidebarItemIcon width="14" height="14" viewBox="0 0 24 24">
             <path
               fill="currentColor"
               d="M3 3h8.5a1 1 0 01.7.3l8 8a1 1 0 010 1.4l-8.5 8.5a1 1 0 01-1.4 0l-8-8A1 1 0 013 12.5V4a1 1 0 011-1zm3 5a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"
             />
           </svg>
-        </button>
+        </app-sidebar-item-button>
       </div>
     } @else {
       <app-sidebar-section id="favorites" label="Favorites">
         @for (fav of favorites; track fav.name) {
-          <button type="button" class="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-foreground/80 hover:bg-background hover:text-foreground">
-            <svg width="14" height="14" viewBox="0 0 24 24" class="shrink-0 text-muted-foreground">
+          <app-sidebar-item-button [label]="fav.name">
+            <svg sidebarItemIcon width="14" height="14" viewBox="0 0 24 24" class="shrink-0">
               <path fill="currentColor" d="M12 2l2.9 6.6L22 9.3l-5 4.9 1.2 7.1L12 17.8l-6.2 3.5L7 14.2 2 9.3l7.1-.7z" />
             </svg>
-            <span class="truncate">{{ fav.name }}</span>
-          </button>
+          </app-sidebar-item-button>
         }
       </app-sidebar-section>
 
       <app-sidebar-section id="recent" label="Recent Files">
         @for (file of recentFiles; track file.name) {
-          <button type="button" class="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-foreground/80 hover:bg-background hover:text-foreground">
-            <svg width="14" height="14" viewBox="0 0 24 24" class="shrink-0 text-muted-foreground">
+          <app-sidebar-item-button [label]="file.name">
+            <svg sidebarItemIcon width="14" height="14" viewBox="0 0 24 24" class="shrink-0">
               <path fill="currentColor" d="M12 2a10 10 0 100 20 10 10 0 000-20zm1 5v5.4l4.2 2.5-.8 1.3-5-3V7z" />
             </svg>
-            <span class="flex-1 truncate">{{ file.name }}</span>
-            <span class="shrink-0 text-xs text-muted-foreground">{{ file.timestamp }}</span>
-          </button>
+            <span sidebarItemTrailing class="shrink-0 text-xs text-muted-foreground">{{ file.timestamp }}</span>
+          </app-sidebar-item-button>
         }
       </app-sidebar-section>
 
       <app-sidebar-section id="vault" label="Vault">
         @for (v of vaultItems; track v.name) {
-          <button type="button" class="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-foreground/80 hover:bg-background hover:text-foreground">
-            <svg width="14" height="14" viewBox="0 0 24 24" class="shrink-0 text-muted-foreground">
+          <app-sidebar-item-button [label]="v.name">
+            <svg sidebarItemIcon width="14" height="14" viewBox="0 0 24 24" class="shrink-0">
               <path fill="currentColor" d="M3 5a1 1 0 011-1h5l2 2h9a1 1 0 011 1v11a1 1 0 01-1 1H4a1 1 0 01-1-1z" />
             </svg>
-            <span class="flex-1 truncate">{{ v.name }}</span>
-            <span class="ml-auto shrink-0 rounded-full bg-background px-1.5 py-0.5 text-[11px] leading-none text-muted-foreground">{{ v.count }}</span>
-          </button>
+            <span sidebarItemTrailing class="ml-auto shrink-0 rounded-full bg-background px-1.5 py-0.5 text-[11px] leading-none text-muted-foreground">{{ v.count }}</span>
+          </app-sidebar-item-button>
         }
       </app-sidebar-section>
 
       <app-sidebar-section id="tags" label="Tags">
         @for (tag of tags; track tag.name) {
-          <button type="button" class="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-foreground/80 hover:bg-background hover:text-foreground">
-            <span class="h-2 w-2 shrink-0 rounded-full" [style.background-color]="tag.color"></span>
-            <span class="flex-1 truncate">{{ tag.name }}</span>
-            <span class="shrink-0 text-xs text-muted-foreground">{{ tag.count }}</span>
-          </button>
+          <app-sidebar-item-button [label]="tag.name">
+            <span sidebarItemIcon class="h-2 w-2 shrink-0 rounded-full" [style.background-color]="tag.color"></span>
+            <span sidebarItemTrailing class="shrink-0 text-xs text-muted-foreground">{{ tag.count }}</span>
+          </app-sidebar-item-button>
         }
       </app-sidebar-section>
     }

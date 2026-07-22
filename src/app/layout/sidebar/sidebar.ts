@@ -1,6 +1,7 @@
 import { Component, inject, signal } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { SidebarSection } from './sidebar-section/sidebar-section';
+import { SidebarItemButton } from './sidebar-item-button/sidebar-item-button';
 import { FAVORITES, RECENT_FILES, TAGS, VAULT_ITEMS } from './sidebar-data';
 import { SidebarState } from './sidebar-state';
 
@@ -11,7 +12,7 @@ interface NavItem {
 
 @Component({
   selector: 'app-sidebar',
-  imports: [RouterLink, RouterLinkActive, SidebarSection],
+  imports: [RouterLink, RouterLinkActive, SidebarSection, SidebarItemButton],
   templateUrl: './sidebar.html',
   host: { class: 'contents' },
 })
