@@ -1,33 +1,99 @@
 :root {
-  --bg: #f6f6f6;
+  /* Main backdrop of the app body, and the default text color on top of it. */
+  --background: #f6f6f6;
+  --foreground: #0f0f0f;
+
+  /* Elevated surfaces (cards, modals, dropdowns) and their text color. */
   --surface: #ffffff;
-  --fg: #0f0f0f;
-  --muted: #6b6b6b;
-  --border: #e0e0e0;
+  --surface-foreground: #0f0f0f;
+
+  /* Brand color for primary CTAs/active states, and the text/icon color on top of it. */
+  --primary: #396cd8;
+  --primary-foreground: #ffffff;
+
+  /* Secondary actions/subtle buttons, and the text color on top of them. */
+  --secondary: #e8e8e8;
+  --secondary-foreground: #0f0f0f;
+
+  /* Hover states on list items and active nav links, and the text color on top of them. */
   --accent: #396cd8;
-  --accent-fg: #ffffff;
+  --accent-foreground: #ffffff;
+
+  /* Subdued backgrounds (inactive tabs, secondary sidebars), and secondary/placeholder text. */
+  --muted: #ececec;
+  --muted-foreground: #6b6b6b;
+
+  /* Structural borders/dividers, form input borders, and the keyboard-focus ring. */
+  --border: #e0e0e0;
+  --input: #d4d4d4;
+  --ring: #396cd8;
+
+  /* Status colors: positive/success, cautionary/warning, and destructive actions + their text. */
+  --success: #16a34a;
+  --warning: #d97706;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #2f2f2f;
-    --surface: #242424;
-    --fg: #f6f6f6;
-    --muted: #a3a3a3;
+    --background: #2f2f2f;
+    --foreground: #f6f6f6;
+
+    --surface: #1a1714;
+    --surface-foreground: #f6f6f6;
+
+    --primary: #a7754e;
+    --primary-foreground: #2c1c1d;
+
+    --secondary: #3f3f3f;
+    --secondary-foreground: #f6f6f6;
+
+    --accent: #383838;
+    --accent-foreground: #2c1c1d;
+
+    --muted: #3a3a3a;
+    --muted-foreground: #a3a3a3;
+
     --border: #3f3f3f;
-    --accent: #6c8ef0;
-    --accent-fg: #0f0f0f;
+    --input: #4a4a4a;
+    --ring: #a7754e;
+
+    --success: #4ade80;
+    --warning: #fbbf24;
+    --destructive: #f87171;
+    --destructive-foreground: #2c1c1d;
   }
 }
 
+/* Maps the tokens above to Tailwind color utilities, e.g. bg-background, text-foreground. */
 @theme {
-  --color-bg: var(--bg);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
   --color-surface: var(--surface);
-  --color-fg: var(--fg);
-  --color-muted: var(--muted);
-  --color-border: var(--border);
+  --color-surface-foreground: var(--surface-foreground);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+
   --color-accent: var(--accent);
-  --color-accent-fg: var(--accent-fg);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
 
   --font-sans: Inter, Avenir, Helvetica, Arial, sans-serif;
 }
