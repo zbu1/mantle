@@ -1,9 +1,10 @@
 import { Component, computed, inject, input } from '@angular/core';
+import { LucideChevronRight } from '@lucide/angular';
 import { SectionId, SidebarState } from '../sidebar-state';
 
 @Component({
   selector: 'app-sidebar-section',
-  imports: [],
+  imports: [LucideChevronRight],
   templateUrl: './sidebar-section.html',
 })
 export class SidebarSection {

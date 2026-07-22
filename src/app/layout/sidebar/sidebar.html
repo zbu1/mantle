@@ -14,16 +14,9 @@
           [class.justify-center]="state.collapsed()"
         >
           @if (item.path === '/') {
-            <svg width="14" height="14" viewBox="0 0 24 24" class="shrink-0">
-              <path fill="currentColor" d="M12 3l9 8h-3v9h-5v-6h-2v6H6v-9H3z" />
-            </svg>
+            <svg lucideHouse [size]="14" class="shrink-0"></svg>
           } @else {
-            <svg width="14" height="14" viewBox="0 0 24 24" class="shrink-0">
-              <path
-                fill="currentColor"
-                d="M12 8a4 4 0 100 8 4 4 0 000-8zm9.4 4a7.4 7.4 0 00-.15-1.5l2.1-1.64a.5.5 0 00.12-.64l-2-3.46a.5.5 0 00-.6-.22l-2.48 1a7.6 7.6 0 00-1.3-.75l-.38-2.65a.5.5 0 00-.5-.42h-4a.5.5 0 00-.5.42l-.38 2.65c-.47.2-.9.45-1.3.75l-2.48-1a.5.5 0 00-.6.22l-2 3.46a.5.5 0 00.12.64l2.1 1.64A7.4 7.4 0 002.6 12c0 .51.05 1 .15 1.5l-2.1 1.64a.5.5 0 00-.12.64l2 3.46c.14.24.42.34.66.22l2.48-1c.4.3.83.55 1.3.75l.38 2.65c.05.24.26.42.5.42h4c.24 0 .45-.18.5-.42l.38-2.65c.47-.2.9-.45 1.3-.75l2.48 1c.24.12.52.02.66-.22l2-3.46a.5.5 0 00-.12-.64l-2.1-1.64c.1-.5.15-.99.15-1.5z"
-              />
-            </svg>
+            <svg lucideSettings [size]="14" class="shrink-0"></svg>
           }
           @if (!state.collapsed()) {
             <span class="truncate">{{ item.label }}</span>
@@ -37,36 +30,23 @@
     @if (state.collapsed()) {
       <div class="flex flex-col gap-1">
         <app-sidebar-item-button label="Favorites" [collapsed]="true">
-          <svg sidebarItemIcon width="14" height="14" viewBox="0 0 24 24">
-            <path fill="currentColor" d="M12 2l2.9 6.6L22 9.3l-5 4.9 1.2 7.1L12 17.8l-6.2 3.5L7 14.2 2 9.3l7.1-.7z" />
-          </svg>
+          <svg sidebarItemIcon lucideStar [size]="14"></svg>
         </app-sidebar-item-button>
         <app-sidebar-item-button label="Recent Files" [collapsed]="true">
-          <svg sidebarItemIcon width="14" height="14" viewBox="0 0 24 24">
-            <path fill="currentColor" d="M12 2a10 10 0 100 20 10 10 0 000-20zm1 5v5.4l4.2 2.5-.8 1.3-5-3V7z" />
-          </svg>
+          <svg sidebarItemIcon lucideClock [size]="14"></svg>
         </app-sidebar-item-button>
         <app-sidebar-item-button label="Vault" [collapsed]="true">
-          <svg sidebarItemIcon width="14" height="14" viewBox="0 0 24 24">
-            <path fill="currentColor" d="M3 5a1 1 0 011-1h5l2 2h9a1 1 0 011 1v11a1 1 0 01-1 1H4a1 1 0 01-1-1z" />
-          </svg>
+          <svg sidebarItemIcon lucideLock [size]="14"></svg>
         </app-sidebar-item-button>
         <app-sidebar-item-button label="Tags" [collapsed]="true">
-          <svg sidebarItemIcon width="14" height="14" viewBox="0 0 24 24">
-            <path
-              fill="currentColor"
-              d="M3 3h8.5a1 1 0 01.7.3l8 8a1 1 0 010 1.4l-8.5 8.5a1 1 0 01-1.4 0l-8-8A1 1 0 013 12.5V4a1 1 0 011-1zm3 5a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"
-            />
-          </svg>
+          <svg sidebarItemIcon lucideTag [size]="14"></svg>
         </app-sidebar-item-button>
       </div>
     } @else {
       <app-sidebar-section id="favorites" label="Favorites">
         @for (fav of favorites; track fav.name) {
           <app-sidebar-item-button [label]="fav.name">
-            <svg sidebarItemIcon width="14" height="14" viewBox="0 0 24 24" class="shrink-0">
-              <path fill="currentColor" d="M12 2l2.9 6.6L22 9.3l-5 4.9 1.2 7.1L12 17.8l-6.2 3.5L7 14.2 2 9.3l7.1-.7z" />
-            </svg>
+            <svg sidebarItemIcon lucideStar [size]="14" class="shrink-0"></svg>
           </app-sidebar-item-button>
         }
       </app-sidebar-section>
@@ -74,9 +54,7 @@
       <app-sidebar-section id="recent" label="Recent Files">
         @for (file of recentFiles; track file.name) {
           <app-sidebar-item-button [label]="file.name">
-            <svg sidebarItemIcon width="14" height="14" viewBox="0 0 24 24" class="shrink-0">
-              <path fill="currentColor" d="M12 2a10 10 0 100 20 10 10 0 000-20zm1 5v5.4l4.2 2.5-.8 1.3-5-3V7z" />
-            </svg>
+            <svg sidebarItemIcon lucideClock [size]="14" class="shrink-0"></svg>
             <span sidebarItemTrailing class="shrink-0 text-xs text-muted-foreground">{{ file.timestamp }}</span>
           </app-sidebar-item-button>
         }
@@ -85,9 +63,7 @@
       <app-sidebar-section id="vault" label="Vault">
         @for (v of vaultItems; track v.name) {
           <app-sidebar-item-button [label]="v.name">
-            <svg sidebarItemIcon width="14" height="14" viewBox="0 0 24 24" class="shrink-0">
-              <path fill="currentColor" d="M3 5a1 1 0 011-1h5l2 2h9a1 1 0 011 1v11a1 1 0 01-1 1H4a1 1 0 01-1-1z" />
-            </svg>
+            <svg sidebarItemIcon lucideLock [size]="14" class="shrink-0"></svg>
             <span sidebarItemTrailing class="ml-auto shrink-0 rounded-full bg-background px-1.5 py-0.5 text-[11px] leading-none text-muted-foreground">{{ v.count }}</span>
           </app-sidebar-item-button>
         }

@@ -1,5 +1,6 @@
 import { Component, inject, signal } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
+import { LucideClock, LucideHouse, LucideLock, LucideSettings, LucideStar, LucideTag } from '@lucide/angular';
 import { SidebarSection } from './sidebar-section/sidebar-section';
 import { SidebarItemButton } from './sidebar-item-button/sidebar-item-button';
 import { FAVORITES, RECENT_FILES, TAGS, VAULT_ITEMS } from './sidebar-data';
@@ -12,7 +13,18 @@ interface NavItem {
 
 @Component({
   selector: 'app-sidebar',
-  imports: [RouterLink, RouterLinkActive, SidebarSection, SidebarItemButton],
+  imports: [
+    RouterLink,
+    RouterLinkActive,
+    SidebarSection,
+    SidebarItemButton,
+    LucideHouse,
+    LucideSettings,
+    LucideStar,
+    LucideClock,
+    LucideLock,
+    LucideTag,
+  ],
   templateUrl: './sidebar.html',
   host: { class: 'contents' },
 })
@@ -22,6 +34,7 @@ export class Sidebar {
   protected readonly navItems: NavItem[] = [
     { label: 'Home', path: '/' },
     { label: 'Settings', path: '/settings' },
+    { label: 'Note', path: '/note' },
   ];
 
   protected readonly favorites = FAVORITES;
