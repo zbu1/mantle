@@ -6,18 +6,6 @@ Stash is a desktop app built with Tauri 2 (Rust backend) and Angular 22 (fronten
 The project is early-stage: the Rust side is still the default Tauri template
 (`greet` command only), and the Angular side has a single `header` layout component.
 
-## Structure
-
-- `src/` — Angular frontend (standalone components, `app` prefix)
-  - `src/app/app.component.ts` — root component
-  - `src/app/app.routes.ts` — routing
-  - `src/app/layout/` — layout components (e.g. `header/`)
-- `src-tauri/` — Rust backend (Tauri)
-  - `src-tauri/src/lib.rs` — Tauri builder setup and `#[tauri::command]` handlers
-  - `src-tauri/src/main.rs` — binary entry point, calls `stash_lib::run()`
-  - `src-tauri/Cargo.toml` — crate is named `stash`, lib target is `stash_lib`
-- `src-tauri/target/` — Rust build output, ignore entirely (never read or grep here)
-
 ## Commands
 
 Package manager is **pnpm** (see `pnpm-lock.yaml`), not npm.
