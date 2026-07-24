@@ -24,10 +24,12 @@
     </div>
   }
 
-  <div class="flex-1 overflow-y-auto p-6" (contextmenu)="onContentContextMenu($event)">
+  <div class="scrollbar-thin flex-1 overflow-y-auto p-6" (contextmenu)="onContentContextMenu($event)">
     @if (activeNote(); as note) {
-      <h1 class="mb-4 text-lg font-semibold text-foreground">{{ note.title }}</h1>
-      <app-note-editor [noteId]="note.id" class="block h-full" />
+      <div class="mx-auto max-w-3xl">
+        <h1 class="mb-4 text-lg font-semibold text-foreground">{{ note.title }}</h1>
+        <app-note-editor [noteId]="note.id" class="block h-full" />
+      </div>
     } @else {
       <div class="flex h-full items-center justify-center text-sm text-muted-foreground">
         No notes open — select one from the sidebar.
