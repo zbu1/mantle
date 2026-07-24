@@ -6,6 +6,8 @@ import { FAVORITE_NOTES, RECENT_NOTES, TAG_GROUPS, VAULT_NOTES } from '../../not
 import { Note } from '../../notes/note.model';
 import { SidebarState } from './sidebar-state';
 import { TabsState } from '../../notes/tabs-state';
+import { ContextMenuState } from '../../shared/context-menu/context-menu-state';
+import { ContextMenuItem } from '../../shared/context-menu/context-menu.model';
 
 @Component({
   selector: 'app-sidebar',
@@ -16,6 +18,7 @@ import { TabsState } from '../../notes/tabs-state';
 export class Sidebar {
   protected readonly state = inject(SidebarState);
   private readonly tabsState = inject(TabsState);
+  private readonly contextMenuState = inject(ContextMenuState);
 
   protected readonly favorites = FAVORITE_NOTES;
   protected readonly recentFiles = RECENT_NOTES;
@@ -31,6 +34,25 @@ export class Sidebar {
 
   protected openNoteInBackground(note: Note): void {
     this.tabsState.openNoteInBackground(note);
+  }
+
+  protected openNoteContextMenu(event: MouseEvent, note: Note): void {
+    const items: ContextMenuItem[] = [
+      { kind: 'item', label: 'Open', icon: 'open', action: () => this.openNote(note) },
+      { kind: 'item', label: 'Open in New Tab', icon: 'open-new-tab', action: () => this.openNoteInBackground(note) },
+      { kind: 'separator' },
+      { kind: 'item', label: 'Rename', icon: 'rename', action: () => {} },
+      { kind: 'item', label: 'Duplicate', icon: 'duplicate', action: () => {} },
+      {
+        kind: 'item',
+        label: note.favorite ? 'Remove from Favorites' : 'Add to Favorites',
+        icon: note.favorite ? 'unfavorite' : 'favorite',
+        action: () => {},
+      },
+      { kind: 'separator' },
+      { kind: 'item', label: 'Delete', icon: 'delete', danger: true, action: () => {} },
+    ];
+    this.contextMenuState.open(event, items);
   }
 
   protected onResizePointerDown(event: PointerEvent): void {

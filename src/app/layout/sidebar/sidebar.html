@@ -21,7 +21,7 @@
     } @else {
       <app-sidebar-section id="favorites" label="Favorites">
         @for (note of favorites; track note.id) {
-          <app-sidebar-item-button [label]="note.title" (clicked)="openNote(note)" (middleClicked)="openNoteInBackground(note)">
+          <app-sidebar-item-button [label]="note.title" (clicked)="openNote(note)" (middleClicked)="openNoteInBackground(note)" (contextMenu)="openNoteContextMenu($event, note)">
             <svg sidebarItemIcon lucideStar [size]="14" class="shrink-0"></svg>
           </app-sidebar-item-button>
         }
@@ -29,7 +29,7 @@
 
       <app-sidebar-section id="recent" label="Recent Files">
         @for (note of recentFiles; track note.id) {
-          <app-sidebar-item-button [label]="note.title" (clicked)="openNote(note)" (middleClicked)="openNoteInBackground(note)">
+          <app-sidebar-item-button [label]="note.title" (clicked)="openNote(note)" (middleClicked)="openNoteInBackground(note)" (contextMenu)="openNoteContextMenu($event, note)">
             <svg sidebarItemIcon lucideClock [size]="14" class="shrink-0"></svg>
             <span sidebarItemTrailing class="shrink-0 text-xs text-muted-foreground">{{ note.updatedAt }}</span>
           </app-sidebar-item-button>
@@ -38,7 +38,7 @@
 
       <app-sidebar-section id="vault" label="Vault">
         @for (note of vaultItems; track note.id) {
-          <app-sidebar-item-button [label]="note.title" (clicked)="openNote(note)" (middleClicked)="openNoteInBackground(note)">
+          <app-sidebar-item-button [label]="note.title" (clicked)="openNote(note)" (middleClicked)="openNoteInBackground(note)" (contextMenu)="openNoteContextMenu($event, note)">
             <svg sidebarItemIcon lucideLock [size]="14" class="shrink-0"></svg>
             <span sidebarItemTrailing class="ml-auto shrink-0 rounded-full bg-background px-1.5 py-0.5 text-[11px] leading-none text-muted-foreground">{{ note.folder }}</span>
           </app-sidebar-item-button>
@@ -52,7 +52,7 @@
             <span>{{ group.name }}</span>
           </div>
           @for (note of group.notes; track note.id) {
-            <app-sidebar-item-button [label]="note.title" (clicked)="openNote(note)" (middleClicked)="openNoteInBackground(note)">
+            <app-sidebar-item-button [label]="note.title" (clicked)="openNote(note)" (middleClicked)="openNoteInBackground(note)" (contextMenu)="openNoteContextMenu($event, note)">
               <span sidebarItemIcon class="h-2 w-2 shrink-0 rounded-full" [style.background-color]="group.color"></span>
             </app-sidebar-item-button>
           }

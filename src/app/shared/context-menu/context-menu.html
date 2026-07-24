@@ -1,0 +1,31 @@
+@if (menu(); as m) {
+  <div #panel class="fixed z-50 w-56 overflow-hidden rounded-md border border-border bg-surface py-1 text-surface-foreground shadow-lg" [style]="style()">
+    @for (item of m.items; track $index) {
+      @if (item.kind === 'separator') {
+        <div class="my-1 h-px bg-border"></div>
+      } @else {
+        <button
+          type="button"
+          (click)="select(item)"
+          class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs"
+          [class]="item.danger ? 'text-destructive hover:bg-destructive/10' : 'text-foreground/80 hover:bg-accent hover:text-accent-foreground'"
+        >
+          <span class="shrink-0">
+            @switch (item.icon) {
+              @case ('open') { <svg lucideFileText [size]="14"></svg> }
+              @case ('open-new-tab') { <svg lucideSquarePlus [size]="14"></svg> }
+              @case ('copy') { <svg lucideCopy [size]="14"></svg> }
+              @case ('rename') { <svg lucidePencil [size]="14"></svg> }
+              @case ('duplicate') { <svg lucideCopyPlus [size]="14"></svg> }
+              @case ('favorite') { <svg lucideStar [size]="14"></svg> }
+              @case ('unfavorite') { <svg lucideStarOff [size]="14"></svg> }
+              @case ('close') { <svg lucideX [size]="14"></svg> }
+              @case ('delete') { <svg lucideTrash2 [size]="14"></svg> }
+            }
+          </span>
+          <span class="flex-1 truncate">{{ item.label }}</span>
+        </button>
+      }
+    }
+  </div>
+}

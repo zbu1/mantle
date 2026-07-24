@@ -10,6 +10,11 @@ export class SidebarItemButton {
   readonly collapsed = input(false);
   readonly clicked = output<void>();
   readonly middleClicked = output<void>();
+  readonly contextMenu = output<MouseEvent>();
+
+  protected onContextMenu(event: MouseEvent): void {
+    this.contextMenu.emit(event);
+  }
 
   protected onMouseDown(event: MouseEvent): void {
     if (event.button === 1) {
