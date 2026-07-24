@@ -13,7 +13,7 @@ interface PersistedTabsState {
   activeId: string | null;
 }
 
-const STORAGE_KEY = 'stash.tabs.v2';
+const STORAGE_KEY = 'mantle.tabs.v2';
 
 const DEFAULT_STATE: PersistedTabsState = {
   tabs: [],

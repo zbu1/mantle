@@ -6,7 +6,7 @@
     "analytics": false
   },
   "projects": {
-    "stash": {
+    "mantle": {
       "projectType": "application",
       "schematics": {
         "@schematics/angular:component": {
@@ -65,10 +65,10 @@
           },
           "configurations": {
             "production": {
-              "buildTarget": "stash:build:production"
+              "buildTarget": "mantle:build:production"
             },
             "development": {
-              "buildTarget": "stash:build:development"
+              "buildTarget": "mantle:build:development"
             }
           },
           "defaultConfiguration": "development"

@@ -1,18 +1,18 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "stash",
+  "productName": "mantle",
   "version": "0.1.0",
-  "identifier": "com.zbui.stash",
+  "identifier": "com.zbui.mantle",
   "build": {
     "beforeDevCommand": "pnpm start",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "pnpm build",
-    "frontendDist": "../dist/stash/browser"
+    "frontendDist": "../dist/mantle/browser"
   },
   "app": {
     "windows": [
       {
-        "title": "stash",
+        "title": "mantle",
         "decorations": false,
         "width": 800,
         "height": 600

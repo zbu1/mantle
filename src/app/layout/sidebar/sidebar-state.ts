@@ -8,7 +8,7 @@ interface PersistedSidebarState {
   sections: Record<SectionId, boolean>;
 }
 
-const STORAGE_KEY = 'stash.sidebar.v1';
+const STORAGE_KEY = 'mantle.sidebar.v1';
 const DEFAULT_WIDTH = 240;
 const MIN_WIDTH = 180;
 const MAX_WIDTH = 400;

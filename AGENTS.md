@@ -2,7 +2,7 @@
 
 ## Project overview
 
-Stash is a desktop app built with Tauri 2 (Rust backend) and Angular 22 (frontend).
+Mantle is a desktop app built with Tauri 2 (Rust backend) and Angular 22 (frontend).
 The project is early-stage: the Rust side is still the default Tauri template
 (`greet` command only), and the Angular side has a single `header` layout component.
 

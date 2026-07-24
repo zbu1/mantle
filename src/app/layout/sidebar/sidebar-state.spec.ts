@@ -18,14 +18,14 @@ describe('SidebarState', () => {
   });
 
   it('falls back to defaults when storage is corrupt', () => {
-    localStorage.setItem('stash.sidebar.v1', '{not json');
+    localStorage.setItem('mantle.sidebar.v1', '{not json');
     const state = TestBed.inject(SidebarState);
     expect(state.width()).toBe(240);
   });
 
   it('hydrates from a previously persisted value', () => {
     localStorage.setItem(
-      'stash.sidebar.v1',
+      'mantle.sidebar.v1',
       JSON.stringify({ width: 300, collapsed: true, sections: { favorites: false, recent: true, vault: true, tags: true } }),
     );
     const state = TestBed.inject(SidebarState);
@@ -66,6 +66,6 @@ describe('SidebarState', () => {
     const state = TestBed.inject(SidebarState);
     state.setWidth(280);
     TestBed.tick();
-    expect(setItemSpy).toHaveBeenCalledWith('stash.sidebar.v1', expect.stringContaining('"width":280'));
+    expect(setItemSpy).toHaveBeenCalledWith('mantle.sidebar.v1', expect.stringContaining('"width":280'));
   });
 });

@@ -22,14 +22,14 @@ describe('TabsState', () => {
   });
 
   it('falls back to defaults when storage is corrupt', () => {
-    localStorage.setItem('stash.tabs.v2', '{not json');
+    localStorage.setItem('mantle.tabs.v2', '{not json');
     const state = TestBed.inject(TabsState);
     expect(state.tabs()).toEqual([]);
   });
 
   it('drops persisted tabs that no longer reference a real note', () => {
     localStorage.setItem(
-      'stash.tabs.v2',
+      'mantle.tabs.v2',
       JSON.stringify({ tabs: [{ id: 'tab-1', noteId: 'deleted-note', title: 'Gone' }], activeId: 'tab-1' }),
     );
     const state = TestBed.inject(TabsState);
@@ -39,7 +39,7 @@ describe('TabsState', () => {
 
   it('hydrates from a previously persisted value', () => {
     localStorage.setItem(
-      'stash.tabs.v2',
+      'mantle.tabs.v2',
       JSON.stringify({ tabs: [{ id: 'tab-1', noteId: noteA.id, title: noteA.title }], activeId: 'tab-1' }),
     );
     const state = TestBed.inject(TabsState);
@@ -118,6 +118,6 @@ describe('TabsState', () => {
     const state = TestBed.inject(TabsState);
     state.openNote(noteA);
     TestBed.tick();
-    expect(setItemSpy).toHaveBeenCalledWith('stash.tabs.v2', expect.stringContaining(`"noteId":"${noteA.id}"`));
+    expect(setItemSpy).toHaveBeenCalledWith('mantle.tabs.v2', expect.stringContaining(`"noteId":"${noteA.id}"`));
   });
 });
