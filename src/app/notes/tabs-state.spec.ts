@@ -22,15 +22,15 @@ describe('TabsState', () => {
   });
 
   it('falls back to defaults when storage is corrupt', () => {
-    localStorage.setItem('stash.tabs.v1', '{not json');
+    localStorage.setItem('stash.tabs.v2', '{not json');
     const state = TestBed.inject(TabsState);
     expect(state.tabs()).toEqual([]);
   });
 
   it('drops persisted tabs that no longer reference a real note', () => {
     localStorage.setItem(
-      'stash.tabs.v1',
-      JSON.stringify({ tabs: [{ id: 'deleted-note', title: 'Gone' }], activeId: 'deleted-note' }),
+      'stash.tabs.v2',
+      JSON.stringify({ tabs: [{ id: 'tab-1', noteId: 'deleted-note', title: 'Gone' }], activeId: 'tab-1' }),
     );
     const state = TestBed.inject(TabsState);
     expect(state.tabs()).toEqual([]);
@@ -39,19 +39,19 @@ describe('TabsState', () => {
 
   it('hydrates from a previously persisted value', () => {
     localStorage.setItem(
-      'stash.tabs.v1',
-      JSON.stringify({ tabs: [{ id: noteA.id, title: noteA.title }], activeId: noteA.id }),
+      'stash.tabs.v2',
+      JSON.stringify({ tabs: [{ id: 'tab-1', noteId: noteA.id, title: noteA.title }], activeId: 'tab-1' }),
     );
     const state = TestBed.inject(TabsState);
-    expect(state.tabs()).toEqual([{ id: noteA.id, title: noteA.title }]);
-    expect(state.activeId()).toBe(noteA.id);
+    expect(state.tabs()).toEqual([{ id: 'tab-1', noteId: noteA.id, title: noteA.title }]);
+    expect(state.activeId()).toBe('tab-1');
   });
 
   it('opens a new note as a tab and activates it', () => {
     const state = TestBed.inject(TabsState);
     state.openNote(noteA);
-    expect(state.tabs()).toEqual([{ id: noteA.id, title: noteA.title }]);
-    expect(state.activeId()).toBe(noteA.id);
+    expect(state.tabs().map((t) => t.noteId)).toEqual([noteA.id]);
+    expect(state.activeId()).toBe(state.tabs()[0].id);
   });
 
   it('switches to the existing tab instead of duplicating it', () => {
@@ -59,17 +59,28 @@ describe('TabsState', () => {
     state.openNote(noteA);
     state.openNote(noteB);
     state.openNote(noteA);
-    expect(state.tabs().map((t) => t.id)).toEqual([noteA.id, noteB.id]);
-    expect(state.activeId()).toBe(noteA.id);
+    expect(state.tabs().map((t) => t.noteId)).toEqual([noteA.id, noteB.id]);
+    expect(state.activeId()).toBe(state.tabs()[0].id);
+  });
+
+  it('opens a new background tab even if the note is already open', () => {
+    const state = TestBed.inject(TabsState);
+    state.openNote(noteA);
+    const firstTabId = state.tabs()[0].id;
+    state.openNoteInBackground(noteA);
+    expect(state.tabs().map((t) => t.noteId)).toEqual([noteA.id, noteA.id]);
+    expect(state.tabs()[1].id).not.toBe(firstTabId);
+    expect(state.activeId()).toBe(firstTabId);
   });
 
   it('closing a non-active tab leaves the active tab untouched', () => {
     const state = TestBed.inject(TabsState);
     state.openNote(noteA);
     state.openNote(noteB);
-    state.closeTab(noteA.id);
-    expect(state.tabs().map((t) => t.id)).toEqual([noteB.id]);
-    expect(state.activeId()).toBe(noteB.id);
+    const [tabA, tabB] = state.tabs();
+    state.closeTab(tabA.id);
+    expect(state.tabs().map((t) => t.id)).toEqual([tabB.id]);
+    expect(state.activeId()).toBe(tabB.id);
   });
 
   it('closing the active tab activates the previous neighbor', () => {
@@ -77,25 +88,27 @@ describe('TabsState', () => {
     state.openNote(noteA);
     state.openNote(noteB);
     state.openNote(noteC);
-    state.setActive(noteB.id);
-    state.closeTab(noteB.id);
-    expect(state.tabs().map((t) => t.id)).toEqual([noteA.id, noteC.id]);
-    expect(state.activeId()).toBe(noteA.id);
+    const [tabA, tabB, tabC] = state.tabs();
+    state.setActive(tabB.id);
+    state.closeTab(tabB.id);
+    expect(state.tabs().map((t) => t.id)).toEqual([tabA.id, tabC.id]);
+    expect(state.activeId()).toBe(tabA.id);
   });
 
   it('closing the leftmost active tab activates the next tab', () => {
     const state = TestBed.inject(TabsState);
     state.openNote(noteA);
     state.openNote(noteB);
-    state.setActive(noteA.id);
-    state.closeTab(noteA.id);
-    expect(state.activeId()).toBe(noteB.id);
+    const [tabA, tabB] = state.tabs();
+    state.setActive(tabA.id);
+    state.closeTab(tabA.id);
+    expect(state.activeId()).toBe(tabB.id);
   });
 
   it('closing the last remaining tab clears the active id', () => {
     const state = TestBed.inject(TabsState);
     state.openNote(noteA);
-    state.closeTab(noteA.id);
+    state.closeTab(state.tabs()[0].id);
     expect(state.tabs()).toEqual([]);
     expect(state.activeId()).toBeNull();
   });
@@ -105,6 +118,6 @@ describe('TabsState', () => {
     const state = TestBed.inject(TabsState);
     state.openNote(noteA);
     TestBed.tick();
-    expect(setItemSpy).toHaveBeenCalledWith('stash.tabs.v1', expect.stringContaining(`"id":"${noteA.id}"`));
+    expect(setItemSpy).toHaveBeenCalledWith('stash.tabs.v2', expect.stringContaining(`"noteId":"${noteA.id}"`));
   });
 });

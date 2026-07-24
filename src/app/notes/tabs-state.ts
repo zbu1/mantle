@@ -4,6 +4,7 @@ import { findNote } from './notes-data';
 
 export interface NoteTab {
   id: string;
+  noteId: string;
   title: string;
 }
 
@@ -12,12 +13,18 @@ interface PersistedTabsState {
   activeId: string | null;
 }
 
-const STORAGE_KEY = 'stash.tabs.v1';
+const STORAGE_KEY = 'stash.tabs.v2';
 
 const DEFAULT_STATE: PersistedTabsState = {
   tabs: [],
   activeId: null,
 };
+
+function createTabId(): string {
+  return typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `tab-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
 
 function readFromStorage(): PersistedTabsState {
   try {
@@ -25,7 +32,9 @@ function readFromStorage(): PersistedTabsState {
     if (!raw) return DEFAULT_STATE;
     const parsed = JSON.parse(raw);
     const tabs: NoteTab[] = Array.isArray(parsed.tabs)
-      ? parsed.tabs.filter((tab: NoteTab) => !!findNote(tab?.id)).map((tab: NoteTab) => ({ id: tab.id, title: tab.title }))
+      ? parsed.tabs
+          .filter((tab: NoteTab) => !!tab?.id && !!findNote(tab?.noteId))
+          .map((tab: NoteTab) => ({ id: tab.id, noteId: tab.noteId, title: tab.title }))
       : [];
     const activeId = tabs.some((tab) => tab.id === parsed.activeId) ? parsed.activeId : (tabs[0]?.id ?? null);
     return { tabs, activeId };
@@ -56,12 +65,19 @@ export class TabsState {
   }
 
   openNote(note: Note): void {
-    if (this.tabs().some((tab) => tab.id === note.id)) {
-      this.setActive(note.id);
+    const existing = this.tabs().find((tab) => tab.noteId === note.id);
+    if (existing) {
+      this.setActive(existing.id);
       return;
     }
-    this.tabs.update((tabs) => [...tabs, { id: note.id, title: note.title }]);
-    this.setActive(note.id);
+    const tab: NoteTab = { id: createTabId(), noteId: note.id, title: note.title };
+    this.tabs.update((tabs) => [...tabs, tab]);
+    this.setActive(tab.id);
+  }
+
+  openNoteInBackground(note: Note): void {
+    const tab: NoteTab = { id: createTabId(), noteId: note.id, title: note.title };
+    this.tabs.update((tabs) => [...tabs, tab]);
   }
 
   closeTab(id: string): void {

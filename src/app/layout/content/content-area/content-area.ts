@@ -13,7 +13,8 @@ export class ContentArea {
 
   protected readonly activeNote = computed(() => {
     const activeId = this.tabsState.activeId();
-    return activeId ? findNote(activeId) : undefined;
+    const tab = activeId ? this.tabsState.tabs().find((t) => t.id === activeId) : undefined;
+    return tab ? findNote(tab.noteId) : undefined;
   });
 
   protected activateTab(id: string): void {

@@ -29,6 +29,10 @@ export class Sidebar {
     this.tabsState.openNote(note);
   }
 
+  protected openNoteInBackground(note: Note): void {
+    this.tabsState.openNoteInBackground(note);
+  }
+
   protected onResizePointerDown(event: PointerEvent): void {
     if (this.state.collapsed()) return;
     const handle = event.currentTarget as HTMLElement;

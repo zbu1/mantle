@@ -1,4 +1,4 @@
-<button type="button" [title]="label()" (click)="clicked.emit()"
+<button type="button" [title]="label()" (click)="clicked.emit()" (mousedown)="onMouseDown($event)" (auxclick)="onAuxClick($event)"
   class="flex items-center gap-2 rounded-md text-xs text-foreground/80 hover:bg-background hover:text-foreground"
   [class]="collapsed() ? 'h-9 w-full justify-center' : 'w-full px-2 py-1.5 text-left'">
   <span class="shrink-0 text-muted-foreground">
