@@ -1,5 +1,4 @@
 import { Component, computed, inject } from '@angular/core';
-import { LucideX } from '@lucide/angular';
 import { TabsState } from '../../../notes/tabs-state';
 import { NotesState } from '../../../notes/notes-state';
 import { NoteEditor } from '../../../notes/editor/note-editor';
@@ -8,7 +7,7 @@ import { ContextMenuItem } from '../../../shared/context-menu/context-menu.model
 
 @Component({
   selector: 'app-content-area',
-  imports: [LucideX, NoteEditor],
+  imports: [NoteEditor],
   templateUrl: './content-area.html',
 })
 export class ContentArea {
@@ -21,15 +20,6 @@ export class ContentArea {
     const tab = activeId ? this.tabsState.tabs().find((t) => t.id === activeId) : undefined;
     return tab ? this.notesState.getNote(tab.noteId) : undefined;
   });
-
-  protected activateTab(id: string): void {
-    this.tabsState.setActive(id);
-  }
-
-  protected closeTab(event: Event, id: string): void {
-    event.stopPropagation();
-    this.tabsState.closeTab(id);
-  }
 
   protected onContentContextMenu(event: MouseEvent): void {
     const note = this.activeNote();

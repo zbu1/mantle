@@ -1,13 +1,30 @@
-<header
-  class="grid h-9 shrink-0 grid-cols-[auto_1fr_auto] select-none border-b border-border bg-surface text-surface-foreground">
+<header class="grid h-10 shrink-0 select-none bg-surface text-surface-foreground"
+  [style.grid-template-columns]="gridTemplateColumns()">
   <div class="flex items-center">
     <button type="button" title="Toggle sidebar" (click)="toggleSidebar()"
       class="inline-flex w-11 items-center justify-center text-foreground hover:bg-background">
       <svg lucidePanelLeft [size]="14"></svg>
     </button>
   </div>
-  <div data-tauri-drag-region class="flex items-center pl-2 text-sm font-semibold text-foreground [app-region:drag]">
-    Mantle
+  <div data-tauri-drag-region
+    class="flex min-w-0 items-stretch gap-1 overflow-x-auto rounded-bl-xl border-border px-1 [app-region:drag]">
+    @if (tabsState.tabs().length > 0) {
+    @for (tab of tabsState.tabs(); track tab.id) {
+    <button type="button" (click)="activateTab(tab.id)" [title]="tab.title"
+      class="group my-1 flex min-w-0 max-w-48 shrink-0 items-center gap-2 rounded-md border border-border px-3 text-xs"
+      [class.bg-background]="tab.id === tabsState.activeId()" [class.text-foreground]="tab.id === tabsState.activeId()"
+      [class.text-muted-foreground]="tab.id !== tabsState.activeId()"
+      [class.hover:bg-background/60]="tab.id !== tabsState.activeId()">
+      <span class="min-w-0 flex-1 truncate text-left">{{ tab.title }}</span>
+      <span (click)="closeTab($event, tab.id)"
+        class="flex shrink-0 items-center justify-center rounded p-0.5 opacity-0 hover:bg-border group-hover:opacity-100">
+        <svg lucideX [size]="12"></svg>
+      </span>
+    </button>
+    }
+    } @else {
+    <div class="flex items-center pl-2 text-sm font-semibold text-foreground">Mantle</div>
+    }
   </div>
   <div class="flex">
     <button type="button" title="Minimize" (click)="minimize()"
