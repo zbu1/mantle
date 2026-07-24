@@ -1,5 +1,5 @@
 import { Component, inject, signal } from '@angular/core';
-import { LucideClock, LucideLock, LucideStar } from '@lucide/angular';
+import { LucideClock, LucideFileText, LucideFolders, LucideStar, LucideTags } from '@lucide/angular';
 import { SidebarSection } from './sidebar-section/sidebar-section';
 import { SidebarItemButton } from './sidebar-item-button/sidebar-item-button';
 import { FAVORITE_NOTES, RECENT_NOTES, TAG_GROUPS, VAULT_NOTES } from '../../notes/notes-data';
@@ -11,7 +11,7 @@ import { ContextMenuItem } from '../../shared/context-menu/context-menu.model';
 
 @Component({
   selector: 'app-sidebar',
-  imports: [SidebarSection, SidebarItemButton, LucideStar, LucideClock, LucideLock],
+  imports: [SidebarSection, SidebarItemButton, LucideStar, LucideClock, LucideFolders, LucideTags, LucideFileText],
   templateUrl: './sidebar.html',
   host: { class: 'contents' },
 })

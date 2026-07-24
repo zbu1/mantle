@@ -1,74 +1,79 @@
-<aside
-  class="relative flex shrink-0 flex-col border-r border-border bg-surface text-surface-foreground"
-  [style.width.px]="state.effectiveWidth()"
->
+<aside class="relative flex shrink-0 flex-col border-r border-border bg-surface text-surface-foreground"
+  [style.width.px]="state.effectiveWidth()">
   <div class="scrollbar-thin flex flex-1 flex-col gap-2 overflow-y-auto p-2">
     @if (state.collapsed()) {
-      <div class="flex flex-col gap-1">
-        <app-sidebar-item-button label="Favorites" [collapsed]="true">
-          <svg sidebarItemIcon lucideStar [size]="14"></svg>
-        </app-sidebar-item-button>
-        <app-sidebar-item-button label="Recent Files" [collapsed]="true">
-          <svg sidebarItemIcon lucideClock [size]="14"></svg>
-        </app-sidebar-item-button>
-        <app-sidebar-item-button label="Vault" [collapsed]="true">
-          <svg sidebarItemIcon lucideLock [size]="14"></svg>
-        </app-sidebar-item-button>
-        <app-sidebar-item-button label="Tags" [collapsed]="true">
-          <svg sidebarItemIcon lucideStar [size]="14"></svg>
-        </app-sidebar-item-button>
-      </div>
+    <div class="flex flex-col gap-1">
+      <app-sidebar-item-button label="Favorites" [collapsed]="true">
+        <svg sidebarItemIcon lucideStar [size]="14"></svg>
+      </app-sidebar-item-button>
+      <app-sidebar-item-button label="Recent Files" [collapsed]="true">
+        <svg sidebarItemIcon lucideClock [size]="14"></svg>
+      </app-sidebar-item-button>
+      <app-sidebar-item-button label="Vault" [collapsed]="true">
+        <svg sidebarItemIcon lucideFolders [size]="14"></svg>
+      </app-sidebar-item-button>
+      <app-sidebar-item-button label="Tags" [collapsed]="true">
+        <svg sidebarItemIcon lucideTags [size]="14"></svg>
+      </app-sidebar-item-button>
+    </div>
     } @else {
-      <app-sidebar-section id="favorites" label="Favorites">
-        @for (note of favorites; track note.id) {
-          <app-sidebar-item-button [label]="note.title" (clicked)="openNote(note)" (middleClicked)="openNoteInBackground(note)" (contextMenu)="openNoteContextMenu($event, note)">
-            <svg sidebarItemIcon lucideStar [size]="14" class="shrink-0"></svg>
-          </app-sidebar-item-button>
-        }
-      </app-sidebar-section>
+    <app-sidebar-section id="favorites" label="Favorites">
+      <svg sidebarSectionIcon lucideStar [size]="12"></svg>
+      @for (note of favorites; track note.id) {
+      <app-sidebar-item-button [label]="note.title" (clicked)="openNote(note)"
+        (middleClicked)="openNoteInBackground(note)" (contextMenu)="openNoteContextMenu($event, note)">
+        <svg sidebarItemIcon lucideFileText [size]="14" class="shrink-0"></svg>
+      </app-sidebar-item-button>
+      }
+    </app-sidebar-section>
 
-      <app-sidebar-section id="recent" label="Recent Files">
-        @for (note of recentFiles; track note.id) {
-          <app-sidebar-item-button [label]="note.title" (clicked)="openNote(note)" (middleClicked)="openNoteInBackground(note)" (contextMenu)="openNoteContextMenu($event, note)">
-            <svg sidebarItemIcon lucideClock [size]="14" class="shrink-0"></svg>
-            <span sidebarItemTrailing class="shrink-0 text-xs text-muted-foreground">{{ note.updatedAt }}</span>
-          </app-sidebar-item-button>
-        }
-      </app-sidebar-section>
+    <app-sidebar-section id="recent" label="Recent Files">
+      <svg sidebarSectionIcon lucideClock [size]="12"></svg>
+      @for (note of recentFiles; track note.id) {
+      <app-sidebar-item-button [label]="note.title" (clicked)="openNote(note)"
+        (middleClicked)="openNoteInBackground(note)" (contextMenu)="openNoteContextMenu($event, note)">
+        <svg sidebarItemIcon lucideFileText [size]="14" class="shrink-0"></svg>
+        <span sidebarItemTrailing class="shrink-0 text-xs text-muted-foreground">{{ note.updatedAt }}</span>
+      </app-sidebar-item-button>
+      }
+    </app-sidebar-section>
 
-      <app-sidebar-section id="vault" label="Vault">
-        @for (note of vaultItems; track note.id) {
-          <app-sidebar-item-button [label]="note.title" (clicked)="openNote(note)" (middleClicked)="openNoteInBackground(note)" (contextMenu)="openNoteContextMenu($event, note)">
-            <svg sidebarItemIcon lucideLock [size]="14" class="shrink-0"></svg>
-            <span sidebarItemTrailing class="ml-auto shrink-0 rounded-full bg-background px-1.5 py-0.5 text-[11px] leading-none text-muted-foreground">{{ note.folder }}</span>
-          </app-sidebar-item-button>
-        }
-      </app-sidebar-section>
+    <app-sidebar-section id="vault" label="Vault">
+      <svg sidebarSectionIcon lucideFolders [size]="12"></svg>
+      @for (note of vaultItems; track note.id) {
+      <app-sidebar-item-button [label]="note.title" (clicked)="openNote(note)"
+        (middleClicked)="openNoteInBackground(note)" (contextMenu)="openNoteContextMenu($event, note)">
+        <svg sidebarItemIcon lucideFileText [size]="14" class="shrink-0"></svg>
+        <span sidebarItemTrailing
+          class="ml-auto shrink-0 rounded-full bg-background px-1.5 py-0.5 text-[11px] leading-none text-muted-foreground">{{
+          note.folder }}</span>
+      </app-sidebar-item-button>
+      }
+    </app-sidebar-section>
 
-      <app-sidebar-section id="tags" label="Tags">
-        @for (group of tagGroups; track group.name) {
-          <div class="flex items-center gap-1.5 px-2 pt-1 text-[11px] font-medium text-muted-foreground">
-            <span class="h-1.5 w-1.5 shrink-0 rounded-full" [style.background-color]="group.color"></span>
-            <span>{{ group.name }}</span>
-          </div>
-          @for (note of group.notes; track note.id) {
-            <app-sidebar-item-button [label]="note.title" (clicked)="openNote(note)" (middleClicked)="openNoteInBackground(note)" (contextMenu)="openNoteContextMenu($event, note)">
-              <span sidebarItemIcon class="h-2 w-2 shrink-0 rounded-full" [style.background-color]="group.color"></span>
-            </app-sidebar-item-button>
-          }
-        }
-      </app-sidebar-section>
+    <app-sidebar-section id="tags" label="Tags">
+      <svg sidebarSectionIcon lucideTags [size]="12"></svg>
+      @for (group of tagGroups; track group.name) {
+      <div class="flex items-center gap-1.5 px-2 pt-1 text-[11px] font-medium text-muted-foreground">
+        <span class="h-1.5 w-1.5 shrink-0 rounded-full" [style.background-color]="group.color"></span>
+        <span>{{ group.name }}</span>
+      </div>
+      @for (note of group.notes; track note.id) {
+      <app-sidebar-item-button [label]="note.title" (clicked)="openNote(note)"
+        (middleClicked)="openNoteInBackground(note)" (contextMenu)="openNoteContextMenu($event, note)">
+        <svg sidebarItemIcon lucideFileText [size]="14" class="shrink-0" [style.color]="group.color"></svg>
+      </app-sidebar-item-button>
+      }
+      }
+    </app-sidebar-section>
     }
   </div>
 
   @if (!state.collapsed()) {
-    <div
-      class="group absolute inset-y-0 right-0 z-10 -mr-1 flex w-2 cursor-col-resize items-center justify-center"
-      (pointerdown)="onResizePointerDown($event)"
-      (pointermove)="onResizePointerMove($event)"
-      (pointerup)="onResizePointerUp($event)"
-    >
-      <div class="h-full w-px bg-transparent group-hover:bg-accent/40 group-active:bg-accent/60"></div>
-    </div>
+  <div class="group absolute inset-y-0 right-0 z-10 -mr-1 flex w-2 cursor-col-resize items-center justify-center"
+    (pointerdown)="onResizePointerDown($event)" (pointermove)="onResizePointerMove($event)"
+    (pointerup)="onResizePointerUp($event)">
+    <div class="h-full w-px bg-transparent group-hover:bg-accent/40 group-active:bg-accent/60"></div>
+  </div>
   }
 </aside>
