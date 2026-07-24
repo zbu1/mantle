@@ -1,23 +1,25 @@
 import { Component, computed, inject } from '@angular/core';
 import { LucideX } from '@lucide/angular';
 import { TabsState } from '../../../notes/tabs-state';
-import { findNote } from '../../../notes/notes-data';
+import { NotesState } from '../../../notes/notes-state';
+import { NoteEditor } from '../../../notes/editor/note-editor';
 import { ContextMenuState } from '../../../shared/context-menu/context-menu-state';
 import { ContextMenuItem } from '../../../shared/context-menu/context-menu.model';
 
 @Component({
   selector: 'app-content-area',
-  imports: [LucideX],
+  imports: [LucideX, NoteEditor],
   templateUrl: './content-area.html',
 })
 export class ContentArea {
   protected readonly tabsState = inject(TabsState);
+  private readonly notesState = inject(NotesState);
   private readonly contextMenuState = inject(ContextMenuState);
 
   protected readonly activeNote = computed(() => {
     const activeId = this.tabsState.activeId();
     const tab = activeId ? this.tabsState.tabs().find((t) => t.id === activeId) : undefined;
-    return tab ? findNote(tab.noteId) : undefined;
+    return tab ? this.notesState.getNote(tab.noteId) : undefined;
   });
 
   protected activateTab(id: string): void {

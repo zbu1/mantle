@@ -27,7 +27,7 @@
   <div class="flex-1 overflow-y-auto p-6" (contextmenu)="onContentContextMenu($event)">
     @if (activeNote(); as note) {
       <h1 class="mb-4 text-lg font-semibold text-foreground">{{ note.title }}</h1>
-      <p class="whitespace-pre-line text-sm text-foreground/90">{{ note.content }}</p>
+      <app-note-editor [noteId]="note.id" class="block h-full" />
     } @else {
       <div class="flex h-full items-center justify-center text-sm text-muted-foreground">
         No notes open — select one from the sidebar.
