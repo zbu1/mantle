@@ -124,6 +124,63 @@ describe('TabsState', () => {
     expect(state.activeId()).toBeNull();
   });
 
+  it('has no history to navigate when a tab has not replaced notes', () => {
+    const state = TestBed.inject(TabsState);
+    state.openNote(noteA);
+    expect(state.canGoBack()).toBe(false);
+    expect(state.canGoForward()).toBe(false);
+  });
+
+  it('navigates back and forward through notes opened in the same tab', () => {
+    const state = TestBed.inject(TabsState);
+    state.openNote(noteA);
+    const tabId = state.tabs()[0].id;
+    state.openNote(noteB);
+    state.openNote(noteC);
+
+    expect(state.canGoBack()).toBe(true);
+    expect(state.canGoForward()).toBe(false);
+
+    state.goBack();
+    expect(state.tabs().find((t) => t.id === tabId)?.noteId).toBe(noteB.id);
+    expect(state.canGoBack()).toBe(true);
+    expect(state.canGoForward()).toBe(true);
+
+    state.goBack();
+    expect(state.tabs().find((t) => t.id === tabId)?.noteId).toBe(noteA.id);
+    expect(state.canGoBack()).toBe(false);
+    expect(state.canGoForward()).toBe(true);
+
+    state.goForward();
+    expect(state.tabs().find((t) => t.id === tabId)?.noteId).toBe(noteB.id);
+
+    state.goForward();
+    expect(state.tabs().find((t) => t.id === tabId)?.noteId).toBe(noteC.id);
+    expect(state.canGoForward()).toBe(false);
+  });
+
+  it('clears forward history when navigating to a new note after going back', () => {
+    const state = TestBed.inject(TabsState);
+    state.openNote(noteA);
+    state.openNote(noteB);
+    state.goBack();
+    expect(state.canGoForward()).toBe(true);
+
+    state.openNote(noteC);
+    expect(state.canGoForward()).toBe(false);
+    expect(state.canGoBack()).toBe(true);
+    expect(state.tabs()[0].noteId).toBe(noteC.id);
+  });
+
+  it('drops history for a tab once it is closed', () => {
+    const state = TestBed.inject(TabsState);
+    state.openNote(noteA);
+    state.openNote(noteB);
+    const tabId = state.tabs()[0].id;
+    state.closeTab(tabId);
+    expect(state.canGoBack()).toBe(false);
+  });
+
   it('persists state changes back to localStorage', () => {
     const setItemSpy = jest.spyOn(Storage.prototype, 'setItem');
     const state = TestBed.inject(TabsState);
