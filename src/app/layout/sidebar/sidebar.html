@@ -3,30 +3,6 @@
   [style.width.px]="state.effectiveWidth()"
 >
   <div class="flex flex-1 flex-col gap-2 overflow-y-auto p-2">
-    <nav class="flex flex-col gap-0.5">
-      @for (item of navItems; track item.path) {
-        <a
-          [routerLink]="item.path"
-          routerLinkActive="bg-accent text-accent-foreground hover:bg-accent"
-          [routerLinkActiveOptions]="{ exact: item.path === '/' }"
-          [title]="item.label"
-          class="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-foreground hover:bg-background"
-          [class.justify-center]="state.collapsed()"
-        >
-          @if (item.path === '/') {
-            <svg lucideHouse [size]="14" class="shrink-0"></svg>
-          } @else {
-            <svg lucideSettings [size]="14" class="shrink-0"></svg>
-          }
-          @if (!state.collapsed()) {
-            <span class="truncate">{{ item.label }}</span>
-          }
-        </a>
-      }
-    </nav>
-
-    <div class="my-1 border-t border-border"></div>
-
     @if (state.collapsed()) {
       <div class="flex flex-col gap-1">
         <app-sidebar-item-button label="Favorites" [collapsed]="true">
@@ -39,42 +15,47 @@
           <svg sidebarItemIcon lucideLock [size]="14"></svg>
         </app-sidebar-item-button>
         <app-sidebar-item-button label="Tags" [collapsed]="true">
-          <svg sidebarItemIcon lucideTag [size]="14"></svg>
+          <svg sidebarItemIcon lucideStar [size]="14"></svg>
         </app-sidebar-item-button>
       </div>
     } @else {
       <app-sidebar-section id="favorites" label="Favorites">
-        @for (fav of favorites; track fav.name) {
-          <app-sidebar-item-button [label]="fav.name">
+        @for (note of favorites; track note.id) {
+          <app-sidebar-item-button [label]="note.title" (clicked)="openNote(note)">
             <svg sidebarItemIcon lucideStar [size]="14" class="shrink-0"></svg>
           </app-sidebar-item-button>
         }
       </app-sidebar-section>
 
       <app-sidebar-section id="recent" label="Recent Files">
-        @for (file of recentFiles; track file.name) {
-          <app-sidebar-item-button [label]="file.name">
+        @for (note of recentFiles; track note.id) {
+          <app-sidebar-item-button [label]="note.title" (clicked)="openNote(note)">
             <svg sidebarItemIcon lucideClock [size]="14" class="shrink-0"></svg>
-            <span sidebarItemTrailing class="shrink-0 text-xs text-muted-foreground">{{ file.timestamp }}</span>
+            <span sidebarItemTrailing class="shrink-0 text-xs text-muted-foreground">{{ note.updatedAt }}</span>
           </app-sidebar-item-button>
         }
       </app-sidebar-section>
 
       <app-sidebar-section id="vault" label="Vault">
-        @for (v of vaultItems; track v.name) {
-          <app-sidebar-item-button [label]="v.name">
+        @for (note of vaultItems; track note.id) {
+          <app-sidebar-item-button [label]="note.title" (clicked)="openNote(note)">
             <svg sidebarItemIcon lucideLock [size]="14" class="shrink-0"></svg>
-            <span sidebarItemTrailing class="ml-auto shrink-0 rounded-full bg-background px-1.5 py-0.5 text-[11px] leading-none text-muted-foreground">{{ v.count }}</span>
+            <span sidebarItemTrailing class="ml-auto shrink-0 rounded-full bg-background px-1.5 py-0.5 text-[11px] leading-none text-muted-foreground">{{ note.folder }}</span>
           </app-sidebar-item-button>
         }
       </app-sidebar-section>
 
       <app-sidebar-section id="tags" label="Tags">
-        @for (tag of tags; track tag.name) {
-          <app-sidebar-item-button [label]="tag.name">
-            <span sidebarItemIcon class="h-2 w-2 shrink-0 rounded-full" [style.background-color]="tag.color"></span>
-            <span sidebarItemTrailing class="shrink-0 text-xs text-muted-foreground">{{ tag.count }}</span>
-          </app-sidebar-item-button>
+        @for (group of tagGroups; track group.name) {
+          <div class="flex items-center gap-1.5 px-2 pt-1 text-[11px] font-medium text-muted-foreground">
+            <span class="h-1.5 w-1.5 shrink-0 rounded-full" [style.background-color]="group.color"></span>
+            <span>{{ group.name }}</span>
+          </div>
+          @for (note of group.notes; track note.id) {
+            <app-sidebar-item-button [label]="note.title" (clicked)="openNote(note)">
+              <span sidebarItemIcon class="h-2 w-2 shrink-0 rounded-full" [style.background-color]="group.color"></span>
+            </app-sidebar-item-button>
+          }
         }
       </app-sidebar-section>
     }

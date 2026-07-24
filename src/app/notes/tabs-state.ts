@@ -1,0 +1,88 @@
+import { Injectable, effect, signal } from '@angular/core';
+import { Note } from './note.model';
+import { findNote } from './notes-data';
+
+export interface NoteTab {
+  id: string;
+  title: string;
+}
+
+interface PersistedTabsState {
+  tabs: NoteTab[];
+  activeId: string | null;
+}
+
+const STORAGE_KEY = 'stash.tabs.v1';
+
+const DEFAULT_STATE: PersistedTabsState = {
+  tabs: [],
+  activeId: null,
+};
+
+function readFromStorage(): PersistedTabsState {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return DEFAULT_STATE;
+    const parsed = JSON.parse(raw);
+    const tabs: NoteTab[] = Array.isArray(parsed.tabs)
+      ? parsed.tabs.filter((tab: NoteTab) => !!findNote(tab?.id)).map((tab: NoteTab) => ({ id: tab.id, title: tab.title }))
+      : [];
+    const activeId = tabs.some((tab) => tab.id === parsed.activeId) ? parsed.activeId : (tabs[0]?.id ?? null);
+    return { tabs, activeId };
+  } catch {
+    return DEFAULT_STATE;
+  }
+}
+
+@Injectable({ providedIn: 'root' })
+export class TabsState {
+  private readonly initial = readFromStorage();
+
+  readonly tabs = signal<NoteTab[]>(this.initial.tabs);
+  readonly activeId = signal<string | null>(this.initial.activeId);
+
+  constructor() {
+    effect(() => {
+      const snapshot: PersistedTabsState = {
+        tabs: this.tabs(),
+        activeId: this.activeId(),
+      };
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+      } catch {
+        // storage unavailable (e.g. private browsing) — ignore
+      }
+    });
+  }
+
+  openNote(note: Note): void {
+    if (this.tabs().some((tab) => tab.id === note.id)) {
+      this.setActive(note.id);
+      return;
+    }
+    this.tabs.update((tabs) => [...tabs, { id: note.id, title: note.title }]);
+    this.setActive(note.id);
+  }
+
+  closeTab(id: string): void {
+    const tabs = this.tabs();
+    const index = tabs.findIndex((tab) => tab.id === id);
+    if (index === -1) return;
+
+    const nextTabs = tabs.filter((tab) => tab.id !== id);
+    this.tabs.set(nextTabs);
+
+    if (this.activeId() !== id) return;
+
+    if (nextTabs.length === 0) {
+      this.activeId.set(null);
+      return;
+    }
+    const neighborIndex = index > 0 ? index - 1 : 0;
+    this.activeId.set(nextTabs[neighborIndex].id);
+  }
+
+  setActive(id: string): void {
+    this.activeId.set(id);
+  }
+}

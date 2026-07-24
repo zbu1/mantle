@@ -1,49 +1,33 @@
 import { Component, inject, signal } from '@angular/core';
-import { RouterLink, RouterLinkActive } from '@angular/router';
-import { LucideClock, LucideHouse, LucideLock, LucideSettings, LucideStar, LucideTag } from '@lucide/angular';
+import { LucideClock, LucideLock, LucideStar } from '@lucide/angular';
 import { SidebarSection } from './sidebar-section/sidebar-section';
 import { SidebarItemButton } from './sidebar-item-button/sidebar-item-button';
-import { FAVORITES, RECENT_FILES, TAGS, VAULT_ITEMS } from './sidebar-data';
+import { FAVORITE_NOTES, RECENT_NOTES, TAG_GROUPS, VAULT_NOTES } from '../../notes/notes-data';
+import { Note } from '../../notes/note.model';
 import { SidebarState } from './sidebar-state';
-
-interface NavItem {
-  label: string;
-  path: string;
-}
+import { TabsState } from '../../notes/tabs-state';
 
 @Component({
   selector: 'app-sidebar',
-  imports: [
-    RouterLink,
-    RouterLinkActive,
-    SidebarSection,
-    SidebarItemButton,
-    LucideHouse,
-    LucideSettings,
-    LucideStar,
-    LucideClock,
-    LucideLock,
-    LucideTag,
-  ],
+  imports: [SidebarSection, SidebarItemButton, LucideStar, LucideClock, LucideLock],
   templateUrl: './sidebar.html',
   host: { class: 'contents' },
 })
 export class Sidebar {
   protected readonly state = inject(SidebarState);
+  private readonly tabsState = inject(TabsState);
 
-  protected readonly navItems: NavItem[] = [
-    { label: 'Home', path: '/' },
-    { label: 'Settings', path: '/settings' },
-    { label: 'Note', path: '/note' },
-  ];
-
-  protected readonly favorites = FAVORITES;
-  protected readonly recentFiles = RECENT_FILES;
-  protected readonly vaultItems = VAULT_ITEMS;
-  protected readonly tags = TAGS;
+  protected readonly favorites = FAVORITE_NOTES;
+  protected readonly recentFiles = RECENT_NOTES;
+  protected readonly vaultItems = VAULT_NOTES;
+  protected readonly tagGroups = TAG_GROUPS;
 
   private readonly dragStartX = signal<number | null>(null);
   private readonly dragStartWidth = signal<number>(0);
+
+  protected openNote(note: Note): void {
+    this.tabsState.openNote(note);
+  }
 
   protected onResizePointerDown(event: PointerEvent): void {
     if (this.state.collapsed()) return;

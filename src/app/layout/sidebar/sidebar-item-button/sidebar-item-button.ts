@@ -1,4 +1,4 @@
-import { Component, input } from '@angular/core';
+import { Component, input, output } from '@angular/core';
 
 @Component({
   selector: 'app-sidebar-item-button',
@@ -8,4 +8,5 @@ import { Component, input } from '@angular/core';
 export class SidebarItemButton {
   readonly label = input.required<string>();
   readonly collapsed = input(false);
+  readonly clicked = output<void>();
 }

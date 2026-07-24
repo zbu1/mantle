@@ -1,6 +1,5 @@
 import { TestBed } from '@angular/core/testing';
 import { provideZonelessChangeDetection } from '@angular/core';
-import { provideRouter } from '@angular/router';
 import { Sidebar } from './sidebar';
 import { SidebarState } from './sidebar-state';
 
@@ -11,7 +10,7 @@ describe('Sidebar', () => {
     Element.prototype.releasePointerCapture = () => {};
     TestBed.configureTestingModule({
       imports: [Sidebar],
-      providers: [provideZonelessChangeDetection(), provideRouter([])],
+      providers: [provideZonelessChangeDetection()],
     });
   });
 
