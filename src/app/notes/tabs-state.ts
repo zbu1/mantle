@@ -65,14 +65,24 @@ export class TabsState {
   }
 
   openNote(note: Note): void {
-    const existing = this.tabs().find((tab) => tab.noteId === note.id);
+    const tabs = this.tabs();
+    const existing = tabs.find((tab) => tab.noteId === note.id);
     if (existing) {
       this.setActive(existing.id);
       return;
     }
-    const tab: NoteTab = { id: createTabId(), noteId: note.id, title: note.title };
-    this.tabs.update((tabs) => [...tabs, tab]);
-    this.setActive(tab.id);
+
+    const activeId = this.activeId();
+    const activeIndex = activeId ? tabs.findIndex((tab) => tab.id === activeId) : -1;
+    if (activeIndex === -1) {
+      const tab: NoteTab = { id: createTabId(), noteId: note.id, title: note.title };
+      this.tabs.update((tabs) => [...tabs, tab]);
+      this.setActive(tab.id);
+      return;
+    }
+
+    const replacement: NoteTab = { id: tabs[activeIndex].id, noteId: note.id, title: note.title };
+    this.tabs.update((tabs) => tabs.map((tab, index) => (index === activeIndex ? replacement : tab)));
   }
 
   openNoteInBackground(note: Note): void {

@@ -54,13 +54,23 @@ describe('TabsState', () => {
     expect(state.activeId()).toBe(state.tabs()[0].id);
   });
 
+  it('replaces the active tab instead of creating a new one', () => {
+    const state = TestBed.inject(TabsState);
+    state.openNote(noteA);
+    const firstTabId = state.tabs()[0].id;
+    state.openNote(noteB);
+    expect(state.tabs().map((t) => t.noteId)).toEqual([noteB.id]);
+    expect(state.tabs()[0].id).toBe(firstTabId);
+    expect(state.activeId()).toBe(firstTabId);
+  });
+
   it('switches to the existing tab instead of duplicating it', () => {
     const state = TestBed.inject(TabsState);
     state.openNote(noteA);
+    state.openNoteInBackground(noteB);
     state.openNote(noteB);
-    state.openNote(noteA);
     expect(state.tabs().map((t) => t.noteId)).toEqual([noteA.id, noteB.id]);
-    expect(state.activeId()).toBe(state.tabs()[0].id);
+    expect(state.activeId()).toBe(state.tabs()[1].id);
   });
 
   it('opens a new background tab even if the note is already open', () => {
@@ -75,9 +85,10 @@ describe('TabsState', () => {
 
   it('closing a non-active tab leaves the active tab untouched', () => {
     const state = TestBed.inject(TabsState);
-    state.openNote(noteA);
-    state.openNote(noteB);
+    state.openNoteInBackground(noteA);
+    state.openNoteInBackground(noteB);
     const [tabA, tabB] = state.tabs();
+    state.setActive(tabB.id);
     state.closeTab(tabA.id);
     expect(state.tabs().map((t) => t.id)).toEqual([tabB.id]);
     expect(state.activeId()).toBe(tabB.id);
@@ -85,9 +96,9 @@ describe('TabsState', () => {
 
   it('closing the active tab activates the previous neighbor', () => {
     const state = TestBed.inject(TabsState);
-    state.openNote(noteA);
-    state.openNote(noteB);
-    state.openNote(noteC);
+    state.openNoteInBackground(noteA);
+    state.openNoteInBackground(noteB);
+    state.openNoteInBackground(noteC);
     const [tabA, tabB, tabC] = state.tabs();
     state.setActive(tabB.id);
     state.closeTab(tabB.id);
@@ -97,8 +108,8 @@ describe('TabsState', () => {
 
   it('closing the leftmost active tab activates the next tab', () => {
     const state = TestBed.inject(TabsState);
-    state.openNote(noteA);
-    state.openNote(noteB);
+    state.openNoteInBackground(noteA);
+    state.openNoteInBackground(noteB);
     const [tabA, tabB] = state.tabs();
     state.setActive(tabA.id);
     state.closeTab(tabA.id);
