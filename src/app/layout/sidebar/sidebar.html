@@ -9,7 +9,7 @@
       <app-sidebar-item-button label="Recent Files" [collapsed]="true">
         <svg sidebarItemIcon lucideClock [size]="14"></svg>
       </app-sidebar-item-button>
-      <app-sidebar-item-button label="Vault" [collapsed]="true">
+      <app-sidebar-item-button label="Workspace" [collapsed]="true">
         <svg sidebarItemIcon lucideFolders [size]="14"></svg>
       </app-sidebar-item-button>
       <app-sidebar-item-button label="Tags" [collapsed]="true">
@@ -38,9 +38,9 @@
       }
     </app-sidebar-section>
 
-    <app-sidebar-section id="vault" label="Vault">
+    <app-sidebar-section id="workspace" label="Workspace">
       <svg sidebarSectionIcon lucideFolders [size]="12"></svg>
-      @for (note of vaultItems; track note.id) {
+      @for (note of workspaceItems; track note.id) {
       <app-sidebar-item-button [label]="note.title" (clicked)="openNote(note)"
         (middleClicked)="openNoteInBackground(note)" (contextMenu)="openNoteContextMenu($event, note)">
         <svg sidebarItemIcon lucideFileText [size]="14" class="shrink-0"></svg>

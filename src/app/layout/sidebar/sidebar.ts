@@ -2,7 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 import { LucideClock, LucideFileText, LucideFolders, LucideStar, LucideTags } from '@lucide/angular';
 import { SidebarSection } from './sidebar-section/sidebar-section';
 import { SidebarItemButton } from './sidebar-item-button/sidebar-item-button';
-import { FAVORITE_NOTES, RECENT_NOTES, TAG_GROUPS, VAULT_NOTES } from '../../notes/notes-data';
+import { FAVORITE_NOTES, RECENT_NOTES, TAG_GROUPS, WORKSPACE_NOTES } from '../../notes/notes-data';
 import { Note } from '../../notes/note.model';
 import { SidebarState } from './sidebar-state';
 import { TabsState } from '../../notes/tabs-state';
@@ -22,7 +22,7 @@ export class Sidebar {
 
   protected readonly favorites = FAVORITE_NOTES;
   protected readonly recentFiles = RECENT_NOTES;
-  protected readonly vaultItems = VAULT_NOTES;
+  protected readonly workspaceItems = WORKSPACE_NOTES;
   protected readonly tagGroups = TAG_GROUPS;
 
   private readonly dragStartX = signal<number | null>(null);

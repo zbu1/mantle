@@ -14,7 +14,7 @@ describe('SidebarState', () => {
     const state = TestBed.inject(SidebarState);
     expect(state.width()).toBe(240);
     expect(state.collapsed()).toBe(false);
-    expect(state.sections()).toEqual({ favorites: true, recent: true, vault: true, tags: true });
+    expect(state.sections()).toEqual({ favorites: true, recent: true, workspace: true, tags: true });
   });
 
   it('falls back to defaults when storage is corrupt', () => {
@@ -26,7 +26,7 @@ describe('SidebarState', () => {
   it('hydrates from a previously persisted value', () => {
     localStorage.setItem(
       'mantle.sidebar.v1',
-      JSON.stringify({ width: 300, collapsed: true, sections: { favorites: false, recent: true, vault: true, tags: true } }),
+      JSON.stringify({ width: 300, collapsed: true, sections: { favorites: false, recent: true, workspace: true, tags: true } }),
     );
     const state = TestBed.inject(SidebarState);
     expect(state.width()).toBe(300);

@@ -103,7 +103,7 @@ export const RECENT_NOTES: Note[] = notesByIds([
   'changelog',
 ]);
 
-export const VAULT_NOTES: Note[] = MOCK_NOTES;
+export const WORKSPACE_NOTES: Note[] = MOCK_NOTES;
 
 export interface TagGroup {
   name: string;

@@ -1,6 +1,6 @@
 import { Injectable, computed, effect, signal } from '@angular/core';
 
-export type SectionId = 'favorites' | 'recent' | 'vault' | 'tags';
+export type SectionId = 'favorites' | 'recent' | 'workspace' | 'tags';
 
 interface PersistedSidebarState {
   width: number;
@@ -17,7 +17,7 @@ const RAIL_WIDTH = 52;
 const DEFAULT_STATE: PersistedSidebarState = {
   width: DEFAULT_WIDTH,
   collapsed: false,
-  sections: { favorites: true, recent: true, vault: true, tags: true },
+  sections: { favorites: true, recent: true, workspace: true, tags: true },
 };
 
 function clamp(value: number, min: number, max: number): number {
