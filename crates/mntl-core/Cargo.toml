@@ -1,0 +1,18 @@
+[package]
+name = "mntl-core"
+version = "0.1.0"
+edition = "2021"
+description = "Core cryptography engine and binary envelope format for .mntl and .mntl.enc files."
+authors = ["zanbowie138"]
+
+[dependencies]
+argon2 = "0.5"
+aes-kw = "0.2"
+chacha20poly1305 = "0.10"
+zeroize = { version = "1.8", features = ["zeroize_derive"] }
+base64 = "0.22"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+getrandom = { version = "0.2", features = ["js"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
