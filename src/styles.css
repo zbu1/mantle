@@ -45,6 +45,10 @@
 
 .ProseMirror {
   outline: none;
+  width: 100%;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  min-width: 0;
 }
 
 .ProseMirror p {

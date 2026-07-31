@@ -1,4 +1,5 @@
-<div #contentRoot class="scrollbar-thin flex h-full flex-col overflow-y-auto" (contextmenu)="onContentContextMenu($event)">
+<div #contentRoot class="scrollbar-thin flex h-full flex-col overflow-y-auto"
+  (contextmenu)="onContentContextMenu($event)">
   <div class="sticky top-0 z-10 flex shrink-0 items-center gap-1 bg-background px-4 py-2">
     <button type="button" title="Back" [disabled]="!tabsState.canGoBack()" (click)="goBack()"
       class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-surface hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent">
@@ -9,37 +10,37 @@
       <svg lucideArrowRight [size]="16"></svg>
     </button>
     @if (activeNote(); as note) {
-      <button type="button" title="Expand note" (click)="toggleFullscreen()"
-        class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-surface hover:text-foreground">
-        <svg lucideExpand [size]="16"></svg>
-      </button>
-      <span class="h-4 w-px shrink-0 bg-border"></span>
-      <span class="truncate text-xs text-muted-foreground">{{ notePath(note) }}</span>
-      <button type="button" title="Encryption"
-        class="inline-flex h-7 shrink-0 items-center gap-1 rounded px-1.5 text-muted-foreground hover:bg-surface hover:text-foreground">
-        <svg lucideLock [size]="13"></svg>
-        <svg lucideChevronDown [size]="12"></svg>
-      </button>
-      <span class="flex-1"></span>
-      <span class="shrink-0 text-xs text-muted-foreground">0 words · 0 characters</span>
-      <button type="button" title="Favorite"
-        class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-surface hover:text-foreground">
-        <svg lucideStar [size]="16"></svg>
-      </button>
-      <button type="button" title="More" (click)="onMoreClick($event, note)"
-        class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-surface hover:text-foreground">
-        <svg lucideEllipsis [size]="16"></svg>
-      </button>
+    <button type="button" title="Expand note" (click)="toggleFullscreen()"
+      class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-surface hover:text-foreground">
+      <svg lucideExpand [size]="16"></svg>
+    </button>
+    <span class="h-4 w-px shrink-0 bg-border"></span>
+    <span class="truncate text-xs text-muted-foreground">{{ notePath(note) }}</span>
+    <button type="button" title="Encryption"
+      class="inline-flex h-7 shrink-0 items-center gap-1 rounded px-1.5 text-muted-foreground hover:bg-surface hover:text-foreground">
+      <svg lucideLock [size]="13"></svg>
+      <svg lucideChevronDown [size]="12"></svg>
+    </button>
+    <span class="flex-1"></span>
+    <span class="shrink-0 text-xs text-muted-foreground">0 words · 0 characters</span>
+    <button type="button" title="Favorite"
+      class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-surface hover:text-foreground">
+      <svg lucideStar [size]="16"></svg>
+    </button>
+    <button type="button" title="More" (click)="onMoreClick($event, note)"
+      class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-surface hover:text-foreground">
+      <svg lucideEllipsis [size]="16"></svg>
+    </button>
     }
   </div>
   @if (activeNote(); as note) {
-    <div class="mx-auto max-w-3xl px-6 pb-6">
-      <h1 class="mb-4 text-lg font-semibold text-foreground">{{ note.title }}</h1>
-      <app-note-editor [noteId]="note.id" class="block h-full" />
-    </div>
+  <div class="mx-auto max-w-4xl px-6 pb-6 h-full min-w-0 w-full border-2">
+    <h1 class="mb-4 text-2xl font-semibold text-foreground">{{ note.title }}</h1>
+    <app-note-editor [noteId]="note.id" class="block h-full" />
+  </div>
   } @else {
-    <div class="flex flex-1 items-center justify-center px-6 pb-6 text-sm text-muted-foreground">
-      No notes open — select one from the sidebar.
-    </div>
+  <div class="flex flex-1 items-center justify-center px-6 pb-6 text-sm text-muted-foreground">
+    No notes open — select one from the sidebar.
+  </div>
   }
 </div>

@@ -1,11 +1,12 @@
 import { TestBed } from '@angular/core/testing';
 import { provideZonelessChangeDetection } from '@angular/core';
-import type { Editor } from '@tiptap/core';
+import type { EditorView } from 'prosemirror-view';
 import { NoteEditor } from './note-editor';
 import { NotesState } from '../notes-state';
+import { parseMarkdown } from './prosemirror/markdown-converter';
 
-function getEditor(component: NoteEditor): Editor {
-  return (component as unknown as { editor: Editor }).editor;
+function getEditorView(component: NoteEditor): EditorView {
+  return (component as unknown as { editorView: EditorView }).editorView;
 }
 
 describe('NoteEditor', () => {
@@ -29,36 +30,38 @@ describe('NoteEditor', () => {
     expect(fixture.nativeElement.textContent).toContain(note.content);
   });
 
-  it('saves edits back into NotesState through onUpdate', async () => {
+  it('saves edits back into NotesState through transaction', async () => {
     const fixture = TestBed.createComponent(NoteEditor);
     fixture.componentRef.setInput('noteId', 'daily-standup');
     fixture.detectChanges();
     await fixture.whenStable();
 
     const notesState = TestBed.inject(NotesState);
-    const editor = getEditor(fixture.componentInstance);
+    const view = getEditorView(fixture.componentInstance);
 
-    editor.commands.setContent('Updated content', { emitUpdate: true });
+    const newDoc = parseMarkdown('Updated content');
+    const tr = view.state.tr.replaceWith(0, view.state.doc.content.size, newDoc);
+    view.dispatch(tr);
 
     expect(notesState.getNote('daily-standup')?.content.trim()).toBe('Updated content');
   });
 
-  it('swaps content when noteId changes without recreating the editor', async () => {
+  it('swaps content when noteId changes without recreating the editor view', async () => {
     const fixture = TestBed.createComponent(NoteEditor);
     fixture.componentRef.setInput('noteId', 'daily-standup');
     fixture.detectChanges();
     await fixture.whenStable();
 
     const notesState = TestBed.inject(NotesState);
-    const editorBefore = getEditor(fixture.componentInstance);
+    const viewBefore = getEditorView(fixture.componentInstance);
     const otherNote = notesState.getNote('architecture-notes')!;
 
     fixture.componentRef.setInput('noteId', 'architecture-notes');
     fixture.detectChanges();
     await fixture.whenStable();
 
-    const editorAfter = getEditor(fixture.componentInstance);
-    expect(editorAfter).toBe(editorBefore);
+    const viewAfter = getEditorView(fixture.componentInstance);
+    expect(viewAfter).toBe(viewBefore);
     expect(fixture.nativeElement.textContent).toContain(otherNote.content);
   });
 });

@@ -1,7 +1,6 @@
 <div
   #panel
-  style="display: none"
-  class="scrollbar-thin max-h-72 w-56 overflow-y-auto rounded-md border border-border bg-surface p-1 text-surface-foreground shadow-md"
+  class="invisible pointer-events-none scrollbar-thin max-h-72 w-56 overflow-y-auto rounded-md border border-border bg-surface p-1 text-surface-foreground opacity-0 shadow-md transition-opacity duration-100"
 >
   @for (item of items(); track item.id; let i = $index) {
     <button
