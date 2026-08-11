@@ -10,12 +10,16 @@ import {
   LucideMinus,
   LucideQuote,
 } from '@lucide/angular';
+import { MenuItem } from '../../../shared/menu/menu-item';
+import { MenuSurface } from '../../../shared/menu/menu-surface';
 import { SlashMenuState } from './slash-menu-state';
 import { SlashCommandItem } from './slash-menu.model';
 
 @Component({
   selector: 'app-slash-menu',
   imports: [
+    MenuSurface,
+    MenuItem,
     LucideHeading1,
     LucideHeading2,
     LucideHeading3,
@@ -34,7 +38,9 @@ export class SlashMenu {
   protected readonly items = this.state.items;
   protected readonly selectedIndex = this.state.selectedIndex;
 
-  private readonly panel = viewChild.required<ElementRef<HTMLElement>>('panel');
+  // #panel is an <app-menu-surface>; the slash-menu plugin positions and shows
+  // the host element directly, so read ElementRef instead of the instance.
+  private readonly panel = viewChild.required('panel', { read: ElementRef<HTMLElement> });
 
   panelElement(): HTMLElement {
     return this.panel().nativeElement;

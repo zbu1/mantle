@@ -10,9 +10,13 @@ import {
   LucideTrash2,
   LucideX,
 } from '@lucide/angular';
+import { MenuItem } from '../menu/menu-item';
+import { MenuSeparator } from '../menu/menu-separator';
+import { MenuSurface } from '../menu/menu-surface';
 import { ContextMenuState } from './context-menu-state';
 import { ContextMenuAction } from './context-menu.model';
 
+// Matches the w-56 on MenuSurface.
 const MENU_WIDTH = 224;
 const ITEM_HEIGHT = 28;
 const SEPARATOR_HEIGHT = 9;
@@ -21,7 +25,20 @@ const VIEWPORT_MARGIN = 8;
 
 @Component({
   selector: 'app-context-menu',
-  imports: [LucideFileText, LucideSquarePlus, LucideCopy, LucidePencil, LucideCopyPlus, LucideStar, LucideStarOff, LucideX, LucideTrash2],
+  imports: [
+    MenuSurface,
+    MenuItem,
+    MenuSeparator,
+    LucideFileText,
+    LucideSquarePlus,
+    LucideCopy,
+    LucidePencil,
+    LucideCopyPlus,
+    LucideStar,
+    LucideStarOff,
+    LucideX,
+    LucideTrash2,
+  ],
   templateUrl: './context-menu.html',
 })
 export class ContextMenu {
@@ -29,7 +46,9 @@ export class ContextMenu {
 
   protected readonly menu = this.state.menu;
 
-  protected readonly panel = viewChild<ElementRef<HTMLElement>>('panel');
+  // #panel is an <app-menu-surface>, so read its host element rather than the
+  // component instance — the pointerdown guard below needs to hit-test the DOM.
+  protected readonly panel = viewChild('panel', { read: ElementRef<HTMLElement> });
 
   protected readonly style = computed(() => {
     const menu = this.menu();
