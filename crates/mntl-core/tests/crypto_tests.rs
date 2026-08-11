@@ -1,7 +1,7 @@
 use mntl_core::{
     decode_unencrypted_note, decrypt_note, derive_kek, derive_kek_with_params,
-    encode_unencrypted_note, encrypt_note, encrypt_note_with_params, extract_header_only,
-    KdfParams, MntlError, CURRENT_VERSION, MAGIC_MENC, MAGIC_MNTL,
+    encode_unencrypted_note, encrypt_note, encrypt_note_with_params, extract_encrypted_header,
+    extract_unencrypted_header, KdfParams, MntlError, CURRENT_VERSION, MAGIC_MENC,
 };
 
 #[test]
@@ -39,18 +39,38 @@ fn test_encrypt_decrypt_roundtrip() {
 
 #[test]
 fn test_unencrypted_roundtrip() {
-    let profile_id = "550e8400-e29b-41d4-a716-446655440000";
-    let plaintext = b"# Unencrypted Markdown Note\n\nPublic details here.";
+    let content = "# Unencrypted Markdown Note\n\nPublic details here.";
 
-    let blob = encode_unencrypted_note(profile_id, plaintext).unwrap();
-    assert_eq!(&blob[0..4], MAGIC_MNTL);
+    let file = encode_unencrypted_note(content).unwrap();
 
-    let decoded = decode_unencrypted_note(&blob).unwrap();
-    assert_eq!(decoded, plaintext);
+    // The file is a plain, human-readable YAML-frontmatter Markdown document.
+    assert!(file.starts_with("---\nv: 2\n---\n"));
+    assert!(file.contains(content));
+
+    let decoded = decode_unencrypted_note(&file).unwrap();
+    assert_eq!(decoded, content);
 }
 
 #[test]
-fn test_extract_header_only() {
+fn test_unencrypted_roundtrip_empty_body() {
+    let file = encode_unencrypted_note("").unwrap();
+    let decoded = decode_unencrypted_note(&file).unwrap();
+    assert_eq!(decoded, "");
+}
+
+#[test]
+fn test_unencrypted_body_containing_delimiter_line() {
+    // A body that itself contains a line of exactly "---" (e.g. a Markdown
+    // horizontal rule) must not be mistaken for the frontmatter close.
+    let content = "Above\n\n---\n\nBelow";
+
+    let file = encode_unencrypted_note(content).unwrap();
+    let decoded = decode_unencrypted_note(&file).unwrap();
+    assert_eq!(decoded, content);
+}
+
+#[test]
+fn test_extract_headers() {
     let password = "MySecurePassword";
     let salt = b"random_salt_bytes";
     let profile_id = "profile-uuid-abc-123";
@@ -59,15 +79,19 @@ fn test_extract_header_only() {
     let kek = derive_kek(password, salt).unwrap();
     let encrypted_blob = encrypt_note(&kek[..], salt, profile_id, plaintext).unwrap();
 
-    let header = extract_header_only(&encrypted_blob).unwrap();
+    let header = extract_encrypted_header(&encrypted_blob).unwrap();
     assert_eq!(header.v, CURRENT_VERSION);
     assert_eq!(header.credential_profile, profile_id);
-    assert!(header.crypto.is_some());
 
-    let unencrypted_blob = encode_unencrypted_note(profile_id, plaintext).unwrap();
-    let header_unencrypted = extract_header_only(&unencrypted_blob).unwrap();
-    assert_eq!(header_unencrypted.credential_profile, profile_id);
-    assert!(header_unencrypted.crypto.is_none());
+    let unencrypted_file = encode_unencrypted_note("Body that should not be touched.").unwrap();
+    let header_unencrypted = extract_unencrypted_header(&unencrypted_file).unwrap();
+    assert_eq!(header_unencrypted.v, CURRENT_VERSION);
+}
+
+#[test]
+fn test_missing_frontmatter_fails() {
+    let result = decode_unencrypted_note("Just plain text, no frontmatter at all.");
+    assert!(matches!(result, Err(MntlError::MissingFrontmatter)));
 }
 
 #[test]
@@ -137,9 +161,8 @@ fn test_custom_kdf_params() {
     let blob =
         encrypt_note_with_params(&kek[..], salt, profile_id, plaintext, &custom_params).unwrap();
 
-    let header = extract_header_only(&blob).unwrap();
-    let crypto_meta = header.crypto.unwrap();
-    assert_eq!(crypto_meta.kdf, custom_params);
+    let header = extract_encrypted_header(&blob).unwrap();
+    assert_eq!(header.crypto.kdf, custom_params);
 
     let decrypted = decrypt_note(&kek[..], &blob).unwrap();
     assert_eq!(decrypted, plaintext);
