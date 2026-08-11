@@ -8,6 +8,8 @@
     "types": ["jest", "node"]
   },
   "include": [
+    "setup-jest.ts",
+    "src/testing/**/*.ts",
     "src/**/*.spec.ts",
     "src/**/*.d.ts"
   ]
