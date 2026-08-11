@@ -11,15 +11,21 @@ import {
 } from '@angular/core';
 import { EditorState, Command } from 'prosemirror-state';
 import { EditorView } from 'prosemirror-view';
+import { Slice } from 'prosemirror-model';
 import { history, undo, redo } from 'prosemirror-history';
 import { keymap } from 'prosemirror-keymap';
 import { baseKeymap, chainCommands, toggleMark } from 'prosemirror-commands';
 import { splitListItem, sinkListItem, liftListItem } from 'prosemirror-schema-list';
+import { undoInputRule } from 'prosemirror-inputrules';
+import { gapCursor } from 'prosemirror-gapcursor';
 
 import { NotesState } from '../notes-state';
 import { schema } from './prosemirror/schema';
 import { parseMarkdown, serializeMarkdown } from './prosemirror/markdown-converter';
 import { createSlashMenuPlugin } from './prosemirror/plugins/slash-menu-plugin';
+import { buildMarkdownInputRules } from './prosemirror/plugins/markdown-input-rules';
+import { demoteEmptyLeadingBlock } from './prosemirror/commands/demote-empty-leading-block';
+import { TaskItemView } from './prosemirror/nodeviews/task-item-view';
 
 import { SlashMenu } from './slash-menu/slash-menu';
 import { SlashMenuState } from './slash-menu/slash-menu-state';
@@ -46,6 +52,9 @@ function buildEditorKeymap() {
       liftListItem(schema.nodes['list_item']),
       liftListItem(schema.nodes['task_item'])
     ),
+    // undoInputRule first, so Backspace right after an auto-conversion restores
+    // the literal markdown that triggered it.
+    Backspace: chainCommands(undoInputRule, demoteEmptyLeadingBlock, baseKeymap['Backspace']),
   };
   return keymap(keys);
 }
@@ -78,13 +87,21 @@ export class NoteEditor {
         doc: parseMarkdown(content),
         plugins: [
           history(),
+          buildMarkdownInputRules(),
           buildEditorKeymap(),
+          gapCursor(),
           // createSlashMenuPlugin(this.slashMenuState, () => this.slashMenuCmp().panelElement()),
         ],
       });
 
       const view = new EditorView(this.mount().nativeElement, {
         state,
+        nodeViews: {
+          task_item: (node, nodeView, getPos) => new TaskItemView(node, nodeView, getPos),
+        },
+        // Only affects plain-text pastes; HTML clipboard content still goes
+        // through the default DOM parser.
+        clipboardTextParser: (text) => Slice.maxOpen(parseMarkdown(text).content),
         dispatchTransaction: (tr) => {
           const newState = view.state.apply(tr);
           view.updateState(newState);

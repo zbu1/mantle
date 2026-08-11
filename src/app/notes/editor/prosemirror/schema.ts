@@ -45,6 +45,7 @@ const baseNodes = OrderedMap.from<NodeSpec>({
     },
   },
   code_block: {
+    attrs: { params: { default: '' } },
     content: 'text*',
     marks: '',
     group: 'block',
@@ -123,6 +124,9 @@ export const marks: Record<string, MarkSpec> = {
     },
   },
   code: {
+    // prosemirror-inputrules keys its code guard off `spec.code`, not the mark
+    // name, so this flag is what stops input rules firing inside code spans.
+    code: true,
     parseDOM: [{ tag: 'code' }],
     toDOM() {
       return ['code', 0];
