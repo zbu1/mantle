@@ -84,6 +84,14 @@
   margin: 0.4em 0;
 }
 
+.ProseMirror ul {
+  list-style: disc;
+}
+
+.ProseMirror ol {
+  list-style: decimal;
+}
+
 .ProseMirror ul[data-type='taskList'] {
   list-style: none;
   padding-left: 0;
@@ -97,6 +105,57 @@
 
 .ProseMirror ul[data-type='taskList'] li > label {
   margin-top: 0.2em;
+}
+
+.task-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: none;
+  width: 1.05em;
+  height: 1.05em;
+  margin: 0.15em 0 0;
+  border: 1.5px solid var(--border);
+  border-radius: 4px;
+  background-color: var(--background);
+  cursor: pointer;
+  display: grid;
+  place-content: center;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.task-checkbox::before {
+  content: '';
+  width: 0.6em;
+  height: 0.6em;
+  clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+  transform: scale(0);
+  transform-origin: center;
+  transition: transform 0.12s ease;
+  background-color: var(--primary-foreground);
+}
+
+.task-checkbox:hover {
+  border-color: var(--muted-foreground);
+}
+
+.task-checkbox:checked {
+  background-color: var(--primary);
+  border-color: var(--primary);
+}
+
+.task-checkbox:checked::before {
+  transform: scale(1);
+}
+
+.task-checkbox:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.ProseMirror li[data-type='taskItem'][data-checked='true'] > .task-content {
+  color: var(--muted-foreground);
+  text-decoration: line-through;
+  text-decoration-color: var(--muted-foreground);
 }
 
 .ProseMirror blockquote {

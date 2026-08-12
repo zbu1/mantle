@@ -31,6 +31,12 @@ function pressBackspace(view: EditorView): boolean {
   );
 }
 
+function pressEnter(view: EditorView): boolean {
+  return !!view.someProp('handleKeyDown', (f) =>
+    f(view, new KeyboardEvent('keydown', { key: 'Enter' }))
+  );
+}
+
 /** Empties the document so rules run against a clean paragraph. */
 function clear(view: EditorView) {
   const empty = schema.nodes['doc'].createAndFill()!;
@@ -299,6 +305,72 @@ describe('markdown input rules', () => {
 
       pressBackspace(view);
       expect(view.state.doc.firstChild!.type).toBe(schema.nodes['heading']);
+    });
+
+    it('lifts the only list item out of the list when backspacing at its start', async () => {
+      const { view } = await setup();
+      type(view, '1. first');
+      view.dispatch(view.state.tr.setSelection(TextSelection.atStart(view.state.doc)));
+
+      expect(pressBackspace(view)).toBe(true);
+      const block = view.state.doc.firstChild!;
+      expect(block.type).toBe(schema.nodes['paragraph']);
+      expect(block.textContent).toBe('first');
+    });
+
+    it('drops a list item to a plain paragraph in place, keeping its text and cursor on the same line', async () => {
+      const { view } = await setup();
+      type(view, '1. first');
+      pressEnter(view);
+      type(view, 'second');
+      const $from = view.state.selection.$from;
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, $from.start())));
+
+      expect(pressBackspace(view)).toBe(true);
+      expect(view.state.doc.childCount).toBe(2);
+      const list = view.state.doc.firstChild!;
+      expect(list.type).toBe(schema.nodes['ordered_list']);
+      expect(list.childCount).toBe(1);
+      expect(list.firstChild!.textContent).toBe('first');
+      const trailing = view.state.doc.lastChild!;
+      expect(trailing.type).toBe(schema.nodes['paragraph']);
+      expect(trailing.textContent).toBe('second');
+      const $cursor = view.state.selection.$from;
+      expect($cursor.parent).toBe(trailing);
+      expect($cursor.parentOffset).toBe(0);
+    });
+
+    it('merges into the previous item on a second Backspace, once the marker is already gone', async () => {
+      const { view } = await setup();
+      type(view, '1. first');
+      pressEnter(view);
+      type(view, 'second');
+      const $from = view.state.selection.$from;
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, $from.start())));
+
+      pressBackspace(view); // drops the marker, "second" becomes a plain paragraph
+      expect(pressBackspace(view)).toBe(true);
+
+      const list = view.state.doc.firstChild!;
+      expect(view.state.doc.childCount).toBe(1);
+      expect(list.type).toBe(schema.nodes['ordered_list']);
+      expect(list.childCount).toBe(1);
+      expect(list.firstChild!.textContent).toBe('firstsecond');
+    });
+
+    it('merges a trailing empty paragraph back into a list without adding a new entry', async () => {
+      const { view } = await setup();
+      type(view, '1. first');
+      pressEnter(view); // new (empty) second item
+      pressEnter(view); // empty item ends the list, leaving a trailing paragraph
+      expect(view.state.doc.childCount).toBe(2);
+
+      expect(pressBackspace(view)).toBe(true);
+      expect(view.state.doc.childCount).toBe(1);
+      const list = view.state.doc.firstChild!;
+      expect(list.type).toBe(schema.nodes['ordered_list']);
+      expect(list.childCount).toBe(1);
+      expect(list.firstChild!.textContent).toBe('first');
     });
   });
 

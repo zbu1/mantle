@@ -66,9 +66,9 @@ export const SLASH_COMMAND_ITEMS: SlashCommandItem[] = [
   },
   {
     id: 'task-list',
-    label: 'Task List',
+    label: 'To-do List',
     icon: 'task-list',
-    keywords: ['task', 'todo', 'checkbox', 'checklist'],
+    keywords: ['task', 'todo', 'to-do', 'checkbox', 'checklist'],
     run: (view) => toggleTaskList(view),
   },
   {

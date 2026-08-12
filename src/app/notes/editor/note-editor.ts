@@ -14,7 +14,7 @@ import { EditorView } from 'prosemirror-view';
 import { Slice } from 'prosemirror-model';
 import { history, undo, redo } from 'prosemirror-history';
 import { keymap } from 'prosemirror-keymap';
-import { baseKeymap, chainCommands, toggleMark } from 'prosemirror-commands';
+import { baseKeymap, chainCommands, joinTextblockBackward, toggleMark } from 'prosemirror-commands';
 import { splitListItem, sinkListItem, liftListItem } from 'prosemirror-schema-list';
 import { undoInputRule } from 'prosemirror-inputrules';
 import { gapCursor } from 'prosemirror-gapcursor';
@@ -25,6 +25,7 @@ import { parseMarkdown, serializeMarkdown } from './prosemirror/markdown-convert
 import { createSlashMenuPlugin } from './prosemirror/plugins/slash-menu-plugin';
 import { buildMarkdownInputRules } from './prosemirror/plugins/markdown-input-rules';
 import { demoteEmptyLeadingBlock } from './prosemirror/commands/demote-empty-leading-block';
+import { liftListItemAtStart } from './prosemirror/commands/lift-list-item-at-start';
 import { TaskItemView } from './prosemirror/nodeviews/task-item-view';
 
 import { SlashMenu } from './slash-menu/slash-menu';
@@ -53,8 +54,24 @@ function buildEditorKeymap() {
       liftListItem(schema.nodes['task_item'])
     ),
     // undoInputRule first, so Backspace right after an auto-conversion restores
-    // the literal markdown that triggered it.
-    Backspace: chainCommands(undoInputRule, demoteEmptyLeadingBlock, baseKeymap['Backspace']),
+    // the literal markdown that triggered it. liftListItemAtStart comes next so
+    // Backspace at the very start of a list item just drops its marker in
+    // place (cursor and text stay put) rather than merging into the previous
+    // item — a second Backspace, now outside the list, falls through to
+    // joinTextblockBackward. That runs before the base Backspace handling so
+    // merges across list items (or a paragraph merging back into one) join
+    // text directly into the neighbouring textblock, instead of baseKeymap's
+    // joinBackward nesting a same-type node (e.g. a second paragraph inside
+    // the previous list_item, or a new list_item for a plain paragraph) that
+    // leaves the marker gone but the content still indented.
+    Backspace: chainCommands(
+      undoInputRule,
+      demoteEmptyLeadingBlock,
+      liftListItemAtStart(schema.nodes['list_item']),
+      liftListItemAtStart(schema.nodes['task_item']),
+      joinTextblockBackward,
+      baseKeymap['Backspace']
+    ),
   };
   return keymap(keys);
 }

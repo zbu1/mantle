@@ -21,10 +21,12 @@ export class TaskItemView implements NodeView {
 
     this.checkbox = document.createElement('input');
     this.checkbox.type = 'checkbox';
+    this.checkbox.className = 'task-checkbox';
     this.checkbox.checked = !!node.attrs['checked'];
     this.checkbox.addEventListener('change', () => this.toggle());
 
     this.contentDOM = document.createElement('div');
+    this.contentDOM.className = 'task-content';
     this.dom.append(this.checkbox, this.contentDOM);
     this.syncChecked();
   }
