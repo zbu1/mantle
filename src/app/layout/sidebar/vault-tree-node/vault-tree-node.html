@@ -1,0 +1,31 @@
+@if (asFolder(); as folder) {
+<button type="button" (click)="toggleExpanded()" [style.padding-left.px]="8 + depth() * 12"
+  class="flex w-full items-center gap-1.5 rounded-md py-1 pr-2 text-xs text-foreground/80 hover:bg-background hover:text-foreground">
+  <svg lucideChevronRight [size]="12" class="shrink-0 transition-transform duration-150"
+    [class.rotate-90]="expanded()"></svg>
+  <svg lucideFolder [size]="14" class="shrink-0 text-muted-foreground"></svg>
+  <span class="truncate">{{ folder.name }}</span>
+</button>
+@if (expanded()) {
+@for (child of folder.children; track child.relPath) {
+<app-vault-tree-node [node]="child" [depth]="depth() + 1" [openLockedHint]="openLockedHint()"
+  (openNote)="openNote.emit($event)" (openNoteInBackground)="openNoteInBackground.emit($event)"
+  (noteContextMenu)="noteContextMenu.emit($event)" (lockedClicked)="lockedClicked.emit($event)" />
+}
+}
+} @else if (asNote(); as note) {
+<div [style.padding-left.px]="depth() * 12">
+  <app-sidebar-item-button [label]="note.name" (clicked)="onNoteClick(note)"
+    (middleClicked)="openNoteInBackground.emit(note)"
+    (contextMenu)="noteContextMenu.emit({ event: $event, note })">
+    @if (note.locked) {
+    <svg sidebarItemIcon lucideLock [size]="13" class="shrink-0"></svg>
+    } @else {
+    <svg sidebarItemIcon lucideFileText [size]="14" class="shrink-0"></svg>
+    }
+  </app-sidebar-item-button>
+  @if (openLockedHint() === note.relPath) {
+  <div class="px-2 pb-1 text-[11px] text-muted-foreground">Encrypted notes aren't supported yet.</div>
+  }
+</div>
+}

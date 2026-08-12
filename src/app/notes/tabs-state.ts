@@ -1,6 +1,5 @@
 import { Injectable, computed, effect, signal } from '@angular/core';
-import { Note } from './note.model';
-import { findNote } from './notes-data';
+import { NoteRef } from './note.model';
 
 export interface NoteTab {
   id: string;
@@ -9,8 +8,8 @@ export interface NoteTab {
 }
 
 interface TabHistory {
-  back: string[];
-  forward: string[];
+  back: NoteRef[];
+  forward: NoteRef[];
 }
 
 interface PersistedTabsState {
@@ -38,7 +37,7 @@ function readFromStorage(): PersistedTabsState {
     const parsed = JSON.parse(raw);
     const tabs: NoteTab[] = Array.isArray(parsed.tabs)
       ? parsed.tabs
-          .filter((tab: NoteTab) => !!tab?.id && !!findNote(tab?.noteId))
+          .filter((tab: NoteTab) => !!tab?.id && !!tab?.noteId && typeof tab?.title === 'string')
           .map((tab: NoteTab) => ({ id: tab.id, noteId: tab.noteId, title: tab.title }))
       : [];
     const activeId = tabs.some((tab) => tab.id === parsed.activeId) ? parsed.activeId : (tabs[0]?.id ?? null);
@@ -80,7 +79,7 @@ export class TabsState {
     });
   }
 
-  openNote(note: Note): void {
+  openNote(note: NoteRef): void {
     const tabs = this.tabs();
     const existing = tabs.find((tab) => tab.noteId === note.id);
     if (existing) {
@@ -97,13 +96,13 @@ export class TabsState {
       return;
     }
 
-    const previousNoteId = tabs[activeIndex].noteId;
+    const previous: NoteRef = { id: tabs[activeIndex].noteId, title: tabs[activeIndex].title };
     const replacement: NoteTab = { id: tabs[activeIndex].id, noteId: note.id, title: note.title };
     this.tabs.update((tabs) => tabs.map((tab, index) => (index === activeIndex ? replacement : tab)));
-    this.pushHistory(replacement.id, previousNoteId);
+    this.pushHistory(replacement.id, previous);
   }
 
-  openNoteInBackground(note: Note): void {
+  openNoteInBackground(note: NoteRef): void {
     const tab: NoteTab = { id: createTabId(), noteId: note.id, title: note.title };
     this.tabs.update((tabs) => [...tabs, tab]);
   }
@@ -141,17 +140,14 @@ export class TabsState {
     const index = tabs.findIndex((tab) => tab.id === tabId);
     if (index === -1) return;
 
-    const targetNoteId = hist.back[hist.back.length - 1];
-    const note = findNote(targetNoteId);
-    if (!note) return;
-
-    const currentNoteId = tabs[index].noteId;
+    const target = hist.back[hist.back.length - 1];
+    const current: NoteRef = { id: tabs[index].noteId, title: tabs[index].title };
     this.historyByTabId.update((map) => ({
       ...map,
-      [tabId]: { back: hist.back.slice(0, -1), forward: [currentNoteId, ...hist.forward] },
+      [tabId]: { back: hist.back.slice(0, -1), forward: [current, ...hist.forward] },
     }));
     this.tabs.update((tabs) =>
-      tabs.map((tab, i) => (i === index ? { ...tab, noteId: note.id, title: note.title } : tab)),
+      tabs.map((tab, i) => (i === index ? { ...tab, noteId: target.id, title: target.title } : tab)),
     );
   }
 
@@ -165,24 +161,21 @@ export class TabsState {
     const index = tabs.findIndex((tab) => tab.id === tabId);
     if (index === -1) return;
 
-    const targetNoteId = hist.forward[0];
-    const note = findNote(targetNoteId);
-    if (!note) return;
-
-    const currentNoteId = tabs[index].noteId;
+    const target = hist.forward[0];
+    const current: NoteRef = { id: tabs[index].noteId, title: tabs[index].title };
     this.historyByTabId.update((map) => ({
       ...map,
-      [tabId]: { back: [...hist.back, currentNoteId], forward: hist.forward.slice(1) },
+      [tabId]: { back: [...hist.back, current], forward: hist.forward.slice(1) },
     }));
     this.tabs.update((tabs) =>
-      tabs.map((tab, i) => (i === index ? { ...tab, noteId: note.id, title: note.title } : tab)),
+      tabs.map((tab, i) => (i === index ? { ...tab, noteId: target.id, title: target.title } : tab)),
     );
   }
 
-  private pushHistory(tabId: string, previousNoteId: string): void {
+  private pushHistory(tabId: string, previous: NoteRef): void {
     this.historyByTabId.update((map) => {
       const hist = map[tabId] ?? { back: [], forward: [] };
-      return { ...map, [tabId]: { back: [...hist.back, previousNoteId], forward: [] } };
+      return { ...map, [tabId]: { back: [...hist.back, previous], forward: [] } };
     });
   }
 }

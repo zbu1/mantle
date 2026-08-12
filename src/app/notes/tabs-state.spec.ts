@@ -1,11 +1,11 @@
 import { TestBed } from '@angular/core/testing';
 import { provideZonelessChangeDetection } from '@angular/core';
 import { TabsState } from './tabs-state';
-import { findNote } from './notes-data';
+import { NoteRef } from './note.model';
 
-const noteA = findNote('daily-standup')!;
-const noteB = findNote('architecture-notes')!;
-const noteC = findNote('todo')!;
+const noteA: NoteRef = { id: 'daily-standup', title: 'daily-standup' };
+const noteB: NoteRef = { id: 'architecture-notes', title: 'architecture-notes' };
+const noteC: NoteRef = { id: 'todo', title: 'todo' };
 
 describe('TabsState', () => {
   beforeEach(() => {
@@ -27,10 +27,20 @@ describe('TabsState', () => {
     expect(state.tabs()).toEqual([]);
   });
 
-  it('drops persisted tabs that no longer reference a real note', () => {
+  it('keeps persisted tabs even if the note no longer exists on disk (validated lazily by the editor)', () => {
     localStorage.setItem(
       'mantle.tabs.v2',
       JSON.stringify({ tabs: [{ id: 'tab-1', noteId: 'deleted-note', title: 'Gone' }], activeId: 'tab-1' }),
+    );
+    const state = TestBed.inject(TabsState);
+    expect(state.tabs()).toEqual([{ id: 'tab-1', noteId: 'deleted-note', title: 'Gone' }]);
+    expect(state.activeId()).toBe('tab-1');
+  });
+
+  it('drops persisted tabs that are structurally malformed', () => {
+    localStorage.setItem(
+      'mantle.tabs.v2',
+      JSON.stringify({ tabs: [{ id: 'tab-1' }, { noteId: 'x', title: 'y' }], activeId: 'tab-1' }),
     );
     const state = TestBed.inject(TabsState);
     expect(state.tabs()).toEqual([]);

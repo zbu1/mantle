@@ -3,10 +3,10 @@ import {
   DestroyRef,
   ElementRef,
   afterNextRender,
+  computed,
   effect,
   inject,
   input,
-  untracked,
   viewChild,
 } from '@angular/core';
 import { EditorState, Command } from 'prosemirror-state';
@@ -77,14 +77,15 @@ export class NoteEditor {
   private editorView: EditorView | undefined;
   private lastAppliedNoteId: string | undefined;
 
+  protected readonly entryStatus = computed(() => this.notesState.entry(this.noteId())?.status);
+
   constructor() {
     afterNextRender(() => {
       const id = this.noteId();
-      const content = this.notesState.getNote(id)?.content ?? '';
 
       const state = EditorState.create({
         schema,
-        doc: parseMarkdown(content),
+        doc: parseMarkdown(''),
         plugins: [
           history(),
           buildMarkdownInputRules(),
@@ -114,21 +115,28 @@ export class NoteEditor {
       });
 
       this.editorView = view;
-      this.lastAppliedNoteId = id;
+      this.applyIfReady(id);
     });
 
     effect(() => {
       const id = this.noteId();
-      const view = this.editorView;
-      if (!view || id === this.lastAppliedNoteId) return;
-
-      const content = untracked(() => this.notesState.getNote(id)?.content ?? '');
-      const newDoc = parseMarkdown(content);
-      const tr = view.state.tr.replaceWith(0, view.state.doc.content.size, newDoc);
-      view.dispatch(tr);
-      this.lastAppliedNoteId = id;
+      this.notesState.ensureLoaded(id);
+      this.notesState.entry(id); // signal read so this effect reruns once loading completes
+      this.applyIfReady(id);
     });
 
     this.destroyRef.onDestroy(() => this.editorView?.destroy());
+  }
+
+  private applyIfReady(id: string): void {
+    const view = this.editorView;
+    if (!view) return;
+    const entry = this.notesState.entry(id);
+    if (!entry || entry.status !== 'loaded' || id === this.lastAppliedNoteId) return;
+
+    const newDoc = parseMarkdown(entry.note.content);
+    const tr = view.state.tr.replaceWith(0, view.state.doc.content.size, newDoc);
+    view.dispatch(tr);
+    this.lastAppliedNoteId = id;
   }
 }

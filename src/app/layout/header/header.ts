@@ -4,6 +4,11 @@ import { LucideCopy, LucideMinus, LucidePanelLeft, LucideSquare, LucideX } from 
 import { SidebarState } from '../sidebar/sidebar-state';
 import { TabsState } from '../../notes/tabs-state';
 
+/** True when running inside a Tauri webview (the IPC bridge is present). */
+function isTauri(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}
+
 @Component({
   selector: 'app-header',
   imports: [LucidePanelLeft, LucideMinus, LucideSquare, LucideCopy, LucideX],
@@ -20,6 +25,8 @@ export class Header {
   );
 
   constructor() {
+    if (!isTauri()) return;
+
     const win = getCurrentWindow();
     win.isMaximized().then((maximized) => this.isMaximized.set(maximized));
     win.onResized(async () => this.isMaximized.set(await win.isMaximized())).then((unlisten) => {
@@ -41,14 +48,14 @@ export class Header {
   }
 
   minimize(): void {
-    getCurrentWindow().minimize();
+    if (isTauri()) getCurrentWindow().minimize();
   }
 
   toggleMaximize(): void {
-    getCurrentWindow().toggleMaximize();
+    if (isTauri()) getCurrentWindow().toggleMaximize();
   }
 
   close(): void {
-    getCurrentWindow().close();
+    if (isTauri()) getCurrentWindow().close();
   }
 }

@@ -1,4 +1,15 @@
 <div class="relative h-full text-sm text-foreground/90">
   <div #mount class="h-full min-w-0 w-full"></div>
+  @if (entryStatus(); as status) {
+  @if (status === 'loading') {
+  <div class="absolute inset-0 flex items-center justify-center bg-background/60 text-xs text-muted-foreground">
+    Loading note…
+  </div>
+  } @else if (status === 'error') {
+  <div class="absolute inset-0 flex items-center justify-center bg-background/80 text-xs text-destructive">
+    Failed to load note.
+  </div>
+  }
+  }
   <app-slash-menu #slashMenu />
 </div>

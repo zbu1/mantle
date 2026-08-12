@@ -4,6 +4,8 @@ import { TextSelection } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import { NoteEditor } from '../note-editor';
 import { NotesState } from '../../notes-state';
+import { VaultState } from '../../vault-state';
+import { flushAsync, installMockVaultInvoke } from '../../../../testing/mock-vault';
 import { schema } from './schema';
 import { parseMarkdown, serializeMarkdown } from './markdown-converter';
 
@@ -41,6 +43,9 @@ async function setup() {
   fixture.componentRef.setInput('noteId', 'daily-standup');
   fixture.detectChanges();
   await fixture.whenStable();
+  await flushAsync();
+  fixture.detectChanges();
+  await fixture.whenStable();
 
   const view = getEditorView(fixture.componentInstance);
   clear(view);
@@ -49,10 +54,13 @@ async function setup() {
 
 describe('markdown input rules', () => {
   beforeEach(() => {
+    localStorage.clear();
     TestBed.configureTestingModule({
       imports: [NoteEditor],
       providers: [provideZonelessChangeDetection()],
     });
+    installMockVaultInvoke();
+    TestBed.inject(VaultState).rootPath.set('/fake/vault');
   });
 
   describe('block rules', () => {

@@ -2,7 +2,8 @@ import { TestBed } from '@angular/core/testing';
 import { provideZonelessChangeDetection } from '@angular/core';
 import { ContentArea } from './content-area';
 import { TabsState } from '../../../notes/tabs-state';
-import { findNote } from '../../../notes/notes-data';
+import { VaultState } from '../../../notes/vault-state';
+import { FIXTURE_NOTES, flushAsync, installMockVaultInvoke } from '../../../../testing/mock-vault';
 
 describe('ContentArea', () => {
   beforeEach(() => {
@@ -11,6 +12,8 @@ describe('ContentArea', () => {
       imports: [ContentArea],
       providers: [provideZonelessChangeDetection()],
     });
+    installMockVaultInvoke();
+    TestBed.inject(VaultState).rootPath.set('/fake/vault');
   });
 
   it('shows the empty state when no tabs are open', () => {
@@ -23,8 +26,11 @@ describe('ContentArea', () => {
   it('renders the active note title and content', async () => {
     const fixture = TestBed.createComponent(ContentArea);
     const tabsState = TestBed.inject(TabsState);
-    const note = findNote('daily-standup')!;
-    tabsState.openNote(note);
+    const note = FIXTURE_NOTES[0];
+    tabsState.openNote({ id: note.id, title: note.title });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    await flushAsync();
     fixture.detectChanges();
     await fixture.whenStable();
 

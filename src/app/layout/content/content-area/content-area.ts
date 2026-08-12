@@ -1,8 +1,7 @@
 import { Component, ElementRef, computed, inject, viewChild } from '@angular/core';
-import { LucideArrowLeft, LucideArrowRight, LucideChevronDown, LucideEllipsis, LucideExpand, LucideLock, LucideStar } from '@lucide/angular';
-import { TabsState } from '../../../notes/tabs-state';
+import { LucideArrowLeft, LucideArrowRight, LucideChevronDown, LucideEllipsis, LucideExpand, LucideLock } from '@lucide/angular';
+import { TabsState, NoteTab } from '../../../notes/tabs-state';
 import { NotesState } from '../../../notes/notes-state';
-import { Note } from '../../../notes/note.model';
 import { NoteEditor } from '../../../notes/editor/note-editor';
 import { ContextMenuState } from '../../../shared/context-menu/context-menu-state';
 import { ContextMenuItem } from '../../../shared/context-menu/context-menu.model';
@@ -17,7 +16,6 @@ import { ContextMenuItem } from '../../../shared/context-menu/context-menu.model
     LucideEllipsis,
     LucideLock,
     LucideChevronDown,
-    LucideStar,
   ],
   templateUrl: './content-area.html',
 })
@@ -28,10 +26,9 @@ export class ContentArea {
 
   private readonly contentRoot = viewChild<ElementRef<HTMLElement>>('contentRoot');
 
-  protected readonly activeNote = computed(() => {
+  protected readonly activeTab = computed<NoteTab | undefined>(() => {
     const activeId = this.tabsState.activeId();
-    const tab = activeId ? this.tabsState.tabs().find((t) => t.id === activeId) : undefined;
-    return tab ? this.notesState.getNote(tab.noteId) : undefined;
+    return activeId ? this.tabsState.tabs().find((t) => t.id === activeId) : undefined;
   });
 
   protected goBack(): void {
@@ -42,8 +39,10 @@ export class ContentArea {
     this.tabsState.goForward();
   }
 
-  protected notePath(note: Note): string {
-    return `${note.folder} / ${note.title}`;
+  protected notePath(tab: NoteTab): string {
+    const segments = tab.noteId.split('/');
+    segments.pop();
+    return segments.length ? `${segments.join(' / ')} / ${tab.title}` : tab.title;
   }
 
   protected toggleFullscreen(): void {
@@ -57,34 +56,29 @@ export class ContentArea {
     }
   }
 
-  protected onMoreClick(event: MouseEvent, note: Note): void {
+  protected onMoreClick(event: MouseEvent, tab: NoteTab): void {
     const items: ContextMenuItem[] = [
-      { kind: 'item', label: 'Copy Content', icon: 'copy', action: () => navigator.clipboard.writeText(note.content) },
-      { kind: 'item', label: 'Copy Title', icon: 'copy', action: () => navigator.clipboard.writeText(note.title) },
-      { kind: 'separator' },
-      { kind: 'item', label: 'Rename Note', icon: 'rename', action: () => {} },
-      { kind: 'item', label: 'Duplicate Note', icon: 'duplicate', action: () => {} },
-      { kind: 'separator' },
-      { kind: 'item', label: 'Delete Note', icon: 'delete', danger: true, action: () => {} },
+      { kind: 'item', label: 'Copy Content', icon: 'copy', action: () => this.copyContent(tab.noteId) },
+      { kind: 'item', label: 'Copy Title', icon: 'copy', action: () => navigator.clipboard.writeText(tab.title) },
     ];
     this.contextMenuState.open(event, items);
   }
 
   protected onContentContextMenu(event: MouseEvent): void {
-    const note = this.activeNote();
-    const activeId = this.tabsState.activeId();
-    if (!note || !activeId) return;
+    const tab = this.activeTab();
+    if (!tab) return;
 
     const items: ContextMenuItem[] = [
-      { kind: 'item', label: 'Copy Content', icon: 'copy', action: () => navigator.clipboard.writeText(note.content) },
-      { kind: 'item', label: 'Copy Title', icon: 'copy', action: () => navigator.clipboard.writeText(note.title) },
+      { kind: 'item', label: 'Copy Content', icon: 'copy', action: () => this.copyContent(tab.noteId) },
+      { kind: 'item', label: 'Copy Title', icon: 'copy', action: () => navigator.clipboard.writeText(tab.title) },
       { kind: 'separator' },
-      { kind: 'item', label: 'Rename Note', icon: 'rename', action: () => {} },
-      { kind: 'item', label: 'Duplicate Note', icon: 'duplicate', action: () => {} },
-      { kind: 'separator' },
-      { kind: 'item', label: 'Close Tab', icon: 'close', action: () => this.tabsState.closeTab(activeId) },
-      { kind: 'item', label: 'Delete Note', icon: 'delete', danger: true, action: () => {} },
+      { kind: 'item', label: 'Close Tab', icon: 'close', action: () => this.tabsState.closeTab(tab.id) },
     ];
     this.contextMenuState.open(event, items);
+  }
+
+  private copyContent(noteId: string): void {
+    const note = this.notesState.getNote(noteId);
+    if (note) navigator.clipboard.writeText(note.content);
   }
 }

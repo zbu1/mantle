@@ -1,56 +1,67 @@
 import { Component, inject, signal } from '@angular/core';
-import { LucideClock, LucideFileText, LucideFolders, LucideStar, LucideTags } from '@lucide/angular';
+import { LucideFolderOpen, LucideFolders, LucidePlus } from '@lucide/angular';
 import { SidebarSection } from './sidebar-section/sidebar-section';
 import { SidebarItemButton } from './sidebar-item-button/sidebar-item-button';
-import { FAVORITE_NOTES, RECENT_NOTES, TAG_GROUPS, WORKSPACE_NOTES } from '../../notes/notes-data';
-import { Note } from '../../notes/note.model';
+import { VaultTreeNode } from './vault-tree-node/vault-tree-node';
 import { SidebarState } from './sidebar-state';
 import { TabsState } from '../../notes/tabs-state';
+import { VaultState } from '../../notes/vault-state';
+import { VaultNoteNode } from '../../notes/vault-tree.model';
 import { ContextMenuState } from '../../shared/context-menu/context-menu-state';
 import { ContextMenuItem } from '../../shared/context-menu/context-menu.model';
 
 @Component({
   selector: 'app-sidebar',
-  imports: [SidebarSection, SidebarItemButton, LucideStar, LucideClock, LucideFolders, LucideTags, LucideFileText],
+  imports: [SidebarSection, SidebarItemButton, VaultTreeNode, LucideFolderOpen, LucideFolders, LucidePlus],
   templateUrl: './sidebar.html',
   host: { class: 'contents' },
 })
 export class Sidebar {
   protected readonly state = inject(SidebarState);
+  protected readonly vaultState = inject(VaultState);
   private readonly tabsState = inject(TabsState);
   private readonly contextMenuState = inject(ContextMenuState);
 
-  protected readonly favorites = FAVORITE_NOTES;
-  protected readonly recentFiles = RECENT_NOTES;
-  protected readonly workspaceItems = WORKSPACE_NOTES;
-  protected readonly tagGroups = TAG_GROUPS;
+  protected readonly lockedHint = signal<string | null>(null);
 
   private readonly dragStartX = signal<number | null>(null);
   private readonly dragStartWidth = signal<number>(0);
 
-  protected openNote(note: Note): void {
-    this.tabsState.openNote(note);
+  protected async onOpenVault(): Promise<void> {
+    await this.vaultState.pickVault();
   }
 
-  protected openNoteInBackground(note: Note): void {
-    this.tabsState.openNoteInBackground(note);
+  protected async onNewNote(): Promise<void> {
+    const base = 'Untitled';
+    for (let i = 0; i < 50; i++) {
+      const name = i === 0 ? base : `${base} ${i + 1}`;
+      try {
+        const created = await this.vaultState.createNote('', name);
+        this.tabsState.openNote({ id: created.relPath, title: created.name });
+        return;
+      } catch {
+        // name collision — try the next candidate
+      }
+    }
   }
 
-  protected openNoteContextMenu(event: MouseEvent, note: Note): void {
+  protected onOpenNote(note: VaultNoteNode): void {
+    this.tabsState.openNote({ id: note.relPath, title: note.name });
+  }
+
+  protected onOpenNoteInBackground(note: VaultNoteNode): void {
+    this.tabsState.openNoteInBackground({ id: note.relPath, title: note.name });
+  }
+
+  protected onLockedClicked(relPath: string): void {
+    this.lockedHint.update((current) => (current === relPath ? null : relPath));
+  }
+
+  protected onNoteContextMenu(payload: { event: MouseEvent; note: VaultNoteNode }): void {
+    const { event, note } = payload;
     const items: ContextMenuItem[] = [
-      { kind: 'item', label: 'Open', icon: 'open', action: () => this.openNote(note) },
-      { kind: 'item', label: 'Open in New Tab', icon: 'open-new-tab', action: () => this.openNoteInBackground(note) },
-      { kind: 'separator' },
-      { kind: 'item', label: 'Rename', icon: 'rename', action: () => {} },
-      { kind: 'item', label: 'Duplicate', icon: 'duplicate', action: () => {} },
-      {
-        kind: 'item',
-        label: note.favorite ? 'Remove from Favorites' : 'Add to Favorites',
-        icon: note.favorite ? 'unfavorite' : 'favorite',
-        action: () => {},
-      },
-      { kind: 'separator' },
-      { kind: 'item', label: 'Delete', icon: 'delete', danger: true, action: () => {} },
+      { kind: 'item', label: 'Open', icon: 'open', action: () => this.onOpenNote(note) },
+      { kind: 'item', label: 'Open in New Tab', icon: 'open-new-tab', action: () => this.onOpenNoteInBackground(note) },
     ];
     this.contextMenuState.open(event, items);
   }
