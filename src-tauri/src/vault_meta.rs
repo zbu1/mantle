@@ -1,0 +1,156 @@
+//! Tauri commands for loading/saving a vault's own persisted UI metadata —
+//! favorites, manual sort order, and collapsed folders — stored inside the
+//! vault itself at `.mantle/state.json`, so it travels with the vault across
+//! machines and sync (Dropbox/git/etc.), the same way `.obsidian/` does for
+//! Obsidian. `.mantle` is a dotfile-prefixed directory, so `vault::scan_dir`
+//! already skips it when building the note tree, and `watcher::is_hidden`
+//! already ignores writes under it when deciding whether to emit
+//! `vault-changed`.
+//!
+//! This file only ever references `rel_path`s that are already visible as
+//! plaintext filenames on disk — even a `.mntl.enc` note's *content* is
+//! encrypted, but its filename is not — so it stays plaintext unconditionally
+//! rather than needing its own encryption story for encrypted vaults.
+
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::fs;
+use std::path::PathBuf;
+
+const STATE_DIR: &str = ".mantle";
+const STATE_FILE: &str = "state.json";
+const CURRENT_VERSION: u32 = 1;
+
+/// Persisted vault-scoped UI metadata. Every field is additive and
+/// `#[serde(default)]`, so older state files missing a newer field parse
+/// cleanly instead of erroring.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultMeta {
+    /// Schema version, bumped on breaking changes so a future release can
+    /// migrate old files instead of silently misreading them.
+    #[serde(default = "current_version")]
+    pub version: u32,
+    /// Favorited note `rel_path`s. Array order is display order, so
+    /// favorites don't need a separate entry in `order`.
+    #[serde(default)]
+    pub favorites: Vec<String>,
+    /// Manual child order per folder, keyed by the folder's `rel_path`
+    /// (`""` for the vault root). A folder with no entry here sorts
+    /// alphabetically — today's `scan_vault` behavior, unchanged. Once a
+    /// folder gains an entry it should list all of its current children;
+    /// the frontend is responsible for appending newly-discovered children
+    /// and dropping ones that no longer exist when it reconciles against a
+    /// fresh `scan_vault` result.
+    #[serde(default)]
+    pub order: HashMap<String, Vec<String>>,
+    /// `rel_path`s of folders the user has collapsed. Absent = expanded,
+    /// matching the current default in `VaultTreeNode`.
+    #[serde(default)]
+    pub collapsed_folders: Vec<String>,
+}
+
+fn current_version() -> u32 {
+    CURRENT_VERSION
+}
+
+impl Default for VaultMeta {
+    fn default() -> Self {
+        Self {
+            version: CURRENT_VERSION,
+            favorites: Vec::new(),
+            order: HashMap::new(),
+            collapsed_folders: Vec::new(),
+        }
+    }
+}
+
+fn state_path(vault_root: &str) -> Result<PathBuf, String> {
+    let root = PathBuf::from(vault_root)
+        .canonicalize()
+        .map_err(|e| format!("Invalid vault root: {e}"))?;
+    Ok(root.join(STATE_DIR).join(STATE_FILE))
+}
+
+/// Loads `.mantle/state.json` from `vault_root`. A vault that doesn't have
+/// one yet (new vault, or one never opened by a version of the app with
+/// this feature) is not an error — it just means every field is at its
+/// default.
+#[tauri::command]
+pub fn load_vault_meta(vault_root: String) -> Result<VaultMeta, String> {
+    let path = state_path(&vault_root)?;
+    if !path.exists() {
+        return Ok(VaultMeta::default());
+    }
+    let raw = fs::read_to_string(&path).map_err(|e| format!("Failed to read vault state: {e}"))?;
+    serde_json::from_str(&raw).map_err(|e| format!("Failed to parse vault state: {e}"))
+}
+
+/// Saves `.mantle/state.json`, creating the `.mantle` directory if this is
+/// the first write for this vault. Writes to a sibling temp file and renames
+/// it over the target so a crash or power loss mid-write can't leave
+/// `state.json` truncated or corrupt.
+#[tauri::command]
+pub fn save_vault_meta(vault_root: String, state: VaultMeta) -> Result<(), String> {
+    let path = state_path(&vault_root)?;
+    let dir = path.parent().ok_or("Invalid vault state path")?;
+    fs::create_dir_all(dir).map_err(|e| format!("Failed to create {STATE_DIR}: {e}"))?;
+
+    let json = serde_json::to_string_pretty(&state).map_err(|e| e.to_string())?;
+    let tmp_path = dir.join(format!("{STATE_FILE}.tmp"));
+    fs::write(&tmp_path, json).map_err(|e| format!("Failed to write vault state: {e}"))?;
+    fs::rename(&tmp_path, &path).map_err(|e| format!("Failed to save vault state: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("mntl-vault-meta-test-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn load_returns_default_when_missing() {
+        let root = temp_dir("missing");
+        let root_str = root.to_string_lossy().into_owned();
+
+        assert_eq!(load_vault_meta(root_str).unwrap(), VaultMeta::default());
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn save_then_load_round_trips() {
+        let root = temp_dir("roundtrip");
+        let root_str = root.to_string_lossy().into_owned();
+
+        let state = VaultMeta {
+            version: 1,
+            favorites: vec!["Work/todo.mntl".to_string()],
+            order: HashMap::from([("Work".to_string(), vec!["todo.mntl".to_string(), "notes.mntl".to_string()])]),
+            collapsed_folders: vec!["Archive".to_string()],
+        };
+        save_vault_meta(root_str.clone(), state.clone()).unwrap();
+
+        assert!(root.join(".mantle").join("state.json").is_file());
+        assert_eq!(load_vault_meta(root_str).unwrap(), state);
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn missing_fields_default_instead_of_failing_to_parse() {
+        let root = temp_dir("partial");
+        fs::create_dir_all(root.join(".mantle")).unwrap();
+        fs::write(root.join(".mantle").join("state.json"), r#"{"version":1}"#).unwrap();
+        let root_str = root.to_string_lossy().into_owned();
+
+        assert_eq!(load_vault_meta(root_str).unwrap(), VaultMeta::default());
+
+        let _ = fs::remove_dir_all(&root);
+    }
+}

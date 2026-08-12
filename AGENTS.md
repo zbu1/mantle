@@ -12,7 +12,11 @@ Angular 22 (frontend, signals-based, no NgModules).
   UI primitives (menu surface/item, context menu).
 - **Rust backend** (`src-tauri/`): Tauri commands in `src-tauri/src/vault.rs`
   for scanning a vault directory and reading/writing/creating notes, on top of
-  the `mntl-core` crate.
+  the `mntl-core` crate. `src-tauri/src/vault_meta.rs` loads/saves
+  `.mantle/state.json` inside the vault — favorites, manual sort order, and
+  collapsed folders — a vault-local file so this metadata travels with the
+  vault across machines/sync rather than living in this app install's local
+  storage (see `goals/vault-state-future.md`).
 - **`crates/mntl-core`**: standalone Rust crate (Cargo workspace member,
   independent of Tauri) implementing the `.mntl` note format — plaintext
   Markdown with a YAML frontmatter header — and the `.mntl.enc` encrypted
@@ -35,7 +39,7 @@ Package manager is **pnpm** (see `pnpm-lock.yaml`), not npm.
 
 - Frontend tests use Jest with `jest-preset-angular` (config in `jest.config.ts`, setup in `setup-jest.ts`).
 - Test files live next to the code they test (e.g. `header.spec.ts` next to `header.ts`).
-- Rust: `#[cfg(test)]` unit tests in `src-tauri/src/vault.rs` (path traversal, note classification); `crates/mntl-core/tests/crypto_tests.rs` covers the encryption/decryption round trip.
+- Rust: `#[cfg(test)]` unit tests in `src-tauri/src/vault.rs` (path traversal, note classification) and `src-tauri/src/vault_meta.rs` (default-on-missing, round trip, forward-compatible parsing); `crates/mntl-core/tests/crypto_tests.rs` covers the encryption/decryption round trip.
 
 ## Conventions
 

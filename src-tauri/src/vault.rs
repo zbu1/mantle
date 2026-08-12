@@ -201,7 +201,9 @@ pub fn create_note(vault_root: String, rel_dir: String, name: String) -> Result<
 #[tauri::command]
 pub fn delete_note(vault_root: String, rel_path: String) -> Result<(), String> {
     let path = resolve_rel_path(&vault_root, &rel_path)?;
-    fs::remove_file(&path).map_err(|e| format!("Failed to delete note: {e}"))
+    // Send to the OS recycle bin/trash rather than unlinking outright, so a
+    // deleted note stays recoverable through the normal OS trash UI.
+    trash::delete(&path).map_err(|e| format!("Failed to delete note: {e}"))
 }
 
 /// Resolve a vault-relative directory (empty string means the vault root)

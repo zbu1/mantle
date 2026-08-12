@@ -1,4 +1,5 @@
 mod vault;
+mod vault_meta;
 mod watcher;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -23,6 +24,8 @@ pub fn run() {
             vault::duplicate_note,
             vault::copy_note,
             vault::move_note,
+            vault_meta::load_vault_meta,
+            vault_meta::save_vault_meta,
             watcher::start_vault_watch,
             watcher::stop_vault_watch,
         ])
