@@ -4,7 +4,13 @@
       @if (item.kind === 'separator') {
         <app-menu-separator />
       } @else {
-        <app-menu-item [label]="item.label" [danger]="item.danger ?? false" (selected)="select(item)">
+        <app-menu-item
+          [label]="item.label"
+          [danger]="item.danger ?? false"
+          [active]="$index === selectedIndex()"
+          (hovered)="selectedIndex.set($index)"
+          (selected)="select(item)"
+        >
           <span menuItemIcon class="contents">
             @switch (item.icon) {
               @case ('open') { <svg lucideFileText [size]="14"></svg> }

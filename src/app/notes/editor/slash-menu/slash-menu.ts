@@ -49,4 +49,8 @@ export class SlashMenu {
   protected select(item: SlashCommandItem): void {
     this.state.selectItem(item);
   }
+
+  protected hover(index: number): void {
+    this.state.setSelectedIndex(index);
+  }
 }

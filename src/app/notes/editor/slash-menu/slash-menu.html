@@ -4,7 +4,12 @@
   class="invisible pointer-events-none opacity-0 transition-opacity duration-100"
 >
   @for (item of items(); track item.id; let i = $index) {
-    <app-menu-item [label]="item.label" [active]="i === selectedIndex()" (selected)="select(item)">
+    <app-menu-item
+      [label]="item.label"
+      [active]="i === selectedIndex()"
+      (hovered)="hover(i)"
+      (selected)="select(item)"
+    >
       <span menuItemIcon class="contents">
         @switch (item.icon) {
           @case ('h1') { <svg lucideHeading1 [size]="14"></svg> }

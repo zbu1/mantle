@@ -1,4 +1,4 @@
-import { Component, ElementRef, HostListener, computed, inject, viewChild } from '@angular/core';
+import { Component, ElementRef, HostListener, computed, effect, inject, signal, viewChild } from '@angular/core';
 import {
   LucideCopy,
   LucideCopyPlus,
@@ -46,6 +46,24 @@ export class ContextMenu {
 
   protected readonly menu = this.state.menu;
 
+  // Drives row highlighting in place of CSS `:hover` — see MenuItem.active.
+  // Shared between mouse (hover) and keyboard (arrow keys) so only one row
+  // is ever highlighted. Reset whenever a new (or no) menu is shown, so a
+  // stale index from the last menu can't spuriously highlight a row.
+  protected readonly selectedIndex = signal<number | null>(null);
+  private readonly resetSelectionOnMenuChange = effect(() => {
+    this.menu();
+    this.selectedIndex.set(null);
+  });
+
+  // Indices of the selectable (non-separator) rows in the current menu, in order.
+  private readonly actionIndices = computed(() =>
+    (this.menu()?.items ?? []).reduce<number[]>((acc, item, i) => {
+      if (item.kind === 'item') acc.push(i);
+      return acc;
+    }, []),
+  );
+
   // #panel is an <app-menu-surface>, so read its host element rather than the
   // component instance — the pointerdown guard below needs to hit-test the DOM.
   protected readonly panel = viewChild('panel', { read: ElementRef<HTMLElement> });
@@ -89,9 +107,49 @@ export class ContextMenu {
     this.state.close();
   }
 
+  @HostListener('document:keydown', ['$event'])
+  protected onKeydown(event: KeyboardEvent): void {
+    if (!this.menu()) return;
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      this.moveSelection(1);
+      return;
+    }
+
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      this.moveSelection(-1);
+      return;
+    }
+
+    if (event.key === 'Enter') {
+      const index = this.selectedIndex();
+      const item = index === null ? undefined : this.menu()?.items[index];
+      if (item?.kind !== 'item') return;
+      event.preventDefault();
+      this.select(item);
+    }
+  }
+
   @HostListener('window:blur')
   protected onBlur(): void {
     this.state.close();
+  }
+
+  private moveSelection(delta: number): void {
+    const indices = this.actionIndices();
+    if (indices.length === 0) return;
+
+    const current = this.selectedIndex();
+    if (current === null) {
+      this.selectedIndex.set(delta > 0 ? indices[0] : indices[indices.length - 1]);
+      return;
+    }
+
+    const currentPos = indices.indexOf(current);
+    const nextPos = (currentPos + delta + indices.length) % indices.length;
+    this.selectedIndex.set(indices[nextPos]);
   }
 
   protected select(item: ContextMenuAction): void {

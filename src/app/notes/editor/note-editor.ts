@@ -66,13 +66,13 @@ function buildEditorKeymap() {
 })
 export class NoteEditor {
   private readonly notesState = inject(NotesState);
-  // private readonly slashMenuState = inject(SlashMenuState);
+  private readonly slashMenuState = inject(SlashMenuState);
   private readonly destroyRef = inject(DestroyRef);
 
   readonly noteId = input.required<string>();
 
   private readonly mount = viewChild.required<ElementRef<HTMLElement>>('mount');
-  // private readonly slashMenuCmp = viewChild.required<SlashMenu>('slashMenu');
+  private readonly slashMenuCmp = viewChild.required<SlashMenu>('slashMenu');
 
   private editorView: EditorView | undefined;
   private lastAppliedNoteId: string | undefined;
@@ -89,9 +89,14 @@ export class NoteEditor {
         plugins: [
           history(),
           buildMarkdownInputRules(),
+          // Must precede buildEditorKeymap(): ProseMirror runs handleKeyDown
+          // handlers in plugin order and stops at the first one that returns
+          // true, so this needs first refusal on Enter/Tab/Arrows/Escape
+          // while the slash menu is open — otherwise the editor's own Enter
+          // keymap splits the block before the menu can confirm a selection.
+          createSlashMenuPlugin(this.slashMenuState, () => this.slashMenuCmp().panelElement()),
           buildEditorKeymap(),
           gapCursor(),
-          // createSlashMenuPlugin(this.slashMenuState, () => this.slashMenuCmp().panelElement()),
         ],
       });
 

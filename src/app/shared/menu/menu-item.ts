@@ -13,7 +13,13 @@ const BASE = 'flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs';
 @Component({
   selector: 'app-menu-item',
   template: `
-    <button type="button" role="menuitem" (click)="selected.emit()" [class]="buttonClass()">
+    <button
+      type="button"
+      role="menuitem"
+      (click)="selected.emit()"
+      (mouseenter)="hovered.emit()"
+      [class]="buttonClass()"
+    >
       <span class="flex size-3.5 shrink-0 items-center justify-center">
         <ng-content select="[menuItemIcon]" />
       </span>
@@ -26,14 +32,22 @@ export class MenuItem {
   readonly label = input.required<string>();
   /** Destructive actions (delete, etc.) render in the destructive color. */
   readonly danger = input(false);
-  /** Highlights the row without hovering it — used for keyboard selection. */
+  /**
+   * Highlights the row. This is the only thing that drives the highlight —
+   * there's no CSS `:hover`, because that stays on whatever row the cursor
+   * physically rests over even after keyboard nav moves `active` elsewhere.
+   * Callers must listen to `hovered` and feed it back into whatever drives
+   * `active`, so mouse and keyboard always agree on a single highlighted item.
+   */
   readonly active = input(false);
 
   readonly selected = output<void>();
+  /** Emits when the pointer enters the row (i.e. the mouse moved onto it). */
+  readonly hovered = output<void>();
 
   protected readonly buttonClass = computed(() => {
     if (this.danger()) return `${BASE} text-destructive hover:bg-destructive/10`;
     if (this.active()) return `${BASE} bg-accent text-accent-foreground`;
-    return `${BASE} text-foreground/80 hover:bg-accent hover:text-accent-foreground`;
+    return `${BASE} text-foreground/80`;
   });
 }

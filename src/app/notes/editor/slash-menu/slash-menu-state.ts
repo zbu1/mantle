@@ -25,6 +25,10 @@ export class SlashMenuState {
     this.selectedIndex.update((index) => (index + delta + count) % count);
   }
 
+  setSelectedIndex(index: number): void {
+    this.selectedIndex.set(index);
+  }
+
   confirmSelected(): void {
     const item = this.items()[this.selectedIndex()];
     if (item) this.confirm?.(item);
