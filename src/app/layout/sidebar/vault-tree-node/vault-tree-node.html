@@ -1,5 +1,6 @@
 @if (asFolder(); as folder) {
-<button type="button" (click)="toggleExpanded()" [style.padding-left.px]="8 + depth() * 12"
+<button type="button" (click)="toggleExpanded()" (contextmenu)="folderContextMenu.emit({ event: $event, folder })"
+  [style.padding-left.px]="8 + depth() * 12"
   class="flex w-full items-center gap-1.5 rounded-md py-1 pr-2 text-xs text-foreground/80 hover:bg-background hover:text-foreground">
   <svg lucideChevronRight [size]="12" class="shrink-0 transition-transform duration-150"
     [class.rotate-90]="expanded()"></svg>
@@ -10,7 +11,8 @@
 @for (child of folder.children; track child.relPath) {
 <app-vault-tree-node [node]="child" [depth]="depth() + 1" [openLockedHint]="openLockedHint()"
   (openNote)="openNote.emit($event)" (openNoteInBackground)="openNoteInBackground.emit($event)"
-  (noteContextMenu)="noteContextMenu.emit($event)" (lockedClicked)="lockedClicked.emit($event)" />
+  (noteContextMenu)="noteContextMenu.emit($event)" (folderContextMenu)="folderContextMenu.emit($event)"
+  (lockedClicked)="lockedClicked.emit($event)" />
 }
 }
 } @else if (asNote(); as note) {

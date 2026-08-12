@@ -65,6 +65,13 @@ export function installMockVaultInvoke(): jest.Mock {
         contents.set(relPath, '');
         return { name, relPath };
       }
+      case 'start_vault_watch':
+      case 'stop_vault_watch':
+        return undefined;
+      case 'plugin:event|listen':
+        return 0;
+      case 'plugin:event|unlisten':
+        return undefined;
       default:
         throw new Error(`Unhandled mock invoke command: ${command}`);
     }

@@ -5,6 +5,8 @@ export interface NoteTab {
   id: string;
   noteId: string;
   title: string;
+  /** True when the underlying file was removed outside the app (not persisted; recomputed on scan). */
+  missing?: boolean;
 }
 
 interface TabHistory {
@@ -128,6 +130,33 @@ export class TabsState {
 
   setActive(id: string): void {
     this.activeId.set(id);
+  }
+
+  closeByNoteId(noteId: string): void {
+    for (const tab of this.tabs().filter((tab) => tab.noteId === noteId)) {
+      this.closeTab(tab.id);
+    }
+  }
+
+  /** Repoints any open tabs for `oldNoteId` at `newNoteId` (e.g. after a move/cut-paste or an external rename). */
+  renameNoteId(oldNoteId: string, newNoteId: string, newTitle: string): void {
+    this.tabs.update((tabs) =>
+      tabs.map((tab) =>
+        tab.noteId === oldNoteId ? { ...tab, noteId: newNoteId, title: newTitle, missing: false } : tab,
+      ),
+    );
+  }
+
+  /** Flags open tabs for `noteId` as pointing at a file that no longer exists on disk. */
+  markMissing(noteId: string): void {
+    this.tabs.update((tabs) => tabs.map((tab) => (tab.noteId === noteId ? { ...tab, missing: true } : tab)));
+  }
+
+  /** Clears the missing flag for open tabs on `noteId` (e.g. the file reappeared). */
+  clearMissing(noteId: string): void {
+    this.tabs.update((tabs) =>
+      tabs.map((tab) => (tab.noteId === noteId && tab.missing ? { ...tab, missing: false } : tab)),
+    );
   }
 
   goBack(): void {

@@ -10,12 +10,13 @@
     class="flex min-w-0 items-stretch gap-1 overflow-x-auto rounded-bl-xl border-border px-1 [app-region:drag]">
     @if (tabsState.tabs().length > 0) {
     @for (tab of tabsState.tabs(); track tab.id) {
-    <button type="button" (click)="activateTab(tab.id)" [title]="tab.title"
+    <button type="button" (click)="activateTab(tab.id)"
+      [title]="tab.missing ? tab.title + ' — file not found (moved or deleted outside Mantle)' : tab.title"
       class="group my-1 flex min-w-0 max-w-48 shrink-0 items-center gap-2 rounded-md border border-border px-3 text-xs"
       [class.bg-background]="tab.id === tabsState.activeId()" [class.text-foreground]="tab.id === tabsState.activeId()"
       [class.text-muted-foreground]="tab.id !== tabsState.activeId()"
-      [class.hover:bg-background/60]="tab.id !== tabsState.activeId()">
-      <span class="min-w-0 flex-1 truncate text-left">{{ tab.title }}</span>
+      [class.hover:bg-background/60]="tab.id !== tabsState.activeId()" [class.opacity-60]="tab.missing">
+      <span class="min-w-0 flex-1 truncate text-left" [class.line-through]="tab.missing">{{ tab.title }}</span>
       <span (click)="closeTab($event, tab.id)"
         class="flex shrink-0 items-center justify-center rounded p-0.5 opacity-0 hover:bg-border group-hover:opacity-100">
         <svg lucideX [size]="12"></svg>

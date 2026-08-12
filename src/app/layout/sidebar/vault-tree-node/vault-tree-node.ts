@@ -16,6 +16,7 @@ export class VaultTreeNode {
   readonly openNote = output<VaultNoteNode>();
   readonly openNoteInBackground = output<VaultNoteNode>();
   readonly noteContextMenu = output<{ event: MouseEvent; note: VaultNoteNode }>();
+  readonly folderContextMenu = output<{ event: MouseEvent; folder: VaultFolderNode }>();
   readonly lockedClicked = output<string>();
 
   protected readonly expanded = signal(true);

@@ -54,22 +54,24 @@
 
     <app-sidebar-section id="workspace" label="Vault">
       <svg sidebarSectionIcon lucideFolders [size]="12"></svg>
-      @if (vaultState.loading()) {
-      <div class="px-2 py-1 text-xs text-muted-foreground">Loading vault…</div>
-      } @else if (vaultState.error(); as err) {
-      <div class="px-2 py-1 text-xs text-destructive">{{ err }}</div>
-      } @else if (vaultState.tree(); as tree) {
-      @for (child of tree.children; track child.relPath) {
-      <app-vault-tree-node [node]="child" [openLockedHint]="lockedHint()" (openNote)="onOpenNote($event)"
-        (openNoteInBackground)="onOpenNoteInBackground($event)" (noteContextMenu)="onNoteContextMenu($event)"
-        (lockedClicked)="onLockedClicked($event)" />
-      }
-      @if (tree.children.length === 0) {
-      <div class="px-2 py-1 text-xs text-muted-foreground">No notes yet — click "New Note" to create one.</div>
-      }
-      } @else {
-      <div class="px-2 py-1 text-xs text-muted-foreground">No vault open — click "Open Vault" to pick a folder.</div>
-      }
+      <div class="contents" (contextmenu)="onVaultBackgroundContextMenu($event)">
+        @if (vaultState.loading()) {
+        <div class="px-2 py-1 text-xs text-muted-foreground">Loading vault…</div>
+        } @else if (vaultState.error(); as err) {
+        <div class="px-2 py-1 text-xs text-destructive">{{ err }}</div>
+        } @else if (vaultState.tree(); as tree) {
+        @for (child of tree.children; track child.relPath) {
+        <app-vault-tree-node [node]="child" [openLockedHint]="lockedHint()" (openNote)="onOpenNote($event)"
+          (openNoteInBackground)="onOpenNoteInBackground($event)" (noteContextMenu)="onNoteContextMenu($event)"
+          (folderContextMenu)="onFolderContextMenu($event)" (lockedClicked)="onLockedClicked($event)" />
+        }
+        @if (tree.children.length === 0) {
+        <div class="px-2 py-1 text-xs text-muted-foreground">No notes yet — click "New Note" to create one.</div>
+        }
+        } @else {
+        <div class="px-2 py-1 text-xs text-muted-foreground">No vault open — click "Open Vault" to pick a folder.</div>
+        }
+      </div>
     </app-sidebar-section>
 
     <app-sidebar-section id="tags" label="Tags">

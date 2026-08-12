@@ -1,9 +1,12 @@
 import { Component, ElementRef, HostListener, computed, effect, inject, signal, viewChild } from '@angular/core';
 import {
+  LucideClipboardPaste,
   LucideCopy,
   LucideCopyPlus,
   LucideFileText,
+  LucideFolderOpen,
   LucidePencil,
+  LucideScissors,
   LucideSquarePlus,
   LucideStar,
   LucideStarOff,
@@ -32,6 +35,9 @@ const VIEWPORT_MARGIN = 8;
     LucideFileText,
     LucideSquarePlus,
     LucideCopy,
+    LucideScissors,
+    LucideClipboardPaste,
+    LucideFolderOpen,
     LucidePencil,
     LucideCopyPlus,
     LucideStar,
@@ -56,10 +62,10 @@ export class ContextMenu {
     this.selectedIndex.set(null);
   });
 
-  // Indices of the selectable (non-separator) rows in the current menu, in order.
+  // Indices of the selectable (non-separator, non-disabled) rows in the current menu, in order.
   private readonly actionIndices = computed(() =>
     (this.menu()?.items ?? []).reduce<number[]>((acc, item, i) => {
-      if (item.kind === 'item') acc.push(i);
+      if (item.kind === 'item' && !item.disabled) acc.push(i);
       return acc;
     }, []),
   );

@@ -198,6 +198,147 @@ pub fn create_note(vault_root: String, rel_dir: String, name: String) -> Result<
     })
 }
 
+#[tauri::command]
+pub fn delete_note(vault_root: String, rel_path: String) -> Result<(), String> {
+    let path = resolve_rel_path(&vault_root, &rel_path)?;
+    fs::remove_file(&path).map_err(|e| format!("Failed to delete note: {e}"))
+}
+
+/// Resolve a vault-relative directory (empty string means the vault root)
+/// to an absolute path, guarding against traversal outside the vault.
+fn resolve_rel_dir(vault_root: &str, rel_dir: &str) -> Result<PathBuf, String> {
+    let canonical_root = PathBuf::from(vault_root)
+        .canonicalize()
+        .map_err(|e| format!("Invalid vault root: {e}"))?;
+    if rel_dir.is_empty() {
+        return Ok(canonical_root);
+    }
+
+    let normalized = rel_dir.replace('\\', "/");
+    for component in normalized.split('/') {
+        if component.is_empty() || component == "." || component == ".." || component.contains(':') {
+            return Err(format!("Invalid path component in rel_dir: {rel_dir}"));
+        }
+    }
+
+    let mut candidate = canonical_root.clone();
+    for component in normalized.split('/') {
+        candidate.push(component);
+    }
+    let canonical = candidate
+        .canonicalize()
+        .map_err(|e| format!("Destination folder does not exist: {e}"))?;
+    if !canonical.starts_with(&canonical_root) {
+        return Err("Path escapes vault root".to_string());
+    }
+    if !canonical.is_dir() {
+        return Err("Destination is not a folder".to_string());
+    }
+    Ok(canonical)
+}
+
+/// Split a vault-relative note path into its parent dir (possibly empty)
+/// and file stem (name without the `.mntl` extension).
+fn split_rel_note_path(rel_path: &str) -> (String, String) {
+    let (dir_rel, file_name) = match rel_path.rsplit_once('/') {
+        Some((dir, file)) => (dir.to_string(), file.to_string()),
+        None => (String::new(), rel_path.to_string()),
+    };
+    let stem = file_name.strip_suffix(".mntl").unwrap_or(&file_name).to_string();
+    (dir_rel, stem)
+}
+
+/// Find a non-colliding `.mntl` filename for `stem` inside `dir_abs`.
+/// If `force_suffix` is true (or the plain name already collides), tries
+/// "stem copy.mntl", "stem copy 2.mntl", etc. Returns the absolute path and
+/// the resulting vault-relative path (`dir_rel/name.mntl`).
+fn unique_sibling_note_path(dir_abs: &Path, dir_rel: &str, stem: &str, force_suffix: bool) -> (PathBuf, String) {
+    let make_rel = |name: &str| {
+        if dir_rel.is_empty() {
+            format!("{name}.mntl")
+        } else {
+            format!("{dir_rel}/{name}.mntl")
+        }
+    };
+
+    if !force_suffix {
+        let path = dir_abs.join(format!("{stem}.mntl"));
+        if !path.exists() {
+            return (path, make_rel(stem));
+        }
+    }
+
+    let mut n = 1;
+    loop {
+        let candidate_stem = if n == 1 { format!("{stem} copy") } else { format!("{stem} copy {n}") };
+        let path = dir_abs.join(format!("{candidate_stem}.mntl"));
+        if !path.exists() {
+            return (path, make_rel(&candidate_stem));
+        }
+        n += 1;
+    }
+}
+
+#[tauri::command]
+pub fn duplicate_note(vault_root: String, rel_path: String) -> Result<CreatedNote, String> {
+    if rel_path.ends_with(".mntl.enc") {
+        return Err("Encrypted notes are not supported yet".to_string());
+    }
+    let source = resolve_rel_path(&vault_root, &rel_path)?;
+    let dir_abs = source.parent().ok_or("Invalid rel_path")?.to_path_buf();
+    let (dir_rel, stem) = split_rel_note_path(&rel_path);
+
+    let (dest_abs, dest_rel) = unique_sibling_note_path(&dir_abs, &dir_rel, &stem, true);
+    fs::copy(&source, &dest_abs).map_err(|e| format!("Failed to duplicate note: {e}"))?;
+    Ok(CreatedNote {
+        name: dest_abs
+            .file_stem()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        rel_path: dest_rel,
+    })
+}
+
+#[tauri::command]
+pub fn copy_note(vault_root: String, source_rel_path: String, dest_rel_dir: String) -> Result<CreatedNote, String> {
+    if source_rel_path.ends_with(".mntl.enc") {
+        return Err("Encrypted notes are not supported yet".to_string());
+    }
+    let source = resolve_rel_path(&vault_root, &source_rel_path)?;
+    let dest_dir_abs = resolve_rel_dir(&vault_root, &dest_rel_dir)?;
+    let (_, stem) = split_rel_note_path(&source_rel_path);
+
+    let (dest_abs, dest_rel) = unique_sibling_note_path(&dest_dir_abs, &dest_rel_dir, &stem, false);
+    fs::copy(&source, &dest_abs).map_err(|e| format!("Failed to copy note: {e}"))?;
+    Ok(CreatedNote {
+        name: dest_abs
+            .file_stem()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        rel_path: dest_rel,
+    })
+}
+
+#[tauri::command]
+pub fn move_note(vault_root: String, source_rel_path: String, dest_rel_dir: String) -> Result<CreatedNote, String> {
+    if source_rel_path.ends_with(".mntl.enc") {
+        return Err("Encrypted notes are not supported yet".to_string());
+    }
+    let source = resolve_rel_path(&vault_root, &source_rel_path)?;
+    let dest_dir_abs = resolve_rel_dir(&vault_root, &dest_rel_dir)?;
+    let (_, stem) = split_rel_note_path(&source_rel_path);
+
+    let (dest_abs, dest_rel) = unique_sibling_note_path(&dest_dir_abs, &dest_rel_dir, &stem, false);
+    fs::rename(&source, &dest_abs).map_err(|e| format!("Failed to move note: {e}"))?;
+    Ok(CreatedNote {
+        name: dest_abs
+            .file_stem()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        rel_path: dest_rel,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

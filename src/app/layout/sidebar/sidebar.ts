@@ -8,6 +8,9 @@ import {
   LucideStar,
   LucideTags,
 } from '@lucide/angular';
+import { confirm } from '@tauri-apps/plugin-dialog';
+import { join } from '@tauri-apps/api/path';
+import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { SidebarSection } from './sidebar-section/sidebar-section';
 import { SidebarItemButton } from './sidebar-item-button/sidebar-item-button';
 import { VaultTreeNode } from './vault-tree-node/vault-tree-node';
@@ -15,7 +18,8 @@ import { FAVORITE_NOTES, MockNote, RECENT_NOTES, TAG_GROUPS } from '../../notes/
 import { SidebarState } from './sidebar-state';
 import { TabsState } from '../../notes/tabs-state';
 import { VaultState } from '../../notes/vault-state';
-import { VaultNoteNode } from '../../notes/vault-tree.model';
+import { VaultClipboardState } from '../../notes/vault-clipboard-state';
+import { VaultFolderNode, VaultNoteNode } from '../../notes/vault-tree.model';
 import { ContextMenuState } from '../../shared/context-menu/context-menu-state';
 import { ContextMenuItem } from '../../shared/context-menu/context-menu.model';
 
@@ -41,6 +45,7 @@ export class Sidebar {
   protected readonly vaultState = inject(VaultState);
   private readonly tabsState = inject(TabsState);
   private readonly contextMenuState = inject(ContextMenuState);
+  private readonly clipboardState = inject(VaultClipboardState);
 
   protected readonly favorites = FAVORITE_NOTES;
   protected readonly recentFiles = RECENT_NOTES;
@@ -113,8 +118,82 @@ export class Sidebar {
     const items: ContextMenuItem[] = [
       { kind: 'item', label: 'Open', icon: 'open', action: () => this.onOpenNote(note) },
       { kind: 'item', label: 'Open in New Tab', icon: 'open-new-tab', action: () => this.onOpenNoteInBackground(note) },
+      { kind: 'separator' },
+      { kind: 'item', label: 'Show in File Explorer', icon: 'reveal', action: () => void this.revealRelPath(note.relPath) },
+      { kind: 'separator' },
+      { kind: 'item', label: 'Duplicate', icon: 'duplicate', action: () => void this.vaultState.duplicateNote(note.relPath) },
+      { kind: 'item', label: 'Copy', icon: 'copy', action: () => this.clipboardState.copy(note) },
+      { kind: 'item', label: 'Cut', icon: 'cut', action: () => this.clipboardState.cut(note) },
+      { kind: 'separator' },
+      { kind: 'item', label: 'Rename', icon: 'rename', disabled: true, action: () => {} },
+      { kind: 'item', label: 'Add to Favorites', icon: 'favorite', disabled: true, action: () => {} },
+      { kind: 'separator' },
+      { kind: 'item', label: 'Delete', icon: 'delete', danger: true, action: () => void this.deleteNote(note) },
     ];
     this.contextMenuState.open(event, items);
+  }
+
+  protected onFolderContextMenu(payload: { event: MouseEvent; folder: VaultFolderNode }): void {
+    const { event, folder } = payload;
+    const items: ContextMenuItem[] = [
+      {
+        kind: 'item',
+        label: 'Show in File Explorer',
+        icon: 'reveal',
+        action: () => void this.revealRelPath(folder.relPath),
+      },
+      { kind: 'separator' },
+      {
+        kind: 'item',
+        label: 'Paste',
+        icon: 'paste',
+        disabled: !this.clipboardState.entry(),
+        action: () => void this.pasteInto(folder.relPath),
+      },
+    ];
+    this.contextMenuState.open(event, items);
+  }
+
+  protected onVaultBackgroundContextMenu(event: MouseEvent): void {
+    const items: ContextMenuItem[] = [
+      {
+        kind: 'item',
+        label: 'Paste',
+        icon: 'paste',
+        disabled: !this.clipboardState.entry(),
+        action: () => void this.pasteInto(''),
+      },
+    ];
+    this.contextMenuState.open(event, items);
+  }
+
+  private async revealRelPath(relPath: string): Promise<void> {
+    const root = this.vaultState.rootPath();
+    if (!root) return;
+    const absolute = relPath ? await join(root, ...relPath.split('/')) : root;
+    await revealItemInDir(absolute);
+  }
+
+  private async deleteNote(note: VaultNoteNode): Promise<void> {
+    const confirmed = await confirm(`Delete "${note.name}"? This can't be undone.`, {
+      title: 'Delete Note',
+      kind: 'warning',
+    });
+    if (!confirmed) return;
+    await this.vaultState.deleteNote(note.relPath);
+    this.tabsState.closeByNoteId(note.relPath);
+  }
+
+  private async pasteInto(destRelDir: string): Promise<void> {
+    const clip = this.clipboardState.entry();
+    if (!clip) return;
+    if (clip.mode === 'copy') {
+      await this.vaultState.copyNote(clip.relPath, destRelDir);
+    } else {
+      const moved = await this.vaultState.moveNote(clip.relPath, destRelDir);
+      this.tabsState.renameNoteId(clip.relPath, moved.relPath, moved.name);
+      this.clipboardState.clear();
+    }
   }
 
   protected onResizePointerDown(event: PointerEvent): void {

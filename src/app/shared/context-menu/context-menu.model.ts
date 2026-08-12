@@ -2,6 +2,9 @@ export type ContextMenuIcon =
   | 'open'
   | 'open-new-tab'
   | 'copy'
+  | 'cut'
+  | 'paste'
+  | 'reveal'
   | 'rename'
   | 'duplicate'
   | 'favorite'
@@ -14,6 +17,7 @@ export interface ContextMenuAction {
   label: string;
   icon: ContextMenuIcon;
   danger?: boolean;
+  disabled?: boolean;
   action: () => void;
 }
 

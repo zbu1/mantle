@@ -1,7 +1,9 @@
-import { Injectable, effect, signal } from '@angular/core';
+import { Injectable, effect, inject, signal } from '@angular/core';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
-import { VaultFolderNode } from './vault-tree.model';
+import { flattenVaultNotes, VaultFolderNode } from './vault-tree.model';
+import { TabsState } from './tabs-state';
 
 const STORAGE_KEY = 'mantle.vault.v1';
 
@@ -20,10 +22,16 @@ export interface CreatedNote {
 
 @Injectable({ providedIn: 'root' })
 export class VaultState {
+  private readonly tabsState = inject(TabsState);
+
   readonly rootPath = signal<string | null>(readStoredPath());
   readonly tree = signal<VaultFolderNode | null>(null);
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
+
+  /** Baseline from the last scan, used to detect externally-added/removed notes. Reset across vault switches. */
+  private previousRoot: string | null = null;
+  private previousNotes: Map<string, string> | null = null;
 
   constructor() {
     effect(() => {
@@ -34,6 +42,26 @@ export class VaultState {
       } catch {
         // storage unavailable (e.g. private browsing) — ignore
       }
+    });
+
+    // Keep a native filesystem watcher pointed at the current vault so
+    // changes made outside the app (OS file explorer, other editors) are
+    // picked up too.
+    effect(() => {
+      const path = this.rootPath();
+      if (path) {
+        void invoke('start_vault_watch', { vaultRoot: path }).catch((err) => {
+          console.error('Failed to watch vault for external changes:', err);
+        });
+      } else {
+        void invoke('stop_vault_watch').catch(() => {
+          // no watcher running — ignore
+        });
+      }
+    });
+
+    void listen('vault-changed', () => {
+      void this.refresh();
     });
 
     if (this.rootPath()) {
@@ -54,13 +82,42 @@ export class VaultState {
     this.loading.set(true);
     this.error.set(null);
     try {
-      this.tree.set(await invoke<VaultFolderNode>('scan_vault', { vaultRoot: root }));
+      const tree = await invoke<VaultFolderNode>('scan_vault', { vaultRoot: root });
+      this.tree.set(tree);
+
+      const notes = flattenVaultNotes(tree);
+      if (this.previousRoot === root && this.previousNotes) {
+        this.reconcileTabs(this.previousNotes, notes);
+      }
+      this.previousRoot = root;
+      this.previousNotes = notes;
     } catch (err) {
       this.error.set(String(err));
       this.tree.set(null);
     } finally {
       this.loading.set(false);
     }
+  }
+
+  /**
+   * Diffs the previous and current note listings and updates open tabs to
+   * match: a single removed+added pair is treated as a rename/move (tabs
+   * are retargeted), anything else removed is flagged as missing on its
+   * tab(s), and anything that reappeared has its missing flag cleared.
+   */
+  private reconcileTabs(before: Map<string, string>, after: Map<string, string>): void {
+    const removed = [...before.keys()].filter((relPath) => !after.has(relPath));
+    const added = [...after.keys()].filter((relPath) => !before.has(relPath));
+
+    if (removed.length === 1 && added.length === 1) {
+      const [oldPath] = removed;
+      const [newPath] = added;
+      this.tabsState.renameNoteId(oldPath, newPath, after.get(newPath)!);
+      return;
+    }
+
+    for (const relPath of removed) this.tabsState.markMissing(relPath);
+    for (const relPath of added) this.tabsState.clearMissing(relPath);
   }
 
   async createNote(relDir: string, name: string): Promise<CreatedNote> {
@@ -71,7 +128,39 @@ export class VaultState {
       relDir,
       name,
     });
-    await this.refresh();
+    return created;
+  }
+
+  async deleteNote(relPath: string): Promise<void> {
+    const root = this.rootPath();
+    if (!root) throw new Error('No vault open');
+    await invoke('delete_note', { vaultRoot: root, relPath });
+  }
+
+  async duplicateNote(relPath: string): Promise<CreatedNote> {
+    const root = this.rootPath();
+    if (!root) throw new Error('No vault open');
+    return invoke<CreatedNote>('duplicate_note', { vaultRoot: root, relPath });
+  }
+
+  async copyNote(sourceRelPath: string, destRelDir: string): Promise<CreatedNote> {
+    const root = this.rootPath();
+    if (!root) throw new Error('No vault open');
+    return invoke<CreatedNote>('copy_note', {
+      vaultRoot: root,
+      sourceRelPath,
+      destRelDir,
+    });
+  }
+
+  async moveNote(sourceRelPath: string, destRelDir: string): Promise<CreatedNote> {
+    const root = this.rootPath();
+    if (!root) throw new Error('No vault open');
+    const created = await invoke<CreatedNote>('move_note', {
+      vaultRoot: root,
+      sourceRelPath,
+      destRelDir,
+    });
     return created;
   }
 }

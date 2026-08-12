@@ -16,8 +16,9 @@ const BASE = 'flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs';
     <button
       type="button"
       role="menuitem"
-      (click)="selected.emit()"
-      (mouseenter)="hovered.emit()"
+      [disabled]="disabled()"
+      (click)="!disabled() && selected.emit()"
+      (mouseenter)="!disabled() && hovered.emit()"
       [class]="buttonClass()"
     >
       <span class="flex size-3.5 shrink-0 items-center justify-center">
@@ -32,6 +33,8 @@ export class MenuItem {
   readonly label = input.required<string>();
   /** Destructive actions (delete, etc.) render in the destructive color. */
   readonly danger = input(false);
+  /** Renders the row greyed out and non-interactive. */
+  readonly disabled = input(false);
   /**
    * Highlights the row. This is the only thing that drives the highlight —
    * there's no CSS `:hover`, because that stays on whatever row the cursor
@@ -46,6 +49,7 @@ export class MenuItem {
   readonly hovered = output<void>();
 
   protected readonly buttonClass = computed(() => {
+    if (this.disabled()) return `${BASE} cursor-not-allowed text-foreground/40`;
     if (this.danger()) return `${BASE} text-destructive hover:bg-destructive/10`;
     if (this.active()) return `${BASE} bg-accent text-accent-foreground`;
     return `${BASE} text-foreground/80`;

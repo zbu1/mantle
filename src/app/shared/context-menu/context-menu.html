@@ -7,6 +7,7 @@
         <app-menu-item
           [label]="item.label"
           [danger]="item.danger ?? false"
+          [disabled]="item.disabled ?? false"
           [active]="$index === selectedIndex()"
           (hovered)="selectedIndex.set($index)"
           (selected)="select(item)"
@@ -16,6 +17,9 @@
               @case ('open') { <svg lucideFileText [size]="14"></svg> }
               @case ('open-new-tab') { <svg lucideSquarePlus [size]="14"></svg> }
               @case ('copy') { <svg lucideCopy [size]="14"></svg> }
+              @case ('cut') { <svg lucideScissors [size]="14"></svg> }
+              @case ('paste') { <svg lucideClipboardPaste [size]="14"></svg> }
+              @case ('reveal') { <svg lucideFolderOpen [size]="14"></svg> }
               @case ('rename') { <svg lucidePencil [size]="14"></svg> }
               @case ('duplicate') { <svg lucideCopyPlus [size]="14"></svg> }
               @case ('favorite') { <svg lucideStar [size]="14"></svg> }
