@@ -1,8 +1,17 @@
 import { Component, inject, signal } from '@angular/core';
-import { LucideFolderOpen, LucideFolders, LucidePlus } from '@lucide/angular';
+import {
+  LucideClock,
+  LucideFileText,
+  LucideFolderOpen,
+  LucideFolders,
+  LucidePlus,
+  LucideStar,
+  LucideTags,
+} from '@lucide/angular';
 import { SidebarSection } from './sidebar-section/sidebar-section';
 import { SidebarItemButton } from './sidebar-item-button/sidebar-item-button';
 import { VaultTreeNode } from './vault-tree-node/vault-tree-node';
+import { FAVORITE_NOTES, MockNote, RECENT_NOTES, TAG_GROUPS } from '../../notes/notes-data';
 import { SidebarState } from './sidebar-state';
 import { TabsState } from '../../notes/tabs-state';
 import { VaultState } from '../../notes/vault-state';
@@ -12,7 +21,18 @@ import { ContextMenuItem } from '../../shared/context-menu/context-menu.model';
 
 @Component({
   selector: 'app-sidebar',
-  imports: [SidebarSection, SidebarItemButton, VaultTreeNode, LucideFolderOpen, LucideFolders, LucidePlus],
+  imports: [
+    SidebarSection,
+    SidebarItemButton,
+    VaultTreeNode,
+    LucideFolderOpen,
+    LucideFolders,
+    LucidePlus,
+    LucideStar,
+    LucideClock,
+    LucideTags,
+    LucideFileText,
+  ],
   templateUrl: './sidebar.html',
   host: { class: 'contents' },
 })
@@ -21,6 +41,10 @@ export class Sidebar {
   protected readonly vaultState = inject(VaultState);
   private readonly tabsState = inject(TabsState);
   private readonly contextMenuState = inject(ContextMenuState);
+
+  protected readonly favorites = FAVORITE_NOTES;
+  protected readonly recentFiles = RECENT_NOTES;
+  protected readonly tagGroups = TAG_GROUPS;
 
   protected readonly lockedHint = signal<string | null>(null);
 
@@ -43,6 +67,33 @@ export class Sidebar {
         // name collision — try the next candidate
       }
     }
+  }
+
+  protected openNote(note: MockNote): void {
+    this.tabsState.openNote(note);
+  }
+
+  protected openNoteInBackground(note: MockNote): void {
+    this.tabsState.openNoteInBackground(note);
+  }
+
+  protected openNoteContextMenu(event: MouseEvent, note: MockNote): void {
+    const items: ContextMenuItem[] = [
+      { kind: 'item', label: 'Open', icon: 'open', action: () => this.openNote(note) },
+      { kind: 'item', label: 'Open in New Tab', icon: 'open-new-tab', action: () => this.openNoteInBackground(note) },
+      { kind: 'separator' },
+      { kind: 'item', label: 'Rename', icon: 'rename', action: () => {} },
+      { kind: 'item', label: 'Duplicate', icon: 'duplicate', action: () => {} },
+      {
+        kind: 'item',
+        label: note.favorite ? 'Remove from Favorites' : 'Add to Favorites',
+        icon: note.favorite ? 'unfavorite' : 'favorite',
+        action: () => {},
+      },
+      { kind: 'separator' },
+      { kind: 'item', label: 'Delete', icon: 'delete', danger: true, action: () => {} },
+    ];
+    this.contextMenuState.open(event, items);
   }
 
   protected onOpenNote(note: VaultNoteNode): void {

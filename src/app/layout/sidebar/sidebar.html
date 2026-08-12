@@ -17,11 +17,41 @@
 
     @if (state.collapsed()) {
     <div class="flex flex-col gap-1">
+      <app-sidebar-item-button label="Favorites" [collapsed]="true">
+        <svg sidebarItemIcon lucideStar [size]="14"></svg>
+      </app-sidebar-item-button>
+      <app-sidebar-item-button label="Recent Files" [collapsed]="true">
+        <svg sidebarItemIcon lucideClock [size]="14"></svg>
+      </app-sidebar-item-button>
       <app-sidebar-item-button label="Vault" [collapsed]="true">
         <svg sidebarItemIcon lucideFolders [size]="14"></svg>
       </app-sidebar-item-button>
+      <app-sidebar-item-button label="Tags" [collapsed]="true">
+        <svg sidebarItemIcon lucideTags [size]="14"></svg>
+      </app-sidebar-item-button>
     </div>
     } @else {
+    <app-sidebar-section id="favorites" label="Favorites">
+      <svg sidebarSectionIcon lucideStar [size]="12"></svg>
+      @for (note of favorites; track note.id) {
+      <app-sidebar-item-button [label]="note.title" (clicked)="openNote(note)"
+        (middleClicked)="openNoteInBackground(note)" (contextMenu)="openNoteContextMenu($event, note)">
+        <svg sidebarItemIcon lucideFileText [size]="14" class="shrink-0"></svg>
+      </app-sidebar-item-button>
+      }
+    </app-sidebar-section>
+
+    <app-sidebar-section id="recent" label="Recent Files">
+      <svg sidebarSectionIcon lucideClock [size]="12"></svg>
+      @for (note of recentFiles; track note.id) {
+      <app-sidebar-item-button [label]="note.title" (clicked)="openNote(note)"
+        (middleClicked)="openNoteInBackground(note)" (contextMenu)="openNoteContextMenu($event, note)">
+        <svg sidebarItemIcon lucideFileText [size]="14" class="shrink-0"></svg>
+        <span sidebarItemTrailing class="shrink-0 text-xs text-muted-foreground">{{ note.updatedAt }}</span>
+      </app-sidebar-item-button>
+      }
+    </app-sidebar-section>
+
     <app-sidebar-section id="workspace" label="Vault">
       <svg sidebarSectionIcon lucideFolders [size]="12"></svg>
       @if (vaultState.loading()) {
@@ -39,6 +69,22 @@
       }
       } @else {
       <div class="px-2 py-1 text-xs text-muted-foreground">No vault open — click "Open Vault" to pick a folder.</div>
+      }
+    </app-sidebar-section>
+
+    <app-sidebar-section id="tags" label="Tags">
+      <svg sidebarSectionIcon lucideTags [size]="12"></svg>
+      @for (group of tagGroups; track group.name) {
+      <div class="flex items-center gap-1.5 px-2 pt-1 text-[11px] font-medium text-muted-foreground">
+        <span class="h-1.5 w-1.5 shrink-0 rounded-full" [style.background-color]="group.color"></span>
+        <span>{{ group.name }}</span>
+      </div>
+      @for (note of group.notes; track note.id) {
+      <app-sidebar-item-button [label]="note.title" (clicked)="openNote(note)"
+        (middleClicked)="openNoteInBackground(note)" (contextMenu)="openNoteContextMenu($event, note)">
+        <svg sidebarItemIcon lucideFileText [size]="14" class="shrink-0" [style.color]="group.color"></svg>
+      </app-sidebar-item-button>
+      }
       }
     </app-sidebar-section>
     }
