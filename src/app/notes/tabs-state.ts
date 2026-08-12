@@ -109,6 +109,19 @@ export class TabsState {
     this.tabs.update((tabs) => [...tabs, tab]);
   }
 
+  /** Always opens `note` in a brand-new tab (rather than reusing/replacing the active tab). */
+  openInNewTab(note: NoteRef): void {
+    const existing = this.tabs().find((tab) => tab.noteId === note.id);
+    if (existing) {
+      this.setActive(existing.id);
+      return;
+    }
+
+    const tab: NoteTab = { id: createTabId(), noteId: note.id, title: note.title };
+    this.tabs.update((tabs) => [...tabs, tab]);
+    this.setActive(tab.id);
+  }
+
   closeTab(id: string): void {
     const tabs = this.tabs();
     const index = tabs.findIndex((tab) => tab.id === id);

@@ -1,8 +1,9 @@
 import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { LucideCopy, LucideMinus, LucidePanelLeft, LucideSquare, LucideX } from '@lucide/angular';
+import { LucideCopy, LucideMinus, LucidePanelLeft, LucidePlus, LucideSquare, LucideX } from '@lucide/angular';
 import { SidebarState } from '../sidebar/sidebar-state';
 import { TabsState } from '../../notes/tabs-state';
+import { VaultState } from '../../notes/vault-state';
 
 /** True when running inside a Tauri webview (the IPC bridge is present). */
 function isTauri(): boolean {
@@ -11,12 +12,13 @@ function isTauri(): boolean {
 
 @Component({
   selector: 'app-header',
-  imports: [LucidePanelLeft, LucideMinus, LucideSquare, LucideCopy, LucideX],
+  imports: [LucidePanelLeft, LucideMinus, LucideSquare, LucideCopy, LucideX, LucidePlus],
   templateUrl: './header.html',
 })
 export class Header {
   protected readonly sidebarState = inject(SidebarState);
   protected readonly tabsState = inject(TabsState);
+  private readonly vaultState = inject(VaultState);
   private readonly destroyRef = inject(DestroyRef);
 
   protected readonly isMaximized = signal(false);
@@ -45,6 +47,20 @@ export class Header {
   protected closeTab(event: Event, id: string): void {
     event.stopPropagation();
     this.tabsState.closeTab(id);
+  }
+
+  protected async onNewNote(): Promise<void> {
+    const base = 'Untitled';
+    for (let i = 0; i < 50; i++) {
+      const name = i === 0 ? base : `${base} ${i + 1}`;
+      try {
+        const created = await this.vaultState.createNote('', name);
+        this.tabsState.openInNewTab({ id: created.relPath, title: created.name });
+        return;
+      } catch {
+        // name collision — try the next candidate
+      }
+    }
   }
 
   minimize(): void {

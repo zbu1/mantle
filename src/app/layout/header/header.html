@@ -26,6 +26,10 @@
     } @else {
     <div class="flex items-center pl-2 text-sm font-semibold text-foreground">Mantle</div>
     }
+    <button type="button" title="New note" (click)="onNewNote()"
+      class="my-1 inline-flex h-7 w-7 shrink-0 items-center justify-center self-center rounded-md text-muted-foreground hover:bg-background/60 hover:text-foreground">
+      <svg lucidePlus [size]="14"></svg>
+    </button>
   </div>
   <div class="flex">
     <button type="button" title="Minimize" (click)="minimize()"
