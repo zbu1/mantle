@@ -1,8 +1,9 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, effect, inject, signal } from '@angular/core';
 import {
   LucideClock,
   LucideFileText,
   LucideFolderOpen,
+  LucideFolderPlus,
   LucideFolders,
   LucidePlus,
   LucideStar,
@@ -19,7 +20,8 @@ import { SidebarState } from './sidebar-state';
 import { TabsState } from '../../notes/tabs-state';
 import { VaultState } from '../../notes/vault-state';
 import { VaultClipboardState } from '../../notes/vault-clipboard-state';
-import { VaultFolderNode, VaultNoteNode } from '../../notes/vault-tree.model';
+import { VaultSelectionState } from '../../notes/vault-selection-state';
+import { flattenVaultNotes, VAULT_NOTE_DRAG_MIME, VaultFolderNode, VaultNoteNode } from '../../notes/vault-tree.model';
 import { ContextMenuState } from '../../shared/context-menu/context-menu-state';
 import { ContextMenuItem } from '../../shared/context-menu/context-menu.model';
 
@@ -30,6 +32,7 @@ import { ContextMenuItem } from '../../shared/context-menu/context-menu.model';
     SidebarItemButton,
     VaultTreeNode,
     LucideFolderOpen,
+    LucideFolderPlus,
     LucideFolders,
     LucidePlus,
     LucideStar,
@@ -46,6 +49,7 @@ export class Sidebar {
   private readonly tabsState = inject(TabsState);
   private readonly contextMenuState = inject(ContextMenuState);
   private readonly clipboardState = inject(VaultClipboardState);
+  protected readonly selectionState = inject(VaultSelectionState);
 
   protected readonly favorites = FAVORITE_NOTES;
   protected readonly recentFiles = RECENT_NOTES;
@@ -53,8 +57,22 @@ export class Sidebar {
 
   protected readonly lockedHint = signal<string | null>(null);
 
+  /** Session-only favorite toggle stub — not persisted, not wired to the real Favorites section yet. */
+  protected readonly favoritedPaths = signal<ReadonlySet<string>>(new Set());
+
   private readonly dragStartX = signal<number | null>(null);
   private readonly dragStartWidth = signal<number>(0);
+
+  constructor() {
+    // Drop selected notes that no longer exist once the tree changes (deleted/moved externally).
+    effect(() => {
+      const tree = this.vaultState.tree();
+      const validPaths = tree ? flattenVaultNotes(tree) : new Map<string, string>();
+      for (const relPath of this.selectionState.selected()) {
+        if (!validPaths.has(relPath)) this.selectionState.remove(relPath);
+      }
+    });
+  }
 
   protected async onOpenVault(): Promise<void> {
     await this.vaultState.pickVault();
@@ -67,6 +85,24 @@ export class Sidebar {
       try {
         const created = await this.vaultState.createNote('', name);
         this.tabsState.openNote({ id: created.relPath, title: created.name });
+        return;
+      } catch {
+        // name collision — try the next candidate
+      }
+    }
+  }
+
+  /** Creates a new folder at the vault root; if notes are selected, moves them into it. */
+  protected async onNewFolder(): Promise<void> {
+    const base = 'New Folder';
+    const selectedNotes = [...this.selectionState.selected()];
+    for (let i = 0; i < 50; i++) {
+      const name = i === 0 ? base : `${base} ${i + 1}`;
+      try {
+        const created = await this.vaultState.createFolder('', name);
+        if (selectedNotes.length > 0) {
+          await this.onNotesDropped({ relPaths: selectedNotes, destRelDir: created.relPath });
+        }
         return;
       } catch {
         // name collision — try the next candidate
@@ -115,6 +151,20 @@ export class Sidebar {
 
   protected onNoteContextMenu(payload: { event: MouseEvent; note: VaultNoteNode }): void {
     const { event, note } = payload;
+    const selected = this.selectionState.selected();
+    if (selected.size > 1 && selected.has(note.relPath)) {
+      const items: ContextMenuItem[] = [
+        {
+          kind: 'item',
+          label: `Delete ${selected.size} Notes`,
+          icon: 'delete',
+          danger: true,
+          action: () => void this.deleteSelectedNotes(),
+        },
+      ];
+      this.contextMenuState.open(event, items);
+      return;
+    }
     const items: ContextMenuItem[] = [
       { kind: 'item', label: 'Open', icon: 'open', action: () => this.onOpenNote(note) },
       { kind: 'item', label: 'Open in New Tab', icon: 'open-new-tab', action: () => this.onOpenNoteInBackground(note) },
@@ -126,7 +176,12 @@ export class Sidebar {
       { kind: 'item', label: 'Cut', icon: 'cut', action: () => this.clipboardState.cut(note) },
       { kind: 'separator' },
       { kind: 'item', label: 'Rename', icon: 'rename', disabled: true, action: () => {} },
-      { kind: 'item', label: 'Add to Favorites', icon: 'favorite', disabled: true, action: () => {} },
+      {
+        kind: 'item',
+        label: this.favoritedPaths().has(note.relPath) ? 'Remove from Favorites' : 'Add to Favorites',
+        icon: this.favoritedPaths().has(note.relPath) ? 'unfavorite' : 'favorite',
+        action: () => this.toggleFavoriteStub(note.relPath),
+      },
       { kind: 'separator' },
       { kind: 'item', label: 'Delete', icon: 'delete', danger: true, action: () => void this.deleteNote(note) },
     ];
@@ -167,6 +222,43 @@ export class Sidebar {
     this.contextMenuState.open(event, items);
   }
 
+  private toggleFavoriteStub(relPath: string): void {
+    const next = new Set(this.favoritedPaths());
+    if (next.has(relPath)) next.delete(relPath);
+    else next.add(relPath);
+    this.favoritedPaths.set(next);
+  }
+
+  protected onVaultBackgroundDragOver(event: DragEvent): void {
+    if (!event.dataTransfer?.types.includes(VAULT_NOTE_DRAG_MIME)) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+  }
+
+  protected onVaultBackgroundDrop(event: DragEvent): void {
+    event.preventDefault();
+    const raw = event.dataTransfer?.getData(VAULT_NOTE_DRAG_MIME);
+    if (!raw) return;
+    try {
+      const relPaths = JSON.parse(raw) as string[];
+      void this.onNotesDropped({ relPaths, destRelDir: '' });
+    } catch {
+      // malformed drag payload — ignore
+    }
+  }
+
+  /** Moves dropped notes into `destRelDir`, skipping any already there to avoid an accidental rename-collision. */
+  protected async onNotesDropped(payload: { relPaths: string[]; destRelDir: string }): Promise<void> {
+    const { relPaths, destRelDir } = payload;
+    for (const relPath of relPaths) {
+      const parentDir = relPath.includes('/') ? relPath.slice(0, relPath.lastIndexOf('/')) : '';
+      if (parentDir === destRelDir) continue;
+      const moved = await this.vaultState.moveNote(relPath, destRelDir);
+      this.tabsState.renameNoteId(relPath, moved.relPath, moved.name);
+    }
+    this.selectionState.clear();
+  }
+
   private async revealRelPath(relPath: string): Promise<void> {
     const root = this.vaultState.rootPath();
     if (!root) return;
@@ -182,6 +274,20 @@ export class Sidebar {
     if (!confirmed) return;
     await this.vaultState.deleteNote(note.relPath);
     this.tabsState.closeByNoteId(note.relPath);
+  }
+
+  private async deleteSelectedNotes(): Promise<void> {
+    const relPaths = [...this.selectionState.selected()];
+    const confirmed = await confirm(`Delete ${relPaths.length} notes? This can't be undone.`, {
+      title: 'Delete Notes',
+      kind: 'warning',
+    });
+    if (!confirmed) return;
+    for (const relPath of relPaths) {
+      await this.vaultState.deleteNote(relPath);
+      this.tabsState.closeByNoteId(relPath);
+    }
+    this.selectionState.clear();
   }
 
   private async pasteInto(destRelDir: string): Promise<void> {

@@ -170,6 +170,7 @@
   border-radius: 6px;
   padding: 0.6em 0.8em;
   overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .ProseMirror code {

@@ -24,6 +24,7 @@ import { schema } from './prosemirror/schema';
 import { parseMarkdown, serializeMarkdown } from './prosemirror/markdown-converter';
 import { createSlashMenuPlugin } from './prosemirror/plugins/slash-menu-plugin';
 import { buildMarkdownInputRules } from './prosemirror/plugins/markdown-input-rules';
+import { trailingParagraphPlugin } from './prosemirror/plugins/trailing-paragraph-plugin';
 import { demoteEmptyLeadingBlock } from './prosemirror/commands/demote-empty-leading-block';
 import { liftListItemAtStart } from './prosemirror/commands/lift-list-item-at-start';
 import { TaskItemView } from './prosemirror/nodeviews/task-item-view';
@@ -114,6 +115,7 @@ export class NoteEditor {
           createSlashMenuPlugin(this.slashMenuState, () => this.slashMenuCmp().panelElement()),
           buildEditorKeymap(),
           gapCursor(),
+          trailingParagraphPlugin(),
         ],
       });
 

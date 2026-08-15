@@ -20,6 +20,7 @@ pub fn run() {
             vault::read_note,
             vault::write_note,
             vault::create_note,
+            vault::create_folder,
             vault::delete_note,
             vault::duplicate_note,
             vault::copy_note,

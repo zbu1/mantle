@@ -1,6 +1,7 @@
 @if (asFolder(); as folder) {
 <button type="button" (click)="toggleExpanded()" (contextmenu)="folderContextMenu.emit({ event: $event, folder })"
-  [style.padding-left.px]="8 + depth() * 12"
+  (dragover)="onFolderDragOver($event)" (dragleave)="onFolderDragLeave()" (drop)="onFolderDrop(folder, $event)"
+  [style.padding-left.px]="8 + depth() * 12" [class.bg-primary/10]="dragOverFolder()"
   class="flex w-full items-center gap-1.5 rounded-md py-1 pr-2 text-xs text-foreground/80 hover:bg-background hover:text-foreground">
   <svg lucideChevronRight [size]="12" class="shrink-0 transition-transform duration-150"
     [class.rotate-90]="expanded()"></svg>
@@ -12,14 +13,15 @@
 <app-vault-tree-node [node]="child" [depth]="depth() + 1" [openLockedHint]="openLockedHint()"
   (openNote)="openNote.emit($event)" (openNoteInBackground)="openNoteInBackground.emit($event)"
   (noteContextMenu)="noteContextMenu.emit($event)" (folderContextMenu)="folderContextMenu.emit($event)"
-  (lockedClicked)="lockedClicked.emit($event)" />
+  (lockedClicked)="lockedClicked.emit($event)" (notesDropped)="notesDropped.emit($event)" />
 }
 }
 } @else if (asNote(); as note) {
-<div [style.padding-left.px]="depth() * 12">
-  <app-sidebar-item-button [label]="note.name" (clicked)="onNoteClick(note)"
-    (middleClicked)="openNoteInBackground.emit(note)"
-    (contextMenu)="noteContextMenu.emit({ event: $event, note })">
+<div [style.padding-left.px]="depth() * 12" [attr.data-note-path]="note.relPath" [draggable]="!note.locked"
+  (dragstart)="onNoteDragStart(note, $event)" (dragover)="$event.stopPropagation()">
+  <app-sidebar-item-button [label]="note.name" [selected]="selectionState.isSelected(note.relPath)"
+    (clicked)="onNoteClick(note, $event)" (middleClicked)="openNoteInBackground.emit(note)"
+    (contextMenu)="onNoteContextMenu(note, $event)">
     @if (note.locked) {
     <svg sidebarItemIcon lucideLock [size]="13" class="shrink-0"></svg>
     } @else {

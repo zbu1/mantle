@@ -8,7 +8,8 @@ import { Component, input, output } from '@angular/core';
 export class SidebarItemButton {
   readonly label = input.required<string>();
   readonly collapsed = input(false);
-  readonly clicked = output<void>();
+  readonly selected = input(false);
+  readonly clicked = output<MouseEvent>();
   readonly middleClicked = output<void>();
   readonly contextMenu = output<MouseEvent>();
 

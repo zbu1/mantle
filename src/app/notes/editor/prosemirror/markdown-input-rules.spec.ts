@@ -243,6 +243,21 @@ describe('markdown input rules', () => {
       expect(block.textContent).toBe('**bold** # heading');
     });
 
+    it('keeps an empty paragraph below a trailing code block to move the cursor into', async () => {
+      const { view } = await setup();
+      type(view, '```');
+      type(view, 'const x = 1;');
+
+      expect(view.state.doc.childCount).toBe(2);
+      const trailing = view.state.doc.lastChild!;
+      expect(trailing.type).toBe(schema.nodes['paragraph']);
+      expect(trailing.textContent).toBe('');
+
+      // The trailing paragraph is a serialization no-op: nothing follows it,
+      // so it contributes no characters (and no blank line) to the saved markdown.
+      expect(serializeMarkdown(view.state.doc)).toBe('```\nconst x = 1;\n```');
+    });
+
     it('leaves markdown untouched inside an inline code span', async () => {
       const { view } = await setup();
       type(view, '`a*b*c`');

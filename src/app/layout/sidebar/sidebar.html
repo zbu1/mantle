@@ -13,6 +13,10 @@
         class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-foreground/80 hover:bg-background hover:text-foreground disabled:opacity-40">
         <svg lucidePlus [size]="14"></svg>
       </button>
+      <button type="button" title="New Folder" (click)="onNewFolder()" [disabled]="!vaultState.rootPath()"
+        class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-foreground/80 hover:bg-background hover:text-foreground disabled:opacity-40">
+        <svg lucideFolderPlus [size]="14"></svg>
+      </button>
     </div>
 
     @if (state.collapsed()) {
@@ -54,7 +58,8 @@
 
     <app-sidebar-section id="workspace" label="Vault">
       <svg sidebarSectionIcon lucideFolders [size]="12"></svg>
-      <div class="contents" (contextmenu)="onVaultBackgroundContextMenu($event)">
+      <div class="contents" data-vault-tree (contextmenu)="onVaultBackgroundContextMenu($event)"
+        (dragover)="onVaultBackgroundDragOver($event)" (drop)="onVaultBackgroundDrop($event)">
         @if (vaultState.loading()) {
         <div class="px-2 py-1 text-xs text-muted-foreground">Loading vault…</div>
         } @else if (vaultState.error(); as err) {
@@ -63,7 +68,8 @@
         @for (child of tree.children; track child.relPath) {
         <app-vault-tree-node [node]="child" [openLockedHint]="lockedHint()" (openNote)="onOpenNote($event)"
           (openNoteInBackground)="onOpenNoteInBackground($event)" (noteContextMenu)="onNoteContextMenu($event)"
-          (folderContextMenu)="onFolderContextMenu($event)" (lockedClicked)="onLockedClicked($event)" />
+          (folderContextMenu)="onFolderContextMenu($event)" (lockedClicked)="onLockedClicked($event)"
+          (notesDropped)="onNotesDropped($event)" />
         }
         @if (tree.children.length === 0) {
         <div class="px-2 py-1 text-xs text-muted-foreground">No notes yet — click "New Note" to create one.</div>

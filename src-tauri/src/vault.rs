@@ -321,6 +321,32 @@ pub fn copy_note(vault_root: String, source_rel_path: String, dest_rel_dir: Stri
     })
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreatedFolder {
+    pub name: String,
+    pub rel_path: String,
+}
+
+#[tauri::command]
+pub fn create_folder(vault_root: String, rel_dir: String, name: String) -> Result<CreatedFolder, String> {
+    if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains(':') {
+        return Err("Invalid folder name".to_string());
+    }
+    let dest_dir_abs = resolve_rel_dir(&vault_root, &rel_dir)?;
+    let rel_path = if rel_dir.is_empty() {
+        name.clone()
+    } else {
+        format!("{rel_dir}/{name}")
+    };
+    let path = dest_dir_abs.join(&name);
+    if path.exists() {
+        return Err(format!("A folder named \"{name}\" already exists in this location"));
+    }
+    fs::create_dir(&path).map_err(|e| format!("Failed to create folder: {e}"))?;
+    Ok(CreatedFolder { name, rel_path })
+}
+
 #[tauri::command]
 pub fn move_note(vault_root: String, source_rel_path: String, dest_rel_dir: String) -> Result<CreatedNote, String> {
     if source_rel_path.ends_with(".mntl.enc") {
@@ -387,6 +413,36 @@ mod tests {
 
         let resolved = resolve_rel_path(&root_str, "Work/todo.mntl").unwrap();
         assert!(resolved.ends_with("Work/todo.mntl") || resolved.ends_with("Work\\todo.mntl"));
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn create_folder_creates_at_root_and_nested() {
+        let root = temp_dir("create-folder");
+        fs::create_dir_all(root.join("Work")).unwrap();
+        let root_str = root.to_string_lossy().into_owned();
+
+        let created = create_folder(root_str.clone(), String::new(), "Archive".to_string()).unwrap();
+        assert_eq!(created.rel_path, "Archive");
+        assert!(root.join("Archive").is_dir());
+
+        let nested = create_folder(root_str, "Work".to_string(), "Drafts".to_string()).unwrap();
+        assert_eq!(nested.rel_path, "Work/Drafts");
+        assert!(root.join("Work").join("Drafts").is_dir());
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn create_folder_rejects_collisions_and_invalid_names() {
+        let root = temp_dir("create-folder-invalid");
+        fs::create_dir_all(root.join("Archive")).unwrap();
+        let root_str = root.to_string_lossy().into_owned();
+
+        assert!(create_folder(root_str.clone(), String::new(), "Archive".to_string()).is_err());
+        assert!(create_folder(root_str.clone(), String::new(), "a/b".to_string()).is_err());
+        assert!(create_folder(root_str, String::new(), String::new()).is_err());
 
         let _ = fs::remove_dir_all(&root);
     }

@@ -20,6 +20,11 @@ export interface CreatedNote {
   relPath: string;
 }
 
+export interface CreatedFolder {
+  name: string;
+  relPath: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class VaultState {
   private readonly tabsState = inject(TabsState);
@@ -129,6 +134,12 @@ export class VaultState {
       name,
     });
     return created;
+  }
+
+  async createFolder(relDir: string, name: string): Promise<CreatedFolder> {
+    const root = this.rootPath();
+    if (!root) throw new Error('No vault open');
+    return invoke<CreatedFolder>('create_folder', { vaultRoot: root, relDir, name });
   }
 
   async deleteNote(relPath: string): Promise<void> {
