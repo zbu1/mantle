@@ -20,6 +20,7 @@ import { SidebarState } from './sidebar-state';
 import { TabsState } from '../../notes/tabs-state';
 import { VaultState } from '../../notes/vault-state';
 import { VaultClipboardState } from '../../notes/vault-clipboard-state';
+import { VaultDragState } from '../../notes/vault-drag-state';
 import { VaultSelectionState } from '../../notes/vault-selection-state';
 import { flattenVaultNotes, VAULT_NOTE_DRAG_MIME, VaultFolderNode, VaultNoteNode } from '../../notes/vault-tree.model';
 import { ContextMenuState } from '../../shared/context-menu/context-menu-state';
@@ -50,6 +51,7 @@ export class Sidebar {
   private readonly contextMenuState = inject(ContextMenuState);
   private readonly clipboardState = inject(VaultClipboardState);
   protected readonly selectionState = inject(VaultSelectionState);
+  protected readonly dragState = inject(VaultDragState);
 
   protected readonly favorites = FAVORITE_NOTES;
   protected readonly recentFiles = RECENT_NOTES;
@@ -153,15 +155,23 @@ export class Sidebar {
     const { event, note } = payload;
     const selected = this.selectionState.selected();
     if (selected.size > 1 && selected.has(note.relPath)) {
-      const items: ContextMenuItem[] = [
-        {
+      const items: ContextMenuItem[] = [];
+      if ([...selected].some((relPath) => relPath.includes('/'))) {
+        items.push({
           kind: 'item',
-          label: `Delete ${selected.size} Notes`,
-          icon: 'delete',
-          danger: true,
-          action: () => void this.deleteSelectedNotes(),
-        },
-      ];
+          label: `Move ${selected.size} Notes to Root`,
+          icon: 'move-to-root',
+          action: () => void this.onNotesDropped({ relPaths: [...selected], destRelDir: '' }),
+        });
+        items.push({ kind: 'separator' });
+      }
+      items.push({
+        kind: 'item',
+        label: `Delete ${selected.size} Notes`,
+        icon: 'delete',
+        danger: true,
+        action: () => void this.deleteSelectedNotes(),
+      });
       this.contextMenuState.open(event, items);
       return;
     }
@@ -174,6 +184,16 @@ export class Sidebar {
       { kind: 'item', label: 'Duplicate', icon: 'duplicate', action: () => void this.vaultState.duplicateNote(note.relPath) },
       { kind: 'item', label: 'Copy', icon: 'copy', action: () => this.clipboardState.copy(note) },
       { kind: 'item', label: 'Cut', icon: 'cut', action: () => this.clipboardState.cut(note) },
+      ...(note.relPath.includes('/')
+        ? [
+            {
+              kind: 'item' as const,
+              label: 'Move to Root',
+              icon: 'move-to-root' as const,
+              action: () => void this.onNotesDropped({ relPaths: [note.relPath], destRelDir: '' }),
+            },
+          ]
+        : []),
       { kind: 'separator' },
       { kind: 'item', label: 'Rename', icon: 'rename', disabled: true, action: () => {} },
       {
@@ -230,13 +250,32 @@ export class Sidebar {
   }
 
   protected onVaultBackgroundDragOver(event: DragEvent): void {
-    if (!event.dataTransfer?.types.includes(VAULT_NOTE_DRAG_MIME)) return;
     event.preventDefault();
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    if (this.isDraggingIntoOwnRoot()) this.dragState.clear();
+    else this.dragState.hover('');
+  }
+
+  protected onVaultBackgroundDragLeave(event: DragEvent): void {
+    const related = event.relatedTarget as Node | null;
+    const container = event.currentTarget as HTMLElement;
+    if (related && container.contains(related)) return;
+    this.dragState.clear();
+  }
+
+  /** True if every currently-dragged note already lives at the vault root, making a drop there a no-op. */
+  private isDraggingIntoOwnRoot(): boolean {
+    const selected = this.selectionState.selected();
+    if (selected.size === 0) return false;
+    for (const relPath of selected) {
+      if (relPath.includes('/')) return false;
+    }
+    return true;
   }
 
   protected onVaultBackgroundDrop(event: DragEvent): void {
     event.preventDefault();
+    this.dragState.clear();
     const raw = event.dataTransfer?.getData(VAULT_NOTE_DRAG_MIME);
     if (!raw) return;
     try {

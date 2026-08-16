@@ -7,6 +7,7 @@ export type ContextMenuIcon =
   | 'reveal'
   | 'rename'
   | 'duplicate'
+  | 'move-to-root'
   | 'favorite'
   | 'unfavorite'
   | 'close'

@@ -1,24 +1,26 @@
 @if (asFolder(); as folder) {
-<button type="button" (click)="toggleExpanded()" (contextmenu)="folderContextMenu.emit({ event: $event, folder })"
-  (dragover)="onFolderDragOver($event)" (dragleave)="onFolderDragLeave()" (drop)="onFolderDrop(folder, $event)"
-  [style.padding-left.px]="8 + depth() * 12" [class.bg-primary/10]="dragOverFolder()"
-  class="flex w-full items-center gap-1.5 rounded-md py-1 pr-2 text-xs text-foreground/80 hover:bg-background hover:text-foreground">
-  <svg lucideChevronRight [size]="12" class="shrink-0 transition-transform duration-150"
-    [class.rotate-90]="expanded()"></svg>
-  <svg lucideFolder [size]="14" class="shrink-0 text-muted-foreground"></svg>
-  <span class="truncate">{{ folder.name }}</span>
-</button>
-@if (expanded()) {
-@for (child of folder.children; track child.relPath) {
-<app-vault-tree-node [node]="child" [depth]="depth() + 1" [openLockedHint]="openLockedHint()"
-  (openNote)="openNote.emit($event)" (openNoteInBackground)="openNoteInBackground.emit($event)"
-  (noteContextMenu)="noteContextMenu.emit($event)" (folderContextMenu)="folderContextMenu.emit($event)"
-  (lockedClicked)="lockedClicked.emit($event)" (notesDropped)="notesDropped.emit($event)" />
-}
-}
+<div (dragenter)="onFolderDragOver(folder, $event)" (dragover)="onFolderDragOver(folder, $event)" (drop)="onFolderDrop(folder, $event)"
+  [class.bg-primary/10]="dragState.hoveredDir() === folder.relPath" class="rounded-md">
+  <button type="button" (click)="toggleExpanded()" (contextmenu)="folderContextMenu.emit({ event: $event, folder })"
+    [style.padding-left.px]="8 + depth() * 12"
+    class="flex w-full items-center gap-1.5 rounded-md py-1 pr-2 text-xs text-foreground/80 hover:bg-background hover:text-foreground">
+    <svg lucideChevronRight [size]="12" class="shrink-0 transition-transform duration-150"
+      [class.rotate-90]="expanded()"></svg>
+    <svg lucideFolder [size]="14" class="shrink-0 text-muted-foreground"></svg>
+    <span class="truncate">{{ folder.name }}</span>
+  </button>
+  @if (expanded()) {
+  @for (child of folder.children; track child.relPath) {
+  <app-vault-tree-node [node]="child" [depth]="depth() + 1" [openLockedHint]="openLockedHint()"
+    (openNote)="openNote.emit($event)" (openNoteInBackground)="openNoteInBackground.emit($event)"
+    (noteContextMenu)="noteContextMenu.emit($event)" (folderContextMenu)="folderContextMenu.emit($event)"
+    (lockedClicked)="lockedClicked.emit($event)" (notesDropped)="notesDropped.emit($event)" />
+  }
+  }
+</div>
 } @else if (asNote(); as note) {
 <div [style.padding-left.px]="depth() * 12" [attr.data-note-path]="note.relPath" [draggable]="!note.locked"
-  (dragstart)="onNoteDragStart(note, $event)" (dragover)="$event.stopPropagation()">
+  (dragstart)="onNoteDragStart(note, $event)">
   <app-sidebar-item-button [label]="note.name" [selected]="selectionState.isSelected(note.relPath)"
     (clicked)="onNoteClick(note, $event)" (middleClicked)="openNoteInBackground.emit(note)"
     (contextMenu)="onNoteContextMenu(note, $event)">

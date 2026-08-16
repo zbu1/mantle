@@ -1,6 +1,7 @@
 import { Component, inject, input, output, signal } from '@angular/core';
 import { LucideChevronRight, LucideFileText, LucideFolder, LucideLock } from '@lucide/angular';
 import { VAULT_NOTE_DRAG_MIME, VaultFolderNode, VaultNode, VaultNoteNode } from '../../../notes/vault-tree.model';
+import { VaultDragState } from '../../../notes/vault-drag-state';
 import { VaultSelectionState } from '../../../notes/vault-selection-state';
 import { SidebarItemButton } from '../sidebar-item-button/sidebar-item-button';
 
@@ -8,6 +9,7 @@ import { SidebarItemButton } from '../sidebar-item-button/sidebar-item-button';
   selector: 'app-vault-tree-node',
   imports: [SidebarItemButton, VaultTreeNode, LucideChevronRight, LucideFileText, LucideFolder, LucideLock],
   templateUrl: './vault-tree-node.html',
+  host: { class: 'contents' },
 })
 export class VaultTreeNode {
   readonly node = input.required<VaultNode>();
@@ -22,9 +24,9 @@ export class VaultTreeNode {
   readonly notesDropped = output<{ relPaths: string[]; destRelDir: string }>();
 
   protected readonly selectionState = inject(VaultSelectionState);
+  protected readonly dragState = inject(VaultDragState);
 
   protected readonly expanded = signal(true);
-  protected readonly dragOverFolder = signal(false);
 
   protected asFolder(): VaultFolderNode | null {
     const n = this.node();
@@ -82,22 +84,29 @@ export class VaultTreeNode {
     if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
   }
 
-  protected onFolderDragOver(event: DragEvent): void {
-    if (!event.dataTransfer?.types.includes(VAULT_NOTE_DRAG_MIME)) return;
+  protected onFolderDragOver(folder: VaultFolderNode, event: DragEvent): void {
     event.preventDefault();
     event.stopPropagation();
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
-    this.dragOverFolder.set(true);
+    if (this.isDraggingIntoOwnFolder(folder)) this.dragState.clear();
+    else this.dragState.hover(folder.relPath);
   }
 
-  protected onFolderDragLeave(): void {
-    this.dragOverFolder.set(false);
+  /** True if every currently-dragged note already lives directly in `folder`, making a drop there a no-op. */
+  private isDraggingIntoOwnFolder(folder: VaultFolderNode): boolean {
+    const selected = this.selectionState.selected();
+    if (selected.size === 0) return false;
+    for (const relPath of selected) {
+      const parentDir = relPath.includes('/') ? relPath.slice(0, relPath.lastIndexOf('/')) : '';
+      if (parentDir !== folder.relPath) return false;
+    }
+    return true;
   }
 
   protected onFolderDrop(folder: VaultFolderNode, event: DragEvent): void {
     event.preventDefault();
     event.stopPropagation();
-    this.dragOverFolder.set(false);
+    this.dragState.clear();
     const raw = event.dataTransfer?.getData(VAULT_NOTE_DRAG_MIME);
     if (!raw) return;
     try {
