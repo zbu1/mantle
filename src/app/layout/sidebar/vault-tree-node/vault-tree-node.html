@@ -10,12 +10,15 @@
     <span class="truncate">{{ folder.name }}</span>
   </button>
   @if (expanded()) {
-  @for (child of folder.children; track child.relPath) {
-  <app-vault-tree-node [node]="child" [depth]="depth() + 1" [openLockedHint]="openLockedHint()"
-    (openNote)="openNote.emit($event)" (openNoteInBackground)="openNoteInBackground.emit($event)"
-    (noteContextMenu)="noteContextMenu.emit($event)" (folderContextMenu)="folderContextMenu.emit($event)"
-    (lockedClicked)="lockedClicked.emit($event)" (notesDropped)="notesDropped.emit($event)" />
-  }
+  <div class="relative">
+    <div class="pointer-events-none absolute top-0 bottom-0 w-px bg-border" [style.left.px]="8 + depth() * 12 + 6"></div>
+    @for (child of folder.children; track child.relPath) {
+    <app-vault-tree-node [node]="child" [depth]="depth() + 1" [openLockedHint]="openLockedHint()"
+      (openNote)="openNote.emit($event)" (openNoteInBackground)="openNoteInBackground.emit($event)"
+      (noteContextMenu)="noteContextMenu.emit($event)" (folderContextMenu)="folderContextMenu.emit($event)"
+      (lockedClicked)="lockedClicked.emit($event)" (notesDropped)="notesDropped.emit($event)" />
+    }
+  </div>
   }
 </div>
 } @else if (asNote(); as note) {

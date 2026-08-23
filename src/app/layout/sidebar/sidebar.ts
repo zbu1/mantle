@@ -252,15 +252,15 @@ export class Sidebar {
   protected onVaultBackgroundDragOver(event: DragEvent): void {
     event.preventDefault();
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
-    if (this.isDraggingIntoOwnRoot()) this.dragState.clear();
-    else this.dragState.hover('');
+    if (this.isDraggingIntoOwnRoot()) this.dragState.clearHover();
+    else this.dragState.hover('', 'Vault Root');
   }
 
   protected onVaultBackgroundDragLeave(event: DragEvent): void {
     const related = event.relatedTarget as Node | null;
     const container = event.currentTarget as HTMLElement;
     if (related && container.contains(related)) return;
-    this.dragState.clear();
+    this.dragState.clearHover();
   }
 
   /** True if every currently-dragged note already lives at the vault root, making a drop there a no-op. */
@@ -275,7 +275,7 @@ export class Sidebar {
 
   protected onVaultBackgroundDrop(event: DragEvent): void {
     event.preventDefault();
-    this.dragState.clear();
+    this.dragState.clearHover();
     const raw = event.dataTransfer?.getData(VAULT_NOTE_DRAG_MIME);
     if (!raw) return;
     try {
