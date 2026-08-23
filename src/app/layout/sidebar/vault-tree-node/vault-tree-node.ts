@@ -1,7 +1,14 @@
-import { Component, inject, input, output, signal } from '@angular/core';
+import { Component, ElementRef, computed, effect, inject, input, output, signal, viewChild } from '@angular/core';
 import { LucideChevronRight, LucideFileText, LucideFolder, LucideLock } from '@lucide/angular';
-import { VAULT_NOTE_DRAG_MIME, VaultFolderNode, VaultNode, VaultNoteNode } from '../../../notes/vault-tree.model';
+import {
+  VAULT_FOLDER_DRAG_MIME,
+  VAULT_NOTE_DRAG_MIME,
+  VaultFolderNode,
+  VaultNode,
+  VaultNoteNode,
+} from '../../../notes/vault-tree.model';
 import { VaultDragState } from '../../../notes/vault-drag-state';
+import { VaultRenameState } from '../../../notes/vault-rename-state';
 import { VaultSelectionState } from '../../../notes/vault-selection-state';
 import { SidebarItemButton } from '../sidebar-item-button/sidebar-item-button';
 
@@ -31,11 +38,30 @@ export class VaultTreeNode {
   readonly folderContextMenu = output<{ event: MouseEvent; folder: VaultFolderNode }>();
   readonly lockedClicked = output<string>();
   readonly notesDropped = output<{ relPaths: string[]; destRelDir: string }>();
+  readonly folderDropped = output<{ relPath: string; destRelDir: string }>();
+  readonly noteRenamed = output<{ relPath: string; newName: string }>();
+  readonly folderRenamed = output<{ relPath: string; newName: string }>();
 
   protected readonly selectionState = inject(VaultSelectionState);
   protected readonly dragState = inject(VaultDragState);
+  protected readonly renameState = inject(VaultRenameState);
 
   protected readonly expanded = signal(true);
+
+  protected readonly renaming = computed(() => this.renameState.renamingPath() === this.node().relPath);
+
+  private readonly renameInputRef = viewChild<ElementRef<HTMLInputElement>>('renameInput');
+
+  constructor() {
+    // Focus + select the rename input as soon as it's rendered.
+    effect(() => {
+      const el = this.renameInputRef()?.nativeElement;
+      if (el) {
+        el.focus();
+        el.select();
+      }
+    });
+  }
 
   protected asFolder(): VaultFolderNode | null {
     const n = this.node();
@@ -103,6 +129,12 @@ export class VaultTreeNode {
     event.preventDefault();
     event.stopPropagation();
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    const draggedFolder = this.dragState.draggingFolder();
+    if (draggedFolder) {
+      if (this.isInvalidFolderDropTarget(draggedFolder.relPath, folder)) this.dragState.clearHover();
+      else this.dragState.hover(folder.relPath, folder.name);
+      return;
+    }
     if (this.isDraggingIntoOwnFolder(folder)) this.dragState.clearHover();
     else this.dragState.hover(folder.relPath, folder.name);
   }
@@ -118,10 +150,60 @@ export class VaultTreeNode {
     return true;
   }
 
+  /** True if dropping `draggedRelPath` onto `target` would be a no-op or create a cycle (moving a folder into itself/a descendant). */
+  private isInvalidFolderDropTarget(draggedRelPath: string, target: VaultFolderNode): boolean {
+    if (target.relPath === draggedRelPath || target.relPath.startsWith(`${draggedRelPath}/`)) return true;
+    const draggedParentDir = draggedRelPath.includes('/') ? draggedRelPath.slice(0, draggedRelPath.lastIndexOf('/')) : '';
+    return draggedParentDir === target.relPath;
+  }
+
+  protected onRenameKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      (event.target as HTMLInputElement).blur();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      this.renameState.stop();
+    }
+  }
+
+  protected onNoteRenameBlur(note: VaultNoteNode, value: string): void {
+    if (this.renameState.renamingPath() !== note.relPath) return;
+    this.renameState.stop();
+    const newName = value.trim();
+    if (!newName || newName === note.name) return;
+    this.noteRenamed.emit({ relPath: note.relPath, newName });
+  }
+
+  protected onFolderRenameBlur(folder: VaultFolderNode, value: string): void {
+    if (this.renameState.renamingPath() !== folder.relPath) return;
+    this.renameState.stop();
+    const newName = value.trim();
+    if (!newName || newName === folder.name) return;
+    this.folderRenamed.emit({ relPath: folder.relPath, newName });
+  }
+
+  protected onFolderDragStart(folder: VaultFolderNode, event: DragEvent): void {
+    event.stopPropagation();
+    event.dataTransfer?.setData(VAULT_FOLDER_DRAG_MIME, folder.relPath);
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move';
+      // Suppress the native drag ghost — VaultDragPreview renders the folder name badge instead.
+      event.dataTransfer.setDragImage(EMPTY_DRAG_IMAGE, 0, 0);
+    }
+    this.dragState.startFolderDrag(folder.relPath, folder.name);
+  }
+
   protected onFolderDrop(folder: VaultFolderNode, event: DragEvent): void {
     event.preventDefault();
     event.stopPropagation();
     this.dragState.clearHover();
+    const folderRelPath = event.dataTransfer?.getData(VAULT_FOLDER_DRAG_MIME);
+    if (folderRelPath) {
+      if (this.isInvalidFolderDropTarget(folderRelPath, folder)) return;
+      this.folderDropped.emit({ relPath: folderRelPath, destRelDir: folder.relPath });
+      return;
+    }
     const raw = event.dataTransfer?.getData(VAULT_NOTE_DRAG_MIME);
     if (!raw) return;
     try {

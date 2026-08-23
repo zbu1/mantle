@@ -9,7 +9,6 @@ import {
   LucideStar,
   LucideTags,
 } from '@lucide/angular';
-import { confirm } from '@tauri-apps/plugin-dialog';
 import { join } from '@tauri-apps/api/path';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { SidebarSection } from './sidebar-section/sidebar-section';
@@ -21,10 +20,18 @@ import { TabsState } from '../../notes/tabs-state';
 import { VaultState } from '../../notes/vault-state';
 import { VaultClipboardState } from '../../notes/vault-clipboard-state';
 import { VaultDragState } from '../../notes/vault-drag-state';
+import { VaultRenameState } from '../../notes/vault-rename-state';
 import { VaultSelectionState } from '../../notes/vault-selection-state';
-import { flattenVaultNotes, VAULT_NOTE_DRAG_MIME, VaultFolderNode, VaultNoteNode } from '../../notes/vault-tree.model';
+import {
+  flattenVaultNotes,
+  VAULT_FOLDER_DRAG_MIME,
+  VAULT_NOTE_DRAG_MIME,
+  VaultFolderNode,
+  VaultNoteNode,
+} from '../../notes/vault-tree.model';
 import { ContextMenuState } from '../../shared/context-menu/context-menu-state';
 import { ContextMenuItem } from '../../shared/context-menu/context-menu.model';
+import { DialogState } from '../../shared/dialog/dialog-state';
 
 @Component({
   selector: 'app-sidebar',
@@ -52,6 +59,8 @@ export class Sidebar {
   private readonly clipboardState = inject(VaultClipboardState);
   protected readonly selectionState = inject(VaultSelectionState);
   protected readonly dragState = inject(VaultDragState);
+  private readonly renameState = inject(VaultRenameState);
+  private readonly dialogState = inject(DialogState);
 
   protected readonly favorites = FAVORITE_NOTES;
   protected readonly recentFiles = RECENT_NOTES;
@@ -80,13 +89,14 @@ export class Sidebar {
     await this.vaultState.pickVault();
   }
 
-  protected async onNewNote(): Promise<void> {
+  protected async onNewNote(relDir = ''): Promise<void> {
     const base = 'Untitled';
     for (let i = 0; i < 50; i++) {
       const name = i === 0 ? base : `${base} ${i + 1}`;
       try {
-        const created = await this.vaultState.createNote('', name);
+        const created = await this.vaultState.createNote(relDir, name);
         this.tabsState.openNote({ id: created.relPath, title: created.name });
+        this.renameState.start(created.relPath);
         return;
       } catch {
         // name collision — try the next candidate
@@ -94,17 +104,18 @@ export class Sidebar {
     }
   }
 
-  /** Creates a new folder at the vault root; if notes are selected, moves them into it. */
-  protected async onNewFolder(): Promise<void> {
+  /** Creates a new folder in `relDir` (vault root by default); if notes are selected, moves them into it. */
+  protected async onNewFolder(relDir = ''): Promise<void> {
     const base = 'New Folder';
     const selectedNotes = [...this.selectionState.selected()];
     for (let i = 0; i < 50; i++) {
       const name = i === 0 ? base : `${base} ${i + 1}`;
       try {
-        const created = await this.vaultState.createFolder('', name);
+        const created = await this.vaultState.createFolder(relDir, name);
         if (selectedNotes.length > 0) {
           await this.onNotesDropped({ relPaths: selectedNotes, destRelDir: created.relPath });
         }
+        this.renameState.start(created.relPath);
         return;
       } catch {
         // name collision — try the next candidate
@@ -195,7 +206,7 @@ export class Sidebar {
           ]
         : []),
       { kind: 'separator' },
-      { kind: 'item', label: 'Rename', icon: 'rename', disabled: true, action: () => {} },
+      { kind: 'item', label: 'Rename', icon: 'rename', action: () => this.renameState.start(note.relPath) },
       {
         kind: 'item',
         label: this.favoritedPaths().has(note.relPath) ? 'Remove from Favorites' : 'Add to Favorites',
@@ -211,12 +222,17 @@ export class Sidebar {
   protected onFolderContextMenu(payload: { event: MouseEvent; folder: VaultFolderNode }): void {
     const { event, folder } = payload;
     const items: ContextMenuItem[] = [
+      { kind: 'item', label: 'New Note', icon: 'new-note', action: () => void this.onNewNote(folder.relPath) },
+      { kind: 'item', label: 'New Folder', icon: 'new-folder', action: () => void this.onNewFolder(folder.relPath) },
+      { kind: 'separator' },
       {
         kind: 'item',
         label: 'Show in File Explorer',
         icon: 'reveal',
         action: () => void this.revealRelPath(folder.relPath),
       },
+      { kind: 'separator' },
+      { kind: 'item', label: 'Rename', icon: 'rename', action: () => this.renameState.start(folder.relPath) },
       { kind: 'separator' },
       {
         kind: 'item',
@@ -225,12 +241,17 @@ export class Sidebar {
         disabled: !this.clipboardState.entry(),
         action: () => void this.pasteInto(folder.relPath),
       },
+      { kind: 'separator' },
+      { kind: 'item', label: 'Delete', icon: 'delete', danger: true, action: () => void this.deleteFolder(folder) },
     ];
     this.contextMenuState.open(event, items);
   }
 
   protected onVaultBackgroundContextMenu(event: MouseEvent): void {
     const items: ContextMenuItem[] = [
+      { kind: 'item', label: 'New Note', icon: 'new-note', action: () => void this.onNewNote() },
+      { kind: 'item', label: 'New Folder', icon: 'new-folder', action: () => void this.onNewFolder() },
+      { kind: 'separator' },
       {
         kind: 'item',
         label: 'Paste',
@@ -252,6 +273,12 @@ export class Sidebar {
   protected onVaultBackgroundDragOver(event: DragEvent): void {
     event.preventDefault();
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    const draggedFolder = this.dragState.draggingFolder();
+    if (draggedFolder) {
+      if (!draggedFolder.relPath.includes('/')) this.dragState.clearHover();
+      else this.dragState.hover('', 'Vault Root');
+      return;
+    }
     if (this.isDraggingIntoOwnRoot()) this.dragState.clearHover();
     else this.dragState.hover('', 'Vault Root');
   }
@@ -276,6 +303,12 @@ export class Sidebar {
   protected onVaultBackgroundDrop(event: DragEvent): void {
     event.preventDefault();
     this.dragState.clearHover();
+    const folderRelPath = event.dataTransfer?.getData(VAULT_FOLDER_DRAG_MIME);
+    if (folderRelPath) {
+      if (!folderRelPath.includes('/')) return;
+      void this.onFolderDropped({ relPath: folderRelPath, destRelDir: '' });
+      return;
+    }
     const raw = event.dataTransfer?.getData(VAULT_NOTE_DRAG_MIME);
     if (!raw) return;
     try {
@@ -298,6 +331,52 @@ export class Sidebar {
     this.selectionState.clear();
   }
 
+  /** Moves a dropped folder into `destRelDir` and retargets any open tabs for notes nested inside it. */
+  protected async onFolderDropped(payload: { relPath: string; destRelDir: string }): Promise<void> {
+    const { relPath, destRelDir } = payload;
+    const parentDir = relPath.includes('/') ? relPath.slice(0, relPath.lastIndexOf('/')) : '';
+    if (parentDir === destRelDir) return;
+    const tree = this.vaultState.tree();
+    const oldPrefix = `${relPath}/`;
+    const affected = tree ? [...flattenVaultNotes(tree)].filter(([notePath]) => notePath.startsWith(oldPrefix)) : [];
+    try {
+      const moved = await this.vaultState.moveFolder(relPath, destRelDir);
+      const newPrefix = `${moved.relPath}/`;
+      for (const [oldNotePath, name] of affected) {
+        this.tabsState.renameNoteId(oldNotePath, newPrefix + oldNotePath.slice(oldPrefix.length), name);
+      }
+    } catch (err) {
+      await this.dialogState.alert(String(err), { title: 'Move Failed', tone: 'error' });
+    }
+  }
+
+  protected async onNoteRenamed(payload: { relPath: string; newName: string }): Promise<void> {
+    const { relPath, newName } = payload;
+    try {
+      const renamed = await this.vaultState.renameNote(relPath, newName);
+      this.tabsState.renameNoteId(relPath, renamed.relPath, renamed.name);
+    } catch (err) {
+      await this.dialogState.alert(String(err), { title: 'Rename Failed', tone: 'error' });
+    }
+  }
+
+  /** Renames a folder and retargets any open tabs for notes nested inside it. */
+  protected async onFolderRenamed(payload: { relPath: string; newName: string }): Promise<void> {
+    const { relPath, newName } = payload;
+    const tree = this.vaultState.tree();
+    const oldPrefix = `${relPath}/`;
+    const affected = tree ? [...flattenVaultNotes(tree)].filter(([notePath]) => notePath.startsWith(oldPrefix)) : [];
+    try {
+      const renamed = await this.vaultState.renameFolder(relPath, newName);
+      const newPrefix = `${renamed.relPath}/`;
+      for (const [oldNotePath, name] of affected) {
+        this.tabsState.renameNoteId(oldNotePath, newPrefix + oldNotePath.slice(oldPrefix.length), name);
+      }
+    } catch (err) {
+      await this.dialogState.alert(String(err), { title: 'Rename Failed', tone: 'error' });
+    }
+  }
+
   private async revealRelPath(relPath: string): Promise<void> {
     const root = this.vaultState.rootPath();
     if (!root) return;
@@ -306,20 +385,37 @@ export class Sidebar {
   }
 
   private async deleteNote(note: VaultNoteNode): Promise<void> {
-    const confirmed = await confirm(`Delete "${note.name}"? This can't be undone.`, {
+    const confirmed = await this.dialogState.confirm(`Move "${note.name}" to the system trash?`, {
       title: 'Delete Note',
-      kind: 'warning',
+      tone: 'warning',
+      confirmLabel: 'Move to Trash',
     });
     if (!confirmed) return;
     await this.vaultState.deleteNote(note.relPath);
     this.tabsState.closeByNoteId(note.relPath);
   }
 
+  private async deleteFolder(folder: VaultFolderNode): Promise<void> {
+    const confirmed = await this.dialogState.confirm(
+      `Move "${folder.name}" and everything inside it to the system trash?`,
+      { title: 'Delete Folder', tone: 'warning', confirmLabel: 'Move to Trash' },
+    );
+    if (!confirmed) return;
+    const affectedNotePaths = [...flattenVaultNotes(folder).keys()];
+    try {
+      await this.vaultState.deleteFolder(folder.relPath);
+      for (const relPath of affectedNotePaths) this.tabsState.closeByNoteId(relPath);
+    } catch (err) {
+      await this.dialogState.alert(String(err), { title: 'Delete Failed', tone: 'error' });
+    }
+  }
+
   private async deleteSelectedNotes(): Promise<void> {
     const relPaths = [...this.selectionState.selected()];
-    const confirmed = await confirm(`Delete ${relPaths.length} notes? This can't be undone.`, {
+    const confirmed = await this.dialogState.confirm(`Move ${relPaths.length} notes to the system trash?`, {
       title: 'Delete Notes',
-      kind: 'warning',
+      tone: 'warning',
+      confirmLabel: 'Move to Trash',
     });
     if (!confirmed) return;
     for (const relPath of relPaths) {

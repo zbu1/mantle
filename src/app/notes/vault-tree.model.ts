@@ -1,6 +1,9 @@
 /** dataTransfer MIME type used to drag one or more note relPaths onto a folder/the vault root. */
 export const VAULT_NOTE_DRAG_MIME = 'application/x-mantle-note-paths';
 
+/** dataTransfer MIME type used to drag a single folder relPath onto another folder/the vault root. */
+export const VAULT_FOLDER_DRAG_MIME = 'application/x-mantle-folder-path';
+
 export interface VaultFolderNode {
   type: 'folder';
   name: string;

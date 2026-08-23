@@ -71,7 +71,8 @@
         <app-vault-tree-node [node]="child" [openLockedHint]="lockedHint()" (openNote)="onOpenNote($event)"
           (openNoteInBackground)="onOpenNoteInBackground($event)" (noteContextMenu)="onNoteContextMenu($event)"
           (folderContextMenu)="onFolderContextMenu($event)" (lockedClicked)="onLockedClicked($event)"
-          (notesDropped)="onNotesDropped($event)" />
+          (notesDropped)="onNotesDropped($event)" (folderDropped)="onFolderDropped($event)"
+          (noteRenamed)="onNoteRenamed($event)" (folderRenamed)="onFolderRenamed($event)" />
         }
         @if (tree.children.length === 0) {
         <div class="px-2 py-1 text-xs text-muted-foreground">No notes yet — click "New Note" to create one.</div>

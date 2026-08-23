@@ -199,11 +199,44 @@ pub fn create_note(vault_root: String, rel_dir: String, name: String) -> Result<
 }
 
 #[tauri::command]
+pub fn rename_note(vault_root: String, rel_path: String, new_name: String) -> Result<CreatedNote, String> {
+    if rel_path.ends_with(".mntl.enc") {
+        return Err("Encrypted notes are not supported yet".to_string());
+    }
+    if new_name.is_empty() || new_name.contains('/') || new_name.contains('\\') || new_name.contains(':') {
+        return Err("Invalid note name".to_string());
+    }
+    let source = resolve_rel_path(&vault_root, &rel_path)?;
+    let (dir_rel, _) = split_rel_note_path(&rel_path);
+    let dest_rel = if dir_rel.is_empty() {
+        format!("{new_name}.mntl")
+    } else {
+        format!("{dir_rel}/{new_name}.mntl")
+    };
+    let dest = resolve_rel_path(&vault_root, &dest_rel)?;
+    if dest != source && dest.exists() {
+        return Err(format!("A note named \"{new_name}\" already exists in this folder"));
+    }
+    fs::rename(&source, &dest).map_err(|e| format!("Failed to rename note: {e}"))?;
+    Ok(CreatedNote {
+        name: new_name,
+        rel_path: dest_rel,
+    })
+}
+
+#[tauri::command]
 pub fn delete_note(vault_root: String, rel_path: String) -> Result<(), String> {
     let path = resolve_rel_path(&vault_root, &rel_path)?;
     // Send to the OS recycle bin/trash rather than unlinking outright, so a
     // deleted note stays recoverable through the normal OS trash UI.
     trash::delete(&path).map_err(|e| format!("Failed to delete note: {e}"))
+}
+
+#[tauri::command]
+pub fn delete_folder(vault_root: String, rel_path: String) -> Result<(), String> {
+    let path = resolve_rel_path(&vault_root, &rel_path)?;
+    // Same recycle-bin behavior as delete_note; trash::delete handles directories recursively.
+    trash::delete(&path).map_err(|e| format!("Failed to delete folder: {e}"))
 }
 
 /// Resolve a vault-relative directory (empty string means the vault root)
@@ -348,6 +381,29 @@ pub fn create_folder(vault_root: String, rel_dir: String, name: String) -> Resul
 }
 
 #[tauri::command]
+pub fn rename_folder(vault_root: String, rel_path: String, new_name: String) -> Result<CreatedFolder, String> {
+    if new_name.is_empty() || new_name.contains('/') || new_name.contains('\\') || new_name.contains(':') {
+        return Err("Invalid folder name".to_string());
+    }
+    let source = resolve_rel_path(&vault_root, &rel_path)?;
+    let dir_rel = rel_path.rsplit_once('/').map(|(dir, _)| dir.to_string()).unwrap_or_default();
+    let dest_rel = if dir_rel.is_empty() {
+        new_name.clone()
+    } else {
+        format!("{dir_rel}/{new_name}")
+    };
+    let dest = resolve_rel_path(&vault_root, &dest_rel)?;
+    if dest != source && dest.exists() {
+        return Err(format!("A folder named \"{new_name}\" already exists in this location"));
+    }
+    fs::rename(&source, &dest).map_err(|e| format!("Failed to rename folder: {e}"))?;
+    Ok(CreatedFolder {
+        name: new_name,
+        rel_path: dest_rel,
+    })
+}
+
+#[tauri::command]
 pub fn move_note(vault_root: String, source_rel_path: String, dest_rel_dir: String) -> Result<CreatedNote, String> {
     if source_rel_path.ends_with(".mntl.enc") {
         return Err("Encrypted notes are not supported yet".to_string());
@@ -365,6 +421,36 @@ pub fn move_note(vault_root: String, source_rel_path: String, dest_rel_dir: Stri
             .unwrap_or_default(),
         rel_path: dest_rel,
     })
+}
+
+#[tauri::command]
+pub fn move_folder(vault_root: String, source_rel_path: String, dest_rel_dir: String) -> Result<CreatedFolder, String> {
+    let source = resolve_rel_path(&vault_root, &source_rel_path)?;
+    let dest_dir_abs = resolve_rel_dir(&vault_root, &dest_rel_dir)?;
+    let name = source
+        .file_name()
+        .ok_or("Invalid rel_path")?
+        .to_string_lossy()
+        .into_owned();
+    let dest_abs = dest_dir_abs.join(&name);
+
+    if dest_abs == source {
+        return Ok(CreatedFolder { name, rel_path: source_rel_path });
+    }
+    if dest_abs.starts_with(&source) {
+        return Err("Cannot move a folder into itself or one of its subfolders".to_string());
+    }
+    if dest_abs.exists() {
+        return Err(format!("\"{name}\" already exists in the destination folder"));
+    }
+
+    let dest_rel = if dest_rel_dir.is_empty() {
+        name.clone()
+    } else {
+        format!("{dest_rel_dir}/{name}")
+    };
+    fs::rename(&source, &dest_abs).map_err(|e| format!("Failed to move folder: {e}"))?;
+    Ok(CreatedFolder { name, rel_path: dest_rel })
 }
 
 #[cfg(test)]
@@ -443,6 +529,82 @@ mod tests {
         assert!(create_folder(root_str.clone(), String::new(), "Archive".to_string()).is_err());
         assert!(create_folder(root_str.clone(), String::new(), "a/b".to_string()).is_err());
         assert!(create_folder(root_str, String::new(), String::new()).is_err());
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn rename_note_renames_in_place_and_rejects_collisions() {
+        let root = temp_dir("rename-note");
+        fs::create_dir_all(root.join("Work")).unwrap();
+        fs::write(root.join("Work").join("todo.mntl"), "---\nv: 2\n---\n").unwrap();
+        fs::write(root.join("Work").join("taken.mntl"), "---\nv: 2\n---\n").unwrap();
+        let root_str = root.to_string_lossy().into_owned();
+
+        let renamed = rename_note(root_str.clone(), "Work/todo.mntl".to_string(), "done".to_string()).unwrap();
+        assert_eq!(renamed.rel_path, "Work/done.mntl");
+        assert!(root.join("Work").join("done.mntl").is_file());
+        assert!(!root.join("Work").join("todo.mntl").exists());
+
+        assert!(rename_note(root_str.clone(), "Work/done.mntl".to_string(), "taken".to_string()).is_err());
+        assert!(rename_note(root_str, "Work/done.mntl".to_string(), "a/b".to_string()).is_err());
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn rename_folder_renames_in_place_and_rejects_collisions() {
+        let root = temp_dir("rename-folder");
+        fs::create_dir_all(root.join("Work")).unwrap();
+        fs::create_dir_all(root.join("Archive")).unwrap();
+        fs::write(root.join("Work").join("todo.mntl"), "---\nv: 2\n---\n").unwrap();
+        let root_str = root.to_string_lossy().into_owned();
+
+        let renamed = rename_folder(root_str.clone(), "Work".to_string(), "Projects".to_string()).unwrap();
+        assert_eq!(renamed.rel_path, "Projects");
+        assert!(root.join("Projects").join("todo.mntl").is_file());
+        assert!(!root.join("Work").exists());
+
+        assert!(rename_folder(root_str.clone(), "Projects".to_string(), "Archive".to_string()).is_err());
+        assert!(rename_folder(root_str, "Projects".to_string(), "a/b".to_string()).is_err());
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn move_folder_moves_into_destination_and_rejects_cycles_and_collisions() {
+        let root = temp_dir("move-folder");
+        fs::create_dir_all(root.join("Work").join("Nested")).unwrap();
+        fs::create_dir_all(root.join("Archive")).unwrap();
+        fs::create_dir_all(root.join("Archive").join("Work")).unwrap();
+        fs::write(root.join("Work").join("todo.mntl"), "---\nv: 2\n---\n").unwrap();
+        let root_str = root.to_string_lossy().into_owned();
+
+        // moving into itself or a subfolder of itself is rejected
+        assert!(move_folder(root_str.clone(), "Work".to_string(), "Work".to_string()).is_err());
+        assert!(move_folder(root_str.clone(), "Work".to_string(), "Work/Nested".to_string()).is_err());
+
+        // colliding with an existing folder at the destination is rejected
+        assert!(move_folder(root_str.clone(), "Work".to_string(), "Archive".to_string()).is_err());
+
+        let moved = move_folder(root_str.clone(), "Work".to_string(), "".to_string()).unwrap();
+        assert_eq!(moved.rel_path, "Work");
+
+        let moved = move_folder(root_str.clone(), "Work".to_string(), "Nonexistent".to_string());
+        assert!(moved.is_err());
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn delete_folder_removes_the_directory_and_its_contents() {
+        let root = temp_dir("delete-folder");
+        fs::create_dir_all(root.join("Work").join("Nested")).unwrap();
+        fs::write(root.join("Work").join("todo.mntl"), "---\nv: 2\n---\n").unwrap();
+        let root_str = root.to_string_lossy().into_owned();
+
+        delete_folder(root_str, "Work".to_string()).unwrap();
+        assert!(!root.join("Work").exists());
 
         let _ = fs::remove_dir_all(&root);
     }

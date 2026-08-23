@@ -1,8 +1,13 @@
-@if (dragState.draggingCount() > 0 && dragState.pointer()) {
+@if ((dragState.draggingCount() > 0 || dragState.draggingFolder()) && dragState.pointer()) {
 <div class="pointer-events-none fixed z-50 flex items-center gap-1.5 rounded-lg border border-border bg-surface py-1.5 pr-3 pl-2.5 text-xs whitespace-nowrap text-surface-foreground shadow-lg"
   [style]="style()">
+  @if (dragState.draggingFolder(); as folder) {
+  <svg lucideFolder [size]="13" class="shrink-0 text-muted-foreground"></svg>
+  <span class="max-w-[160px] truncate font-medium">{{ folder.name }}</span>
+  } @else {
   <svg lucideFileText [size]="13" class="shrink-0 text-muted-foreground"></svg>
   <span class="font-medium">{{ dragState.draggingCount() }} {{ dragState.draggingCount() === 1 ? 'note' : 'notes' }}</span>
+  }
   @if (dragState.hoveredDirName(); as destName) {
   <svg lucideArrowRight [size]="12" class="shrink-0 text-muted-foreground"></svg>
   <svg lucideFolder [size]="13" class="shrink-0 text-primary"></svg>

@@ -13,12 +13,17 @@ import { Injectable, signal } from '@angular/core';
 @Injectable({ providedIn: 'root' })
 export class VaultDragState {
   readonly draggingCount = signal(0);
+  readonly draggingFolder = signal<{ relPath: string; name: string } | null>(null);
   readonly pointer = signal<{ x: number; y: number } | null>(null);
   readonly hoveredDir = signal<string | null>(null);
   readonly hoveredDirName = signal<string | null>(null);
 
   startDrag(count: number): void {
     this.draggingCount.set(count);
+  }
+
+  startFolderDrag(relPath: string, name: string): void {
+    this.draggingFolder.set({ relPath, name });
   }
 
   setPointer(x: number, y: number): void {
@@ -38,6 +43,7 @@ export class VaultDragState {
   /** Resets all drag state — called once the drag operation ends, dropped or not. */
   endDrag(): void {
     this.draggingCount.set(0);
+    this.draggingFolder.set(null);
     this.pointer.set(null);
     this.clearHover();
   }

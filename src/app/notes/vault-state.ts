@@ -148,6 +148,24 @@ export class VaultState {
     await invoke('delete_note', { vaultRoot: root, relPath });
   }
 
+  async deleteFolder(relPath: string): Promise<void> {
+    const root = this.rootPath();
+    if (!root) throw new Error('No vault open');
+    await invoke('delete_folder', { vaultRoot: root, relPath });
+  }
+
+  async renameNote(relPath: string, newName: string): Promise<CreatedNote> {
+    const root = this.rootPath();
+    if (!root) throw new Error('No vault open');
+    return invoke<CreatedNote>('rename_note', { vaultRoot: root, relPath, newName });
+  }
+
+  async renameFolder(relPath: string, newName: string): Promise<CreatedFolder> {
+    const root = this.rootPath();
+    if (!root) throw new Error('No vault open');
+    return invoke<CreatedFolder>('rename_folder', { vaultRoot: root, relPath, newName });
+  }
+
   async duplicateNote(relPath: string): Promise<CreatedNote> {
     const root = this.rootPath();
     if (!root) throw new Error('No vault open');
@@ -173,5 +191,15 @@ export class VaultState {
       destRelDir,
     });
     return created;
+  }
+
+  async moveFolder(sourceRelPath: string, destRelDir: string): Promise<CreatedFolder> {
+    const root = this.rootPath();
+    if (!root) throw new Error('No vault open');
+    return invoke<CreatedFolder>('move_folder', {
+      vaultRoot: root,
+      sourceRelPath,
+      destRelDir,
+    });
   }
 }

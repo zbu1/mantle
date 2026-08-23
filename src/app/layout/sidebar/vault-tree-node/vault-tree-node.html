@@ -1,29 +1,49 @@
 @if (asFolder(); as folder) {
 <div (dragenter)="onFolderDragOver(folder, $event)" (dragover)="onFolderDragOver(folder, $event)" (drop)="onFolderDrop(folder, $event)"
   [class.bg-primary/10]="dragState.hoveredDir() === folder.relPath" class="rounded-md">
-  <button type="button" (click)="toggleExpanded()" (contextmenu)="folderContextMenu.emit({ event: $event, folder })"
-    [style.padding-left.px]="8 + depth() * 12"
+  @if (renaming()) {
+  <div [style.padding-left.px]="8 + depth() * 16" class="flex w-full items-center gap-1.5 rounded-md py-1 pr-2">
+    <svg lucideChevronRight [size]="12" class="shrink-0" [class.rotate-90]="expanded()"></svg>
+    <svg lucideFolder [size]="14" class="shrink-0 text-muted-foreground"></svg>
+    <input #renameInput type="text" [value]="folder.name" (keydown)="onRenameKeydown($event)"
+      (blur)="onFolderRenameBlur(folder, renameInput.value)" (click)="$event.stopPropagation()"
+      class="w-full min-w-0 flex-1 rounded-sm border border-primary/50 bg-background px-1 py-0 text-xs text-foreground outline-none" />
+  </div>
+  } @else {
+  <button type="button" draggable="true" (dragstart)="onFolderDragStart(folder, $event)" (click)="toggleExpanded()"
+    (contextmenu)="folderContextMenu.emit({ event: $event, folder })" [style.padding-left.px]="8 + depth() * 16"
     class="flex w-full items-center gap-1.5 rounded-md py-1 pr-2 text-xs text-foreground/80 hover:bg-background hover:text-foreground">
     <svg lucideChevronRight [size]="12" class="shrink-0 transition-transform duration-150"
       [class.rotate-90]="expanded()"></svg>
     <svg lucideFolder [size]="14" class="shrink-0 text-muted-foreground"></svg>
     <span class="truncate">{{ folder.name }}</span>
   </button>
+  }
   @if (expanded()) {
   <div class="relative">
-    <div class="pointer-events-none absolute top-0 bottom-0 w-px bg-border" [style.left.px]="8 + depth() * 12 + 6"></div>
+    <div class="pointer-events-none absolute top-0 bottom-0 w-px bg-border" [style.left.px]="8 + depth() * 16 + 6"></div>
     @for (child of folder.children; track child.relPath) {
     <app-vault-tree-node [node]="child" [depth]="depth() + 1" [openLockedHint]="openLockedHint()"
       (openNote)="openNote.emit($event)" (openNoteInBackground)="openNoteInBackground.emit($event)"
       (noteContextMenu)="noteContextMenu.emit($event)" (folderContextMenu)="folderContextMenu.emit($event)"
-      (lockedClicked)="lockedClicked.emit($event)" (notesDropped)="notesDropped.emit($event)" />
+      (lockedClicked)="lockedClicked.emit($event)" (notesDropped)="notesDropped.emit($event)"
+      (folderDropped)="folderDropped.emit($event)" (noteRenamed)="noteRenamed.emit($event)"
+      (folderRenamed)="folderRenamed.emit($event)" />
     }
   </div>
   }
 </div>
 } @else if (asNote(); as note) {
-<div [style.padding-left.px]="depth() * 12" [attr.data-note-path]="note.relPath" [draggable]="!note.locked"
+<div [style.padding-left.px]="depth() * 16 + 16" [attr.data-note-path]="note.relPath" [draggable]="!renaming() && !note.locked"
   (dragstart)="onNoteDragStart(note, $event)">
+  @if (renaming()) {
+  <div class="flex items-center gap-2 px-2 py-1.5">
+    <svg class="shrink-0 text-muted-foreground" lucideFileText [size]="14"></svg>
+    <input #renameInput type="text" [value]="note.name" (keydown)="onRenameKeydown($event)"
+      (blur)="onNoteRenameBlur(note, renameInput.value)" (click)="$event.stopPropagation()"
+      class="w-full min-w-0 flex-1 rounded-sm border border-primary/50 bg-background px-1 py-0 text-xs text-foreground outline-none" />
+  </div>
+  } @else {
   <app-sidebar-item-button [label]="note.name" [selected]="selectionState.isSelected(note.relPath)"
     (clicked)="onNoteClick(note, $event)" (middleClicked)="openNoteInBackground.emit(note)"
     (contextMenu)="onNoteContextMenu(note, $event)">
@@ -33,6 +53,7 @@
     <svg sidebarItemIcon lucideFileText [size]="14" class="shrink-0"></svg>
     }
   </app-sidebar-item-button>
+  }
   @if (openLockedHint() === note.relPath) {
   <div class="px-2 pb-1 text-[11px] text-muted-foreground">Encrypted notes aren't supported yet.</div>
   }
