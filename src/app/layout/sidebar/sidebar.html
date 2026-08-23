@@ -1,40 +1,8 @@
 <aside class="relative flex shrink-0 flex-col bg-surface text-surface-foreground"
-  [style.width.px]="state.effectiveWidth()">
-  <div class="scrollbar-thin flex flex-1 flex-col gap-2 overflow-y-auto p-2">
-    <div class="flex items-center gap-1">
-      <button type="button" title="Open Vault" (click)="onOpenVault()"
-        class="inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-md text-xs text-foreground/80 hover:bg-background hover:text-foreground">
-        <svg lucideFolderOpen [size]="14"></svg>
-        @if (!state.collapsed()) {
-        <span class="truncate">Open Vault</span>
-        }
-      </button>
-      <button type="button" title="New Note" (click)="onNewNote()" [disabled]="!vaultState.rootPath()"
-        class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-foreground/80 hover:bg-background hover:text-foreground disabled:opacity-40">
-        <svg lucidePlus [size]="14"></svg>
-      </button>
-      <button type="button" title="New Folder" (click)="onNewFolder()" [disabled]="!vaultState.rootPath()"
-        class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-foreground/80 hover:bg-background hover:text-foreground disabled:opacity-40">
-        <svg lucideFolderPlus [size]="14"></svg>
-      </button>
-    </div>
-
-    @if (state.collapsed()) {
-    <div class="flex flex-col gap-1">
-      <app-sidebar-item-button label="Favorites" [collapsed]="true">
-        <svg sidebarItemIcon lucideStar [size]="14"></svg>
-      </app-sidebar-item-button>
-      <app-sidebar-item-button label="Recent Files" [collapsed]="true">
-        <svg sidebarItemIcon lucideClock [size]="14"></svg>
-      </app-sidebar-item-button>
-      <app-sidebar-item-button label="Vault" [collapsed]="true">
-        <svg sidebarItemIcon lucideFolders [size]="14"></svg>
-      </app-sidebar-item-button>
-      <app-sidebar-item-button label="Tags" [collapsed]="true">
-        <svg sidebarItemIcon lucideTags [size]="14"></svg>
-      </app-sidebar-item-button>
-    </div>
-    } @else {
+  [style.width.px]="state.effectiveWidth()"
+  [style.transition]="state.resizing() ? 'none' : 'width 200ms ease-out'">
+  @if (!state.collapsed()) {
+  <div class="scrollbar-thin flex flex-1 flex-col gap-2 overflow-y-auto overflow-x-hidden p-2">
     <app-sidebar-section id="favorites" label="Favorites">
       <svg sidebarSectionIcon lucideStar [size]="12"></svg>
       @for (note of favorites; track note.id) {
@@ -98,30 +66,16 @@
       }
       }
     </app-sidebar-section>
-    }
   </div>
 
   <div class="sticky bottom-0 z-10 flex shrink-0 items-center gap-1 border-t border-border bg-surface p-2">
-    <button type="button" title="Switch Vault" (click)="onVaultSwitcherClick($event)"
-      class="inline-flex h-8 flex-1 items-center gap-1.5 overflow-hidden rounded-md px-2 text-xs text-foreground/80 hover:bg-background hover:text-foreground"
-      [class.justify-center]="state.collapsed()">
-      <svg lucideFolders [size]="14" class="shrink-0"></svg>
-      @if (!state.collapsed()) {
-      <span class="min-w-0 flex-1 truncate text-left">{{ vaultName() ?? 'No Vault' }}</span>
-      <svg lucideChevronsUpDown [size]="12" class="shrink-0 text-muted-foreground"></svg>
-      }
-    </button>
-    <button type="button" title="Settings" (click)="onSettingsClick()"
-      class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-foreground/80 hover:bg-background hover:text-foreground">
-      <svg lucideSettings [size]="14"></svg>
-    </button>
-  </div>
-
-  @if (!state.collapsed()) {
-  <div class="group absolute inset-y-0 right-0 z-10 -mr-1 flex w-2 cursor-col-resize items-center justify-center"
-    (pointerdown)="onResizePointerDown($event)" (pointermove)="onResizePointerMove($event)"
-    (pointerup)="onResizePointerUp($event)">
-    <div class="h-full w-px bg-transparent group-hover:bg-accent/40 group-active:bg-accent/60"></div>
+    <app-vault-menu />
   </div>
   }
+
+  <div class="group absolute inset-y-0 right-0 z-10 -mr-1 flex w-2 cursor-col-resize items-center justify-center"
+    (pointerdown)="onResizePointerDown($event)" (pointermove)="onResizePointerMove($event)"
+    (pointerup)="onResizePointerUp($event)" (lostpointercapture)="onResizeLostPointerCapture()">
+    <div class="h-full w-px bg-transparent group-hover:bg-accent/40 group-active:bg-accent/60"></div>
+  </div>
 </aside>

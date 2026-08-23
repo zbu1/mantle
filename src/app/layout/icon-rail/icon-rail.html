@@ -1,0 +1,27 @@
+<div class="flex w-12 shrink-0 flex-col items-center gap-1 border-r bg-surface py-2"
+  [class.border-border]="!sidebarState.collapsed()" [class.border-transparent]="sidebarState.collapsed()">
+  <button type="button" title="Vault" (click)="toggleVault()" [attr.aria-pressed]="!sidebarState.collapsed()"
+    class="inline-flex h-9 w-9 items-center justify-center rounded-md text-foreground/80 hover:bg-background hover:text-foreground"
+    [class.bg-background]="!sidebarState.collapsed()" [class.text-foreground]="!sidebarState.collapsed()">
+    <svg lucideFolders [size]="18"></svg>
+  </button>
+
+  <div class="my-1 h-px w-6 bg-border"></div>
+
+  <button type="button" title="Search" aria-disabled="true"
+    class="inline-flex h-9 w-9 cursor-default items-center justify-center rounded-md text-muted-foreground/60">
+    <svg lucideSearch [size]="18"></svg>
+  </button>
+  <button type="button" title="Graph View" aria-disabled="true"
+    class="inline-flex h-9 w-9 cursor-default items-center justify-center rounded-md text-muted-foreground/60">
+    <svg lucideNetwork [size]="18"></svg>
+  </button>
+  <button type="button" title="Calendar" aria-disabled="true"
+    class="inline-flex h-9 w-9 cursor-default items-center justify-center rounded-md text-muted-foreground/60">
+    <svg lucideCalendar [size]="18"></svg>
+  </button>
+  <button type="button" title="Settings" aria-disabled="true"
+    class="inline-flex h-9 w-9 cursor-default items-center justify-center rounded-md text-muted-foreground/60">
+    <svg lucideSettings [size]="18"></svg>
+  </button>
+</div>

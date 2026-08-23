@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { provideZonelessChangeDetection } from '@angular/core';
-import { SidebarState } from './sidebar-state';
+import { COLLAPSE_THRESHOLD, SidebarState } from './sidebar-state';
 
 describe('SidebarState', () => {
   beforeEach(() => {
@@ -53,12 +53,28 @@ describe('SidebarState', () => {
     expect(state.isSectionExpanded('tags')).toBe(false);
   });
 
-  it('reflects rail width when collapsed via effectiveWidth', () => {
+  it('collapses to zero width via effectiveWidth', () => {
     const state = TestBed.inject(SidebarState);
     state.setWidth(300);
     expect(state.effectiveWidth()).toBe(300);
     state.toggleCollapsed();
-    expect(state.effectiveWidth()).toBe(52);
+    expect(state.effectiveWidth()).toBe(0);
+  });
+
+  it('exposes setCollapsed for direct state changes (e.g. drag-to-minimize)', () => {
+    const state = TestBed.inject(SidebarState);
+    expect(state.collapsed()).toBe(false);
+    state.setCollapsed(true);
+    expect(state.collapsed()).toBe(true);
+    state.setCollapsed(true);
+    expect(state.collapsed()).toBe(true);
+    state.setCollapsed(false);
+    expect(state.collapsed()).toBe(false);
+  });
+
+  it('defines COLLAPSE_THRESHOLD below MIN_WIDTH so there is a snap zone before collapsing', () => {
+    expect(COLLAPSE_THRESHOLD).toBeLessThan(180);
+    expect(COLLAPSE_THRESHOLD).toBeGreaterThan(0);
   });
 
   it('persists state changes back to localStorage', () => {

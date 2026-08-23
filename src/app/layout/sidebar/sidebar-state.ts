@@ -12,7 +12,11 @@ const STORAGE_KEY = 'mantle.sidebar.v1';
 const DEFAULT_WIDTH = 240;
 const MIN_WIDTH = 180;
 const MAX_WIDTH = 400;
-const RAIL_WIDTH = 52;
+
+// Dragging the resize handle to a width narrower than this snaps the sidebar
+// fully closed instead of clamping to MIN_WIDTH; dragging back out past it
+// (from the collapsed edge) snaps it back open.
+export const COLLAPSE_THRESHOLD = MIN_WIDTH / 2;
 
 const DEFAULT_STATE: PersistedSidebarState = {
   width: DEFAULT_WIDTH,
@@ -47,7 +51,15 @@ export class SidebarState {
   readonly collapsed = signal<boolean>(this.initial.collapsed);
   readonly sections = signal<Record<SectionId, boolean>>(this.initial.sections);
 
-  readonly effectiveWidth = computed(() => (this.collapsed() ? RAIL_WIDTH : this.width()));
+  // True while the sidebar is being drag-resized — used to suppress layout
+  // transitions elsewhere (header toggle button, tab bar) so they don't lag
+  // behind rapid pointermove updates.
+  readonly resizing = signal(false);
+
+  // The icon rail (to the left of this sidebar) is what remains visible when
+  // collapsed, so the sidebar itself collapses fully away rather than to a
+  // mini icon-only rail of its own.
+  readonly effectiveWidth = computed(() => (this.collapsed() ? 0 : this.width()));
 
   constructor() {
     effect(() => {
@@ -70,6 +82,10 @@ export class SidebarState {
 
   toggleCollapsed(): void {
     this.collapsed.update((v) => !v);
+  }
+
+  setCollapsed(value: boolean): void {
+    this.collapsed.set(value);
   }
 
   toggleSection(id: SectionId): void {

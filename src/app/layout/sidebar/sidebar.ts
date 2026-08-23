@@ -1,26 +1,16 @@
-import { Component, computed, effect, inject, signal } from '@angular/core';
-import {
-  LucideChevronsUpDown,
-  LucideClock,
-  LucideFileText,
-  LucideFolderOpen,
-  LucideFolderPlus,
-  LucideFolders,
-  LucidePlus,
-  LucideSettings,
-  LucideStar,
-  LucideTags,
-} from '@lucide/angular';
+import { Component, effect, inject, signal } from '@angular/core';
+import { LucideClock, LucideFileText, LucideFolders, LucideStar, LucideTags } from '@lucide/angular';
 import { join } from '@tauri-apps/api/path';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { SidebarSection } from './sidebar-section/sidebar-section';
 import { SidebarItemButton } from './sidebar-item-button/sidebar-item-button';
 import { VaultTreeNode } from './vault-tree-node/vault-tree-node';
+import { VaultMenu } from './vault-menu/vault-menu';
 import { FAVORITE_NOTES, MockNote, RECENT_NOTES, TAG_GROUPS } from '../../notes/notes-data';
-import { SidebarState } from './sidebar-state';
+import { COLLAPSE_THRESHOLD, SidebarState } from './sidebar-state';
 import { NotesState } from '../../notes/notes-state';
 import { TabsState } from '../../notes/tabs-state';
-import { VaultState, vaultNameFromPath } from '../../notes/vault-state';
+import { VaultState } from '../../notes/vault-state';
 import { VaultClipboardState } from '../../notes/vault-clipboard-state';
 import { VaultDragState } from '../../notes/vault-drag-state';
 import { VaultRenameState } from '../../notes/vault-rename-state';
@@ -38,21 +28,7 @@ import { DialogState } from '../../shared/dialog/dialog-state';
 
 @Component({
   selector: 'app-sidebar',
-  imports: [
-    SidebarSection,
-    SidebarItemButton,
-    VaultTreeNode,
-    LucideFolderOpen,
-    LucideFolderPlus,
-    LucideFolders,
-    LucidePlus,
-    LucideStar,
-    LucideClock,
-    LucideTags,
-    LucideFileText,
-    LucideChevronsUpDown,
-    LucideSettings,
-  ],
+  imports: [SidebarSection, SidebarItemButton, VaultTreeNode, VaultMenu, LucideFolders, LucideStar, LucideClock, LucideTags, LucideFileText],
   templateUrl: './sidebar.html',
   host: { class: 'contents' },
 })
@@ -74,11 +50,6 @@ export class Sidebar {
 
   protected readonly lockedHint = signal<string | null>(null);
 
-  protected readonly vaultName = computed(() => {
-    const path = this.vaultState.rootPath();
-    return path ? vaultNameFromPath(path) : null;
-  });
-
   /** Session-only favorite toggle stub — not persisted, not wired to the real Favorites section yet. */
   protected readonly favoritedPaths = signal<ReadonlySet<string>>(new Set());
 
@@ -95,26 +66,6 @@ export class Sidebar {
       }
     });
   }
-
-  protected async onOpenVault(): Promise<void> {
-    await this.vaultState.pickVault();
-  }
-
-  protected onVaultSwitcherClick(event: MouseEvent): void {
-    const currentPath = this.vaultState.rootPath();
-    const recents = this.vaultState.recentVaults();
-    const items: ContextMenuItem[] = recents.map((path) => ({
-      kind: 'item',
-      label: vaultNameFromPath(path),
-      icon: path === currentPath ? 'check' : 'vault',
-      action: () => void this.vaultState.switchVault(path),
-    }));
-    if (items.length > 0) items.push({ kind: 'separator' });
-    items.push({ kind: 'item', label: 'Open Another Vault…', icon: 'vault', action: () => void this.vaultState.pickVault() });
-    this.contextMenuState.open(event, items);
-  }
-
-  protected onSettingsClick(): void {}
 
   protected async onNewNote(relDir = ''): Promise<void> {
     const base = 'Untitled';
@@ -472,23 +423,44 @@ export class Sidebar {
   }
 
   protected onResizePointerDown(event: PointerEvent): void {
-    if (this.state.collapsed()) return;
     const handle = event.currentTarget as HTMLElement;
     handle.setPointerCapture(event.pointerId);
     this.dragStartX.set(event.clientX);
-    this.dragStartWidth.set(this.state.width());
+    // When collapsed the handle sits flush against the icon rail, i.e. at an
+    // effective sidebar width of 0 — so drag distance maps directly to width.
+    this.dragStartWidth.set(this.state.collapsed() ? 0 : this.state.width());
+    this.state.resizing.set(true);
   }
 
   protected onResizePointerMove(event: PointerEvent): void {
     const startX = this.dragStartX();
     if (startX === null) return;
     const delta = event.clientX - startX;
-    this.state.setWidth(this.dragStartWidth() + delta);
+    const prospective = this.dragStartWidth() + delta;
+    if (prospective < COLLAPSE_THRESHOLD) {
+      this.state.setCollapsed(true);
+      return;
+    }
+    this.state.setCollapsed(false);
+    this.state.setWidth(prospective);
   }
 
   protected onResizePointerUp(event: PointerEvent): void {
     const handle = event.currentTarget as HTMLElement;
     handle.releasePointerCapture(event.pointerId);
+    this.endResize();
+  }
+
+  // Pointer capture is released implicitly (and this fires) if the capturing
+  // element is removed from the DOM mid-drag, e.g. Angular tearing down other
+  // parts of the sidebar in response to the collapse we just triggered —
+  // without this, dragStartX/resizing could get stuck set.
+  protected onResizeLostPointerCapture(): void {
+    this.endResize();
+  }
+
+  private endResize(): void {
     this.dragStartX.set(null);
+    this.state.resizing.set(false);
   }
 }

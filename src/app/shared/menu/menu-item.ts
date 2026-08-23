@@ -4,7 +4,8 @@ const BASE = 'flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs';
 
 /**
  * A single row inside an <app-menu-surface>. Project the leading icon with the
- * `menuItemIcon` attribute:
+ * `menuItemIcon` attribute, and an optional trailing indicator (e.g. a
+ * checkmark on the active row) with `menuItemTrailing`:
  *
  *   <app-menu-item label="Delete" [danger]="true">
  *     <svg menuItemIcon lucideTrash2 [size]="14"></svg>
@@ -25,6 +26,9 @@ const BASE = 'flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs';
         <ng-content select="[menuItemIcon]" />
       </span>
       <span class="flex-1 truncate">{{ label() }}</span>
+      <span class="flex shrink-0 items-center justify-center">
+        <ng-content select="[menuItemTrailing]" />
+      </span>
     </button>
   `,
   host: { class: 'block' },

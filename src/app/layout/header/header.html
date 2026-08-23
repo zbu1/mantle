@@ -1,13 +1,16 @@
-<header class="grid h-10 shrink-0 select-none bg-surface text-surface-foreground"
-  [style.grid-template-columns]="gridTemplateColumns()">
-  <div class="flex items-center">
-    <button type="button" title="Toggle sidebar" (click)="toggleSidebar()"
-      class="inline-flex w-11 items-center justify-center text-foreground hover:bg-background">
-      <svg lucidePanelLeft [size]="14"></svg>
-    </button>
+<header class="relative grid h-10 shrink-0 select-none bg-surface text-surface-foreground"
+  [style.grid-template-columns]="gridTemplateColumns()" [style.transition]="layoutTransition()">
+  <div class="flex min-w-0 items-center pl-2 pr-1">
+    <app-main-menu />
   </div>
+  <button type="button" title="Toggle sidebar" (click)="toggleSidebar()"
+    class="absolute top-1 z-10 inline-flex h-8 w-8 items-center justify-center rounded-md text-foreground hover:bg-background"
+    [style.left.px]="toggleButtonLeft()" [style.transition]="toggleTransition()">
+    <svg lucidePanelLeft [size]="14"></svg>
+  </button>
   <div data-tauri-drag-region
-    class="flex min-w-0 items-stretch gap-1 overflow-x-auto rounded-bl-xl border-border px-1 [app-region:drag]">
+    class="flex min-w-0 items-stretch gap-1 overflow-x-auto rounded-bl-xl border-border pr-1 [app-region:drag]"
+    [style.padding-left.px]="tabsPaddingLeft()" [style.transition]="tabsPaddingTransition()">
     @if (tabsState.tabs().length > 0) {
     @for (tab of tabsState.tabs(); track tab.id) {
     <button type="button" (click)="activateTab(tab.id)"

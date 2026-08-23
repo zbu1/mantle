@@ -1,0 +1,13 @@
+<button #trigger type="button" title="Menu" (click)="toggle()" [attr.aria-expanded]="open()"
+  class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-foreground hover:bg-background"
+  [class.bg-background]="open()">
+  <svg lucideMenu [size]="14"></svg>
+</button>
+
+@if (open()) {
+<app-menu-surface #panel class="absolute left-0 top-full z-50 mt-1 w-36">
+  <app-menu-item label="File" (selected)="close()" />
+  <app-menu-item label="Edit" (selected)="close()" />
+  <app-menu-item label="View" (selected)="close()" />
+</app-menu-surface>
+}
