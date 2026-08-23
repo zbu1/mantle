@@ -1,4 +1,4 @@
-import { Injectable, effect, inject, signal } from '@angular/core';
+import { Injectable, effect, inject, signal, untracked } from '@angular/core';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
@@ -7,6 +7,8 @@ import { TabsState } from './tabs-state';
 import { formatError, logError, logInfo } from '../core/logger';
 
 const STORAGE_KEY = 'mantle.vault.v1';
+const RECENT_KEY = 'mantle.vault.recent.v1';
+const MAX_RECENT_VAULTS = 8;
 
 function readStoredPath(): string | null {
   try {
@@ -14,6 +16,22 @@ function readStoredPath(): string | null {
   } catch {
     return null;
   }
+}
+
+function readStoredRecents(): string[] {
+  try {
+    const raw = localStorage.getItem(RECENT_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((p) => typeof p === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Vault display name, derived from the trailing path segment (handles both `/` and `\` separators). */
+export function vaultNameFromPath(path: string): string {
+  const segments = path.split(/[/\\]+/).filter(Boolean);
+  return segments[segments.length - 1] ?? path;
 }
 
 export interface CreatedNote {
@@ -35,6 +53,9 @@ export class VaultState {
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
 
+  /** Most-recently-opened vault paths, newest first, for the sidebar vault switcher. */
+  readonly recentVaults = signal<string[]>(readStoredRecents());
+
   /** Baseline from the last scan, used to detect externally-added/removed notes. Reset across vault switches. */
   private previousRoot: string | null = null;
   private previousNotes: Map<string, string> | null = null;
@@ -45,6 +66,20 @@ export class VaultState {
       try {
         if (path) localStorage.setItem(STORAGE_KEY, path);
         else localStorage.removeItem(STORAGE_KEY);
+      } catch {
+        // storage unavailable (e.g. private browsing) — ignore
+      }
+    });
+
+    effect(() => {
+      const path = this.rootPath();
+      if (path) this.rememberRecentVault(path);
+    });
+
+    effect(() => {
+      const recents = this.recentVaults();
+      try {
+        localStorage.setItem(RECENT_KEY, JSON.stringify(recents));
       } catch {
         // storage unavailable (e.g. private browsing) — ignore
       }
@@ -80,6 +115,19 @@ export class VaultState {
     if (!selected || Array.isArray(selected)) return;
     this.rootPath.set(selected);
     await this.refresh();
+  }
+
+  /** Switches to an already-known vault path (e.g. from the sidebar's recent-vaults switcher). */
+  async switchVault(path: string): Promise<void> {
+    if (path === this.rootPath()) return;
+    this.rootPath.set(path);
+    await this.refresh();
+  }
+
+  private rememberRecentVault(path: string): void {
+    const current = untracked(this.recentVaults);
+    const next = [path, ...current.filter((p) => p !== path)].slice(0, MAX_RECENT_VAULTS);
+    this.recentVaults.set(next);
   }
 
   async refresh(): Promise<void> {

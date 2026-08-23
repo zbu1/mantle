@@ -29,7 +29,25 @@
     </button>
     }
   </div>
-  @if (activeTab(); as tab) {
+  @if (vaultError(); as err) {
+  <div class="flex flex-1 flex-col items-center justify-center gap-3 px-6 pb-6 text-center">
+    <svg lucideTriangleAlert [size]="32" class="text-destructive"></svg>
+    <div class="text-sm font-medium text-foreground">Couldn't open this vault</div>
+    <div class="max-w-md text-xs text-muted-foreground">{{ err }}</div>
+    <div class="mt-2 flex items-center gap-2">
+      <button type="button" (click)="retryOpenVault()"
+        class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs text-foreground hover:bg-surface">
+        <svg lucideRefreshCw [size]="13"></svg>
+        Try Again
+      </button>
+      <button type="button" (click)="pickAnotherVault()"
+        class="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:opacity-90">
+        <svg lucideFolderOpen [size]="13"></svg>
+        Open a Different Vault
+      </button>
+    </div>
+  </div>
+  } @else if (activeTab(); as tab) {
   <div class="mx-auto max-w-4xl px-6 pb-6 h-full min-w-0 w-full border-2">
     <input #titleInput type="text" [value]="tab.title" (input)="onTitleInput(tab, titleInput.value)"
       (keydown)="onTitleKeydown($event, tab, titleInput)" (blur)="onTitleBlur(tab)"

@@ -101,6 +101,22 @@
     }
   </div>
 
+  <div class="sticky bottom-0 z-10 flex shrink-0 items-center gap-1 border-t border-border bg-surface p-2">
+    <button type="button" title="Switch Vault" (click)="onVaultSwitcherClick($event)"
+      class="inline-flex h-8 flex-1 items-center gap-1.5 overflow-hidden rounded-md px-2 text-xs text-foreground/80 hover:bg-background hover:text-foreground"
+      [class.justify-center]="state.collapsed()">
+      <svg lucideFolders [size]="14" class="shrink-0"></svg>
+      @if (!state.collapsed()) {
+      <span class="min-w-0 flex-1 truncate text-left">{{ vaultName() ?? 'No Vault' }}</span>
+      <svg lucideChevronsUpDown [size]="12" class="shrink-0 text-muted-foreground"></svg>
+      }
+    </button>
+    <button type="button" title="Settings" (click)="onSettingsClick()"
+      class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-foreground/80 hover:bg-background hover:text-foreground">
+      <svg lucideSettings [size]="14"></svg>
+    </button>
+  </div>
+
   @if (!state.collapsed()) {
   <div class="group absolute inset-y-0 right-0 z-10 -mr-1 flex w-2 cursor-col-resize items-center justify-center"
     (pointerdown)="onResizePointerDown($event)" (pointermove)="onResizePointerMove($event)"

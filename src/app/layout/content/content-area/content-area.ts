@@ -1,5 +1,15 @@
 import { Component, ElementRef, computed, inject, viewChild } from '@angular/core';
-import { LucideArrowLeft, LucideArrowRight, LucideChevronDown, LucideEllipsis, LucideExpand, LucideLock } from '@lucide/angular';
+import {
+  LucideArrowLeft,
+  LucideArrowRight,
+  LucideChevronDown,
+  LucideEllipsis,
+  LucideExpand,
+  LucideFolderOpen,
+  LucideLock,
+  LucideRefreshCw,
+  LucideTriangleAlert,
+} from '@lucide/angular';
 import { TabsState, NoteTab } from '../../../notes/tabs-state';
 import { NotesState, titleFromRelPath } from '../../../notes/notes-state';
 import { VaultState } from '../../../notes/vault-state';
@@ -20,13 +30,16 @@ const RENAME_DEBOUNCE_MS = 1000;
     LucideEllipsis,
     LucideLock,
     LucideChevronDown,
+    LucideTriangleAlert,
+    LucideRefreshCw,
+    LucideFolderOpen,
   ],
   templateUrl: './content-area.html',
 })
 export class ContentArea {
   protected readonly tabsState = inject(TabsState);
   private readonly notesState = inject(NotesState);
-  private readonly vaultState = inject(VaultState);
+  protected readonly vaultState = inject(VaultState);
   private readonly contextMenuState = inject(ContextMenuState);
   private readonly dialogState = inject(DialogState);
 
@@ -37,6 +50,17 @@ export class ContentArea {
     const activeId = this.tabsState.activeId();
     return activeId ? this.tabsState.tabs().find((t) => t.id === activeId) : undefined;
   });
+
+  /** Vault failed to open (bad/missing path, permissions, etc.) — show a fallback screen instead of the editor. */
+  protected readonly vaultError = computed(() => (this.vaultState.tree() ? null : this.vaultState.error()));
+
+  protected retryOpenVault(): void {
+    void this.vaultState.refresh();
+  }
+
+  protected pickAnotherVault(): void {
+    void this.vaultState.pickVault();
+  }
 
   protected goBack(): void {
     this.tabsState.goBack();

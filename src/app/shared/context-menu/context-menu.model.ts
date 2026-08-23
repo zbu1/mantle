@@ -13,7 +13,9 @@ export type ContextMenuIcon =
   | 'favorite'
   | 'unfavorite'
   | 'close'
-  | 'delete';
+  | 'delete'
+  | 'vault'
+  | 'check';
 
 export interface ContextMenuAction {
   kind: 'item';

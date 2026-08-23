@@ -1,5 +1,6 @@
 import { Component, ElementRef, HostListener, computed, effect, inject, signal, viewChild } from '@angular/core';
 import {
+  LucideCheck,
   LucideClipboardPaste,
   LucideCopy,
   LucideCopyPlus,
@@ -8,6 +9,7 @@ import {
   LucideFolderInput,
   LucideFolderOpen,
   LucideFolderPlus,
+  LucideFolders,
   LucidePencil,
   LucideScissors,
   LucideSquarePlus,
@@ -50,6 +52,8 @@ const VIEWPORT_MARGIN = 8;
     LucideStarOff,
     LucideX,
     LucideTrash2,
+    LucideFolders,
+    LucideCheck,
   ],
   templateUrl: './context-menu.html',
 })

@@ -1,11 +1,13 @@
-import { Component, effect, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import {
+  LucideChevronsUpDown,
   LucideClock,
   LucideFileText,
   LucideFolderOpen,
   LucideFolderPlus,
   LucideFolders,
   LucidePlus,
+  LucideSettings,
   LucideStar,
   LucideTags,
 } from '@lucide/angular';
@@ -18,7 +20,7 @@ import { FAVORITE_NOTES, MockNote, RECENT_NOTES, TAG_GROUPS } from '../../notes/
 import { SidebarState } from './sidebar-state';
 import { NotesState } from '../../notes/notes-state';
 import { TabsState } from '../../notes/tabs-state';
-import { VaultState } from '../../notes/vault-state';
+import { VaultState, vaultNameFromPath } from '../../notes/vault-state';
 import { VaultClipboardState } from '../../notes/vault-clipboard-state';
 import { VaultDragState } from '../../notes/vault-drag-state';
 import { VaultRenameState } from '../../notes/vault-rename-state';
@@ -48,6 +50,8 @@ import { DialogState } from '../../shared/dialog/dialog-state';
     LucideClock,
     LucideTags,
     LucideFileText,
+    LucideChevronsUpDown,
+    LucideSettings,
   ],
   templateUrl: './sidebar.html',
   host: { class: 'contents' },
@@ -70,6 +74,11 @@ export class Sidebar {
 
   protected readonly lockedHint = signal<string | null>(null);
 
+  protected readonly vaultName = computed(() => {
+    const path = this.vaultState.rootPath();
+    return path ? vaultNameFromPath(path) : null;
+  });
+
   /** Session-only favorite toggle stub — not persisted, not wired to the real Favorites section yet. */
   protected readonly favoritedPaths = signal<ReadonlySet<string>>(new Set());
 
@@ -90,6 +99,22 @@ export class Sidebar {
   protected async onOpenVault(): Promise<void> {
     await this.vaultState.pickVault();
   }
+
+  protected onVaultSwitcherClick(event: MouseEvent): void {
+    const currentPath = this.vaultState.rootPath();
+    const recents = this.vaultState.recentVaults();
+    const items: ContextMenuItem[] = recents.map((path) => ({
+      kind: 'item',
+      label: vaultNameFromPath(path),
+      icon: path === currentPath ? 'check' : 'vault',
+      action: () => void this.vaultState.switchVault(path),
+    }));
+    if (items.length > 0) items.push({ kind: 'separator' });
+    items.push({ kind: 'item', label: 'Open Another Vault…', icon: 'vault', action: () => void this.vaultState.pickVault() });
+    this.contextMenuState.open(event, items);
+  }
+
+  protected onSettingsClick(): void {}
 
   protected async onNewNote(relDir = ''): Promise<void> {
     const base = 'Untitled';
