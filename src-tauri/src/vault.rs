@@ -2,6 +2,7 @@
 //! `.mntl` (plaintext) and `.mntl.enc` (encrypted, currently read-only/listed
 //! but not decryptable) note files.
 
+use crate::logging::logged;
 use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -132,41 +133,47 @@ fn resolve_rel_path(vault_root: &str, rel_path: &str) -> Result<PathBuf, String>
 
 #[tauri::command]
 pub fn scan_vault(vault_root: String) -> Result<VaultNode, String> {
-    let root = PathBuf::from(&vault_root);
-    if !root.is_dir() {
-        return Err(format!(
-            "Vault root does not exist or is not a directory: {vault_root}"
-        ));
-    }
-    let children = scan_dir(&root, Path::new("")).map_err(|e| e.to_string())?;
-    Ok(VaultNode::Folder {
-        name: root
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default(),
-        rel_path: String::new(),
-        children,
+    logged("scan_vault", || {
+        let root = PathBuf::from(&vault_root);
+        if !root.is_dir() {
+            return Err(format!(
+                "Vault root does not exist or is not a directory: {vault_root}"
+            ));
+        }
+        let children = scan_dir(&root, Path::new("")).map_err(|e| e.to_string())?;
+        Ok(VaultNode::Folder {
+            name: root
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            rel_path: String::new(),
+            children,
+        })
     })
 }
 
 #[tauri::command]
 pub fn read_note(vault_root: String, rel_path: String) -> Result<String, String> {
-    if rel_path.ends_with(".mntl.enc") {
-        return Err("Encrypted notes are not supported yet".to_string());
-    }
-    let path = resolve_rel_path(&vault_root, &rel_path)?;
-    let raw = fs::read_to_string(&path).map_err(|e| format!("Failed to read note: {e}"))?;
-    mntl_core::decode_unencrypted_note(&raw).map_err(|e| e.to_string())
+    logged("read_note", || {
+        if rel_path.ends_with(".mntl.enc") {
+            return Err("Encrypted notes are not supported yet".to_string());
+        }
+        let path = resolve_rel_path(&vault_root, &rel_path)?;
+        let raw = fs::read_to_string(&path).map_err(|e| format!("Failed to read note: {e}"))?;
+        mntl_core::decode_unencrypted_note(&raw).map_err(|e| e.to_string())
+    })
 }
 
 #[tauri::command]
 pub fn write_note(vault_root: String, rel_path: String, content: String) -> Result<(), String> {
-    if rel_path.ends_with(".mntl.enc") {
-        return Err("Encrypted notes are not supported yet".to_string());
-    }
-    let path = resolve_rel_path(&vault_root, &rel_path)?;
-    let encoded = mntl_core::encode_unencrypted_note(&content).map_err(|e| e.to_string())?;
-    fs::write(&path, encoded).map_err(|e| format!("Failed to write note: {e}"))
+    logged("write_note", || {
+        if rel_path.ends_with(".mntl.enc") {
+            return Err("Encrypted notes are not supported yet".to_string());
+        }
+        let path = resolve_rel_path(&vault_root, &rel_path)?;
+        let encoded = mntl_core::encode_unencrypted_note(&content).map_err(|e| e.to_string())?;
+        fs::write(&path, encoded).map_err(|e| format!("Failed to write note: {e}"))
+    })
 }
 
 #[derive(Serialize)]
@@ -178,65 +185,73 @@ pub struct CreatedNote {
 
 #[tauri::command]
 pub fn create_note(vault_root: String, rel_dir: String, name: String) -> Result<CreatedNote, String> {
-    if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains(':') {
-        return Err("Invalid note name".to_string());
-    }
-    let rel_path = if rel_dir.is_empty() {
-        format!("{name}.mntl")
-    } else {
-        format!("{rel_dir}/{name}.mntl")
-    };
-    let path = resolve_rel_path(&vault_root, &rel_path)?;
-    if path.exists() {
-        return Err(format!("A note named \"{name}\" already exists in this folder"));
-    }
-    let encoded = mntl_core::encode_unencrypted_note("").map_err(|e| e.to_string())?;
-    fs::write(&path, encoded).map_err(|e| format!("Failed to create note: {e}"))?;
-    Ok(CreatedNote {
-        name,
-        rel_path,
+    logged("create_note", || {
+        if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains(':') {
+            return Err("Invalid note name".to_string());
+        }
+        let rel_path = if rel_dir.is_empty() {
+            format!("{name}.mntl")
+        } else {
+            format!("{rel_dir}/{name}.mntl")
+        };
+        let path = resolve_rel_path(&vault_root, &rel_path)?;
+        if path.exists() {
+            return Err(format!("A note named \"{name}\" already exists in this folder"));
+        }
+        let encoded = mntl_core::encode_unencrypted_note("").map_err(|e| e.to_string())?;
+        fs::write(&path, encoded).map_err(|e| format!("Failed to create note: {e}"))?;
+        Ok(CreatedNote {
+            name,
+            rel_path,
+        })
     })
 }
 
 #[tauri::command]
 pub fn rename_note(vault_root: String, rel_path: String, new_name: String) -> Result<CreatedNote, String> {
-    if rel_path.ends_with(".mntl.enc") {
-        return Err("Encrypted notes are not supported yet".to_string());
-    }
-    if new_name.is_empty() || new_name.contains('/') || new_name.contains('\\') || new_name.contains(':') {
-        return Err("Invalid note name".to_string());
-    }
-    let source = resolve_rel_path(&vault_root, &rel_path)?;
-    let (dir_rel, _) = split_rel_note_path(&rel_path);
-    let dest_rel = if dir_rel.is_empty() {
-        format!("{new_name}.mntl")
-    } else {
-        format!("{dir_rel}/{new_name}.mntl")
-    };
-    let dest = resolve_rel_path(&vault_root, &dest_rel)?;
-    if dest != source && dest.exists() {
-        return Err(format!("A note named \"{new_name}\" already exists in this folder"));
-    }
-    fs::rename(&source, &dest).map_err(|e| format!("Failed to rename note: {e}"))?;
-    Ok(CreatedNote {
-        name: new_name,
-        rel_path: dest_rel,
+    logged("rename_note", || {
+        if rel_path.ends_with(".mntl.enc") {
+            return Err("Encrypted notes are not supported yet".to_string());
+        }
+        if new_name.is_empty() || new_name.contains('/') || new_name.contains('\\') || new_name.contains(':') {
+            return Err("Invalid note name".to_string());
+        }
+        let source = resolve_rel_path(&vault_root, &rel_path)?;
+        let (dir_rel, _) = split_rel_note_path(&rel_path);
+        let dest_rel = if dir_rel.is_empty() {
+            format!("{new_name}.mntl")
+        } else {
+            format!("{dir_rel}/{new_name}.mntl")
+        };
+        let dest = resolve_rel_path(&vault_root, &dest_rel)?;
+        if dest != source && dest.exists() {
+            return Err(format!("A note named \"{new_name}\" already exists in this folder"));
+        }
+        fs::rename(&source, &dest).map_err(|e| format!("Failed to rename note: {e}"))?;
+        Ok(CreatedNote {
+            name: new_name,
+            rel_path: dest_rel,
+        })
     })
 }
 
 #[tauri::command]
 pub fn delete_note(vault_root: String, rel_path: String) -> Result<(), String> {
-    let path = resolve_rel_path(&vault_root, &rel_path)?;
-    // Send to the OS recycle bin/trash rather than unlinking outright, so a
-    // deleted note stays recoverable through the normal OS trash UI.
-    trash::delete(&path).map_err(|e| format!("Failed to delete note: {e}"))
+    logged("delete_note", || {
+        let path = resolve_rel_path(&vault_root, &rel_path)?;
+        // Send to the OS recycle bin/trash rather than unlinking outright, so a
+        // deleted note stays recoverable through the normal OS trash UI.
+        trash::delete(&path).map_err(|e| format!("Failed to delete note: {e}"))
+    })
 }
 
 #[tauri::command]
 pub fn delete_folder(vault_root: String, rel_path: String) -> Result<(), String> {
-    let path = resolve_rel_path(&vault_root, &rel_path)?;
-    // Same recycle-bin behavior as delete_note; trash::delete handles directories recursively.
-    trash::delete(&path).map_err(|e| format!("Failed to delete folder: {e}"))
+    logged("delete_folder", || {
+        let path = resolve_rel_path(&vault_root, &rel_path)?;
+        // Same recycle-bin behavior as delete_note; trash::delete handles directories recursively.
+        trash::delete(&path).map_err(|e| format!("Failed to delete folder: {e}"))
+    })
 }
 
 /// Resolve a vault-relative directory (empty string means the vault root)
@@ -316,41 +331,45 @@ fn unique_sibling_note_path(dir_abs: &Path, dir_rel: &str, stem: &str, force_suf
 
 #[tauri::command]
 pub fn duplicate_note(vault_root: String, rel_path: String) -> Result<CreatedNote, String> {
-    if rel_path.ends_with(".mntl.enc") {
-        return Err("Encrypted notes are not supported yet".to_string());
-    }
-    let source = resolve_rel_path(&vault_root, &rel_path)?;
-    let dir_abs = source.parent().ok_or("Invalid rel_path")?.to_path_buf();
-    let (dir_rel, stem) = split_rel_note_path(&rel_path);
+    logged("duplicate_note", || {
+        if rel_path.ends_with(".mntl.enc") {
+            return Err("Encrypted notes are not supported yet".to_string());
+        }
+        let source = resolve_rel_path(&vault_root, &rel_path)?;
+        let dir_abs = source.parent().ok_or("Invalid rel_path")?.to_path_buf();
+        let (dir_rel, stem) = split_rel_note_path(&rel_path);
 
-    let (dest_abs, dest_rel) = unique_sibling_note_path(&dir_abs, &dir_rel, &stem, true);
-    fs::copy(&source, &dest_abs).map_err(|e| format!("Failed to duplicate note: {e}"))?;
-    Ok(CreatedNote {
-        name: dest_abs
-            .file_stem()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default(),
-        rel_path: dest_rel,
+        let (dest_abs, dest_rel) = unique_sibling_note_path(&dir_abs, &dir_rel, &stem, true);
+        fs::copy(&source, &dest_abs).map_err(|e| format!("Failed to duplicate note: {e}"))?;
+        Ok(CreatedNote {
+            name: dest_abs
+                .file_stem()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            rel_path: dest_rel,
+        })
     })
 }
 
 #[tauri::command]
 pub fn copy_note(vault_root: String, source_rel_path: String, dest_rel_dir: String) -> Result<CreatedNote, String> {
-    if source_rel_path.ends_with(".mntl.enc") {
-        return Err("Encrypted notes are not supported yet".to_string());
-    }
-    let source = resolve_rel_path(&vault_root, &source_rel_path)?;
-    let dest_dir_abs = resolve_rel_dir(&vault_root, &dest_rel_dir)?;
-    let (_, stem) = split_rel_note_path(&source_rel_path);
+    logged("copy_note", || {
+        if source_rel_path.ends_with(".mntl.enc") {
+            return Err("Encrypted notes are not supported yet".to_string());
+        }
+        let source = resolve_rel_path(&vault_root, &source_rel_path)?;
+        let dest_dir_abs = resolve_rel_dir(&vault_root, &dest_rel_dir)?;
+        let (_, stem) = split_rel_note_path(&source_rel_path);
 
-    let (dest_abs, dest_rel) = unique_sibling_note_path(&dest_dir_abs, &dest_rel_dir, &stem, false);
-    fs::copy(&source, &dest_abs).map_err(|e| format!("Failed to copy note: {e}"))?;
-    Ok(CreatedNote {
-        name: dest_abs
-            .file_stem()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default(),
-        rel_path: dest_rel,
+        let (dest_abs, dest_rel) = unique_sibling_note_path(&dest_dir_abs, &dest_rel_dir, &stem, false);
+        fs::copy(&source, &dest_abs).map_err(|e| format!("Failed to copy note: {e}"))?;
+        Ok(CreatedNote {
+            name: dest_abs
+                .file_stem()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            rel_path: dest_rel,
+        })
     })
 }
 
@@ -363,94 +382,102 @@ pub struct CreatedFolder {
 
 #[tauri::command]
 pub fn create_folder(vault_root: String, rel_dir: String, name: String) -> Result<CreatedFolder, String> {
-    if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains(':') {
-        return Err("Invalid folder name".to_string());
-    }
-    let dest_dir_abs = resolve_rel_dir(&vault_root, &rel_dir)?;
-    let rel_path = if rel_dir.is_empty() {
-        name.clone()
-    } else {
-        format!("{rel_dir}/{name}")
-    };
-    let path = dest_dir_abs.join(&name);
-    if path.exists() {
-        return Err(format!("A folder named \"{name}\" already exists in this location"));
-    }
-    fs::create_dir(&path).map_err(|e| format!("Failed to create folder: {e}"))?;
-    Ok(CreatedFolder { name, rel_path })
+    logged("create_folder", || {
+        if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains(':') {
+            return Err("Invalid folder name".to_string());
+        }
+        let dest_dir_abs = resolve_rel_dir(&vault_root, &rel_dir)?;
+        let rel_path = if rel_dir.is_empty() {
+            name.clone()
+        } else {
+            format!("{rel_dir}/{name}")
+        };
+        let path = dest_dir_abs.join(&name);
+        if path.exists() {
+            return Err(format!("A folder named \"{name}\" already exists in this location"));
+        }
+        fs::create_dir(&path).map_err(|e| format!("Failed to create folder: {e}"))?;
+        Ok(CreatedFolder { name, rel_path })
+    })
 }
 
 #[tauri::command]
 pub fn rename_folder(vault_root: String, rel_path: String, new_name: String) -> Result<CreatedFolder, String> {
-    if new_name.is_empty() || new_name.contains('/') || new_name.contains('\\') || new_name.contains(':') {
-        return Err("Invalid folder name".to_string());
-    }
-    let source = resolve_rel_path(&vault_root, &rel_path)?;
-    let dir_rel = rel_path.rsplit_once('/').map(|(dir, _)| dir.to_string()).unwrap_or_default();
-    let dest_rel = if dir_rel.is_empty() {
-        new_name.clone()
-    } else {
-        format!("{dir_rel}/{new_name}")
-    };
-    let dest = resolve_rel_path(&vault_root, &dest_rel)?;
-    if dest != source && dest.exists() {
-        return Err(format!("A folder named \"{new_name}\" already exists in this location"));
-    }
-    fs::rename(&source, &dest).map_err(|e| format!("Failed to rename folder: {e}"))?;
-    Ok(CreatedFolder {
-        name: new_name,
-        rel_path: dest_rel,
+    logged("rename_folder", || {
+        if new_name.is_empty() || new_name.contains('/') || new_name.contains('\\') || new_name.contains(':') {
+            return Err("Invalid folder name".to_string());
+        }
+        let source = resolve_rel_path(&vault_root, &rel_path)?;
+        let dir_rel = rel_path.rsplit_once('/').map(|(dir, _)| dir.to_string()).unwrap_or_default();
+        let dest_rel = if dir_rel.is_empty() {
+            new_name.clone()
+        } else {
+            format!("{dir_rel}/{new_name}")
+        };
+        let dest = resolve_rel_path(&vault_root, &dest_rel)?;
+        if dest != source && dest.exists() {
+            return Err(format!("A folder named \"{new_name}\" already exists in this location"));
+        }
+        fs::rename(&source, &dest).map_err(|e| format!("Failed to rename folder: {e}"))?;
+        Ok(CreatedFolder {
+            name: new_name,
+            rel_path: dest_rel,
+        })
     })
 }
 
 #[tauri::command]
 pub fn move_note(vault_root: String, source_rel_path: String, dest_rel_dir: String) -> Result<CreatedNote, String> {
-    if source_rel_path.ends_with(".mntl.enc") {
-        return Err("Encrypted notes are not supported yet".to_string());
-    }
-    let source = resolve_rel_path(&vault_root, &source_rel_path)?;
-    let dest_dir_abs = resolve_rel_dir(&vault_root, &dest_rel_dir)?;
-    let (_, stem) = split_rel_note_path(&source_rel_path);
+    logged("move_note", || {
+        if source_rel_path.ends_with(".mntl.enc") {
+            return Err("Encrypted notes are not supported yet".to_string());
+        }
+        let source = resolve_rel_path(&vault_root, &source_rel_path)?;
+        let dest_dir_abs = resolve_rel_dir(&vault_root, &dest_rel_dir)?;
+        let (_, stem) = split_rel_note_path(&source_rel_path);
 
-    let (dest_abs, dest_rel) = unique_sibling_note_path(&dest_dir_abs, &dest_rel_dir, &stem, false);
-    fs::rename(&source, &dest_abs).map_err(|e| format!("Failed to move note: {e}"))?;
-    Ok(CreatedNote {
-        name: dest_abs
-            .file_stem()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default(),
-        rel_path: dest_rel,
+        let (dest_abs, dest_rel) = unique_sibling_note_path(&dest_dir_abs, &dest_rel_dir, &stem, false);
+        fs::rename(&source, &dest_abs).map_err(|e| format!("Failed to move note: {e}"))?;
+        Ok(CreatedNote {
+            name: dest_abs
+                .file_stem()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            rel_path: dest_rel,
+        })
     })
 }
 
 #[tauri::command]
 pub fn move_folder(vault_root: String, source_rel_path: String, dest_rel_dir: String) -> Result<CreatedFolder, String> {
-    let source = resolve_rel_path(&vault_root, &source_rel_path)?;
-    let dest_dir_abs = resolve_rel_dir(&vault_root, &dest_rel_dir)?;
-    let name = source
-        .file_name()
-        .ok_or("Invalid rel_path")?
-        .to_string_lossy()
-        .into_owned();
-    let dest_abs = dest_dir_abs.join(&name);
+    logged("move_folder", || {
+        let source = resolve_rel_path(&vault_root, &source_rel_path)?;
+        let dest_dir_abs = resolve_rel_dir(&vault_root, &dest_rel_dir)?;
+        let name = source
+            .file_name()
+            .ok_or("Invalid rel_path")?
+            .to_string_lossy()
+            .into_owned();
+        let dest_abs = dest_dir_abs.join(&name);
 
-    if dest_abs == source {
-        return Ok(CreatedFolder { name, rel_path: source_rel_path });
-    }
-    if dest_abs.starts_with(&source) {
-        return Err("Cannot move a folder into itself or one of its subfolders".to_string());
-    }
-    if dest_abs.exists() {
-        return Err(format!("\"{name}\" already exists in the destination folder"));
-    }
+        if dest_abs == source {
+            return Ok(CreatedFolder { name, rel_path: source_rel_path });
+        }
+        if dest_abs.starts_with(&source) {
+            return Err("Cannot move a folder into itself or one of its subfolders".to_string());
+        }
+        if dest_abs.exists() {
+            return Err(format!("\"{name}\" already exists in the destination folder"));
+        }
 
-    let dest_rel = if dest_rel_dir.is_empty() {
-        name.clone()
-    } else {
-        format!("{dest_rel_dir}/{name}")
-    };
-    fs::rename(&source, &dest_abs).map_err(|e| format!("Failed to move folder: {e}"))?;
-    Ok(CreatedFolder { name, rel_path: dest_rel })
+        let dest_rel = if dest_rel_dir.is_empty() {
+            name.clone()
+        } else {
+            format!("{dest_rel_dir}/{name}")
+        };
+        fs::rename(&source, &dest_abs).map_err(|e| format!("Failed to move folder: {e}"))?;
+        Ok(CreatedFolder { name, rel_path: dest_rel })
+    })
 }
 
 #[cfg(test)]

@@ -12,6 +12,7 @@
 //! encrypted, but its filename is not — so it stays plaintext unconditionally
 //! rather than needing its own encryption story for encrypted vaults.
 
+use crate::logging::logged;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -78,12 +79,14 @@ fn state_path(vault_root: &str) -> Result<PathBuf, String> {
 /// default.
 #[tauri::command]
 pub fn load_vault_meta(vault_root: String) -> Result<VaultMeta, String> {
-    let path = state_path(&vault_root)?;
-    if !path.exists() {
-        return Ok(VaultMeta::default());
-    }
-    let raw = fs::read_to_string(&path).map_err(|e| format!("Failed to read vault state: {e}"))?;
-    serde_json::from_str(&raw).map_err(|e| format!("Failed to parse vault state: {e}"))
+    logged("load_vault_meta", || {
+        let path = state_path(&vault_root)?;
+        if !path.exists() {
+            return Ok(VaultMeta::default());
+        }
+        let raw = fs::read_to_string(&path).map_err(|e| format!("Failed to read vault state: {e}"))?;
+        serde_json::from_str(&raw).map_err(|e| format!("Failed to parse vault state: {e}"))
+    })
 }
 
 /// Saves `.mantle/state.json`, creating the `.mantle` directory if this is
@@ -92,14 +95,16 @@ pub fn load_vault_meta(vault_root: String) -> Result<VaultMeta, String> {
 /// `state.json` truncated or corrupt.
 #[tauri::command]
 pub fn save_vault_meta(vault_root: String, state: VaultMeta) -> Result<(), String> {
-    let path = state_path(&vault_root)?;
-    let dir = path.parent().ok_or("Invalid vault state path")?;
-    fs::create_dir_all(dir).map_err(|e| format!("Failed to create {STATE_DIR}: {e}"))?;
+    logged("save_vault_meta", || {
+        let path = state_path(&vault_root)?;
+        let dir = path.parent().ok_or("Invalid vault state path")?;
+        fs::create_dir_all(dir).map_err(|e| format!("Failed to create {STATE_DIR}: {e}"))?;
 
-    let json = serde_json::to_string_pretty(&state).map_err(|e| e.to_string())?;
-    let tmp_path = dir.join(format!("{STATE_FILE}.tmp"));
-    fs::write(&tmp_path, json).map_err(|e| format!("Failed to write vault state: {e}"))?;
-    fs::rename(&tmp_path, &path).map_err(|e| format!("Failed to save vault state: {e}"))
+        let json = serde_json::to_string_pretty(&state).map_err(|e| e.to_string())?;
+        let tmp_path = dir.join(format!("{STATE_FILE}.tmp"));
+        fs::write(&tmp_path, json).map_err(|e| format!("Failed to write vault state: {e}"))?;
+        fs::rename(&tmp_path, &path).map_err(|e| format!("Failed to save vault state: {e}"))
+    })
 }
 
 #[cfg(test)]

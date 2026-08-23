@@ -4,6 +4,7 @@ import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 import { flattenVaultNotes, withRenamedNote, VaultFolderNode } from './vault-tree.model';
 import { TabsState } from './tabs-state';
+import { formatError, logError, logInfo } from '../core/logger';
 
 const STORAGE_KEY = 'mantle.vault.v1';
 
@@ -56,7 +57,7 @@ export class VaultState {
       const path = this.rootPath();
       if (path) {
         void invoke('start_vault_watch', { vaultRoot: path }).catch((err) => {
-          console.error('Failed to watch vault for external changes:', err);
+          logError(`Failed to watch vault "${path}" for external changes: ${formatError(err)}`);
         });
       } else {
         void invoke('stop_vault_watch').catch(() => {
@@ -87,6 +88,7 @@ export class VaultState {
     this.loading.set(true);
     this.error.set(null);
     try {
+      logInfo(`Scanning vault "${root}"`);
       const tree = await invoke<VaultFolderNode>('scan_vault', { vaultRoot: root });
       this.tree.set(tree);
 
@@ -97,6 +99,7 @@ export class VaultState {
       this.previousRoot = root;
       this.previousNotes = notes;
     } catch (err) {
+      logError(`Failed to open vault "${root}": ${formatError(err)}`);
       this.error.set(String(err));
       this.tree.set(null);
     } finally {

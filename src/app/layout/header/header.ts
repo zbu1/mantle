@@ -1,14 +1,10 @@
 import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { LucideCopy, LucideMinus, LucidePanelLeft, LucidePlus, LucideSquare, LucideX } from '@lucide/angular';
+import { isTauri } from '../../core/tauri-env';
 import { SidebarState } from '../sidebar/sidebar-state';
 import { TabsState } from '../../notes/tabs-state';
 import { VaultState } from '../../notes/vault-state';
-
-/** True when running inside a Tauri webview (the IPC bridge is present). */
-function isTauri(): boolean {
-  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-}
 
 @Component({
   selector: 'app-header',
