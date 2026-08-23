@@ -31,7 +31,9 @@
   </div>
   @if (activeTab(); as tab) {
   <div class="mx-auto max-w-4xl px-6 pb-6 h-full min-w-0 w-full border-2">
-    <h1 class="mb-4 text-2xl font-semibold text-foreground">{{ tab.title }}</h1>
+    <input #titleInput type="text" [value]="tab.title" (input)="onTitleInput(tab, titleInput.value)"
+      (keydown)="onTitleKeydown($event, tab, titleInput)" (blur)="onTitleBlur(tab)"
+      class="mb-4 w-full min-w-0 truncate border-0 bg-transparent p-0 text-2xl font-semibold text-foreground outline-none!" />
     <app-note-editor [noteId]="tab.noteId" class="block h-full" />
   </div>
   } @else {

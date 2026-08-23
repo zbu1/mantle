@@ -9,6 +9,7 @@ export class SidebarItemButton {
   readonly label = input.required<string>();
   readonly collapsed = input(false);
   readonly selected = input(false);
+  readonly indent = input(0);
   readonly clicked = output<MouseEvent>();
   readonly middleClicked = output<void>();
   readonly contextMenu = output<MouseEvent>();

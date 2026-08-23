@@ -20,6 +20,18 @@ export interface VaultNoteNode {
 
 export type VaultNode = VaultFolderNode | VaultNoteNode;
 
+/** Returns a copy of `root` with the note at `relPath` renamed in place (name + relPath updated). No-op (same reference) if not found. */
+export function withRenamedNote(root: VaultFolderNode, relPath: string, newRelPath: string, newName: string): VaultFolderNode {
+  const rename = (node: VaultNode): VaultNode => {
+    if (node.type === 'note') {
+      return node.relPath === relPath ? { ...node, relPath: newRelPath, name: newName } : node;
+    }
+    const children = node.children.map(rename);
+    return children.some((child, i) => child !== node.children[i]) ? { ...node, children } : node;
+  };
+  return rename(root) as VaultFolderNode;
+}
+
 /** Flattens a vault tree into a map of note relPath -> display name. */
 export function flattenVaultNotes(root: VaultFolderNode): Map<string, string> {
   const notes = new Map<string, string>();

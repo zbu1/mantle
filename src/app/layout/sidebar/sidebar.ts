@@ -16,6 +16,7 @@ import { SidebarItemButton } from './sidebar-item-button/sidebar-item-button';
 import { VaultTreeNode } from './vault-tree-node/vault-tree-node';
 import { FAVORITE_NOTES, MockNote, RECENT_NOTES, TAG_GROUPS } from '../../notes/notes-data';
 import { SidebarState } from './sidebar-state';
+import { NotesState } from '../../notes/notes-state';
 import { TabsState } from '../../notes/tabs-state';
 import { VaultState } from '../../notes/vault-state';
 import { VaultClipboardState } from '../../notes/vault-clipboard-state';
@@ -55,6 +56,7 @@ export class Sidebar {
   protected readonly state = inject(SidebarState);
   protected readonly vaultState = inject(VaultState);
   private readonly tabsState = inject(TabsState);
+  private readonly notesState = inject(NotesState);
   private readonly contextMenuState = inject(ContextMenuState);
   private readonly clipboardState = inject(VaultClipboardState);
   protected readonly selectionState = inject(VaultSelectionState);
@@ -326,6 +328,7 @@ export class Sidebar {
       const parentDir = relPath.includes('/') ? relPath.slice(0, relPath.lastIndexOf('/')) : '';
       if (parentDir === destRelDir) continue;
       const moved = await this.vaultState.moveNote(relPath, destRelDir);
+      this.notesState.renameNoteId(relPath, moved.relPath);
       this.tabsState.renameNoteId(relPath, moved.relPath, moved.name);
     }
     this.selectionState.clear();
@@ -343,7 +346,9 @@ export class Sidebar {
       const moved = await this.vaultState.moveFolder(relPath, destRelDir);
       const newPrefix = `${moved.relPath}/`;
       for (const [oldNotePath, name] of affected) {
-        this.tabsState.renameNoteId(oldNotePath, newPrefix + oldNotePath.slice(oldPrefix.length), name);
+        const newNotePath = newPrefix + oldNotePath.slice(oldPrefix.length);
+        this.notesState.renameNoteId(oldNotePath, newNotePath);
+        this.tabsState.renameNoteId(oldNotePath, newNotePath, name);
       }
     } catch (err) {
       await this.dialogState.alert(String(err), { title: 'Move Failed', tone: 'error' });
@@ -354,6 +359,7 @@ export class Sidebar {
     const { relPath, newName } = payload;
     try {
       const renamed = await this.vaultState.renameNote(relPath, newName);
+      this.notesState.renameNoteId(relPath, renamed.relPath);
       this.tabsState.renameNoteId(relPath, renamed.relPath, renamed.name);
     } catch (err) {
       await this.dialogState.alert(String(err), { title: 'Rename Failed', tone: 'error' });
@@ -370,7 +376,9 @@ export class Sidebar {
       const renamed = await this.vaultState.renameFolder(relPath, newName);
       const newPrefix = `${renamed.relPath}/`;
       for (const [oldNotePath, name] of affected) {
-        this.tabsState.renameNoteId(oldNotePath, newPrefix + oldNotePath.slice(oldPrefix.length), name);
+        const newNotePath = newPrefix + oldNotePath.slice(oldPrefix.length);
+        this.notesState.renameNoteId(oldNotePath, newNotePath);
+        this.tabsState.renameNoteId(oldNotePath, newNotePath, name);
       }
     } catch (err) {
       await this.dialogState.alert(String(err), { title: 'Rename Failed', tone: 'error' });
@@ -432,6 +440,7 @@ export class Sidebar {
       await this.vaultState.copyNote(clip.relPath, destRelDir);
     } else {
       const moved = await this.vaultState.moveNote(clip.relPath, destRelDir);
+      this.notesState.renameNoteId(clip.relPath, moved.relPath);
       this.tabsState.renameNoteId(clip.relPath, moved.relPath, moved.name);
       this.clipboardState.clear();
     }

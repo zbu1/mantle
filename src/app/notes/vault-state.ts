@@ -2,7 +2,7 @@ import { Injectable, effect, inject, signal } from '@angular/core';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
-import { flattenVaultNotes, VaultFolderNode } from './vault-tree.model';
+import { flattenVaultNotes, withRenamedNote, VaultFolderNode } from './vault-tree.model';
 import { TabsState } from './tabs-state';
 
 const STORAGE_KEY = 'mantle.vault.v1';
@@ -152,6 +152,18 @@ export class VaultState {
     const root = this.rootPath();
     if (!root) throw new Error('No vault open');
     await invoke('delete_folder', { vaultRoot: root, relPath });
+  }
+
+  /**
+   * Optimistically renames a note in the in-memory tree without a full rescan
+   * — used for live title edits and right after a rename completes, so the
+   * sidebar updates immediately instead of waiting on the filesystem
+   * watcher's `vault-changed` refresh.
+   */
+  renameNoteInTree(relPath: string, newRelPath: string, newName: string): void {
+    const tree = this.tree();
+    if (!tree) return;
+    this.tree.set(withRenamedNote(tree, relPath, newRelPath, newName));
   }
 
   async renameNote(relPath: string, newName: string): Promise<CreatedNote> {

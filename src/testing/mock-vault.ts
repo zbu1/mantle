@@ -65,6 +65,20 @@ export function installMockVaultInvoke(): jest.Mock {
         contents.set(relPath, '');
         return { name, relPath };
       }
+      case 'rename_note': {
+        const relPath = args['relPath'] as string;
+        const newName = args['newName'] as string;
+        if (!contents.has(relPath)) throw new Error(`Note not found: ${relPath}`);
+        const dir = relPath.includes('/') ? relPath.slice(0, relPath.lastIndexOf('/') + 1) : '';
+        const newRelPath = `${dir}${newName}`;
+        if (newRelPath !== relPath && contents.has(newRelPath)) {
+          throw new Error(`A note named "${newName}" already exists in this folder`);
+        }
+        const content = contents.get(relPath)!;
+        contents.delete(relPath);
+        contents.set(newRelPath, content);
+        return { name: newName, relPath: newRelPath };
+      }
       case 'start_vault_watch':
       case 'stop_vault_watch':
         return undefined;

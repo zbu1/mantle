@@ -8,7 +8,7 @@ export type NoteEntry =
   | { status: 'loaded'; note: Note }
   | { status: 'error'; message: string };
 
-function titleFromRelPath(relPath: string): string {
+export function titleFromRelPath(relPath: string): string {
   const last = relPath.split('/').pop() ?? relPath;
   return last.replace(/\.mntl$/, '');
 }
@@ -49,6 +49,28 @@ export class NotesState {
       this.entries.update((entries) => ({ ...entries, [id]: { status: 'loaded', note } }));
     } catch (err) {
       this.entries.update((entries) => ({ ...entries, [id]: { status: 'error', message: String(err) } }));
+    }
+  }
+
+  /** Re-keys an already-loaded entry after a rename, so the editor doesn't re-fetch content it already has. */
+  renameNoteId(oldId: string, newId: string): void {
+    if (oldId === newId) return;
+    this.entries.update((entries) => {
+      const entry = entries[oldId];
+      if (!entry) return entries;
+      const { [oldId]: _removed, ...rest } = entries;
+      const migrated: NoteEntry =
+        entry.status === 'loaded'
+          ? { status: 'loaded', note: { ...entry.note, id: newId, title: titleFromRelPath(newId) } }
+          : entry;
+      return { ...rest, [newId]: migrated };
+    });
+
+    const pending = this.pendingWrites.get(oldId);
+    if (pending) {
+      clearTimeout(pending);
+      this.pendingWrites.delete(oldId);
+      this.scheduleFlush(newId);
     }
   }
 

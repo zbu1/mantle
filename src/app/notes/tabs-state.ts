@@ -151,6 +151,11 @@ export class TabsState {
     }
   }
 
+  /** Updates a tab's displayed title without changing its noteId (e.g. live typing before a rename commits to disk). */
+  updateTabTitle(tabId: string, title: string): void {
+    this.tabs.update((tabs) => tabs.map((tab) => (tab.id === tabId ? { ...tab, title } : tab)));
+  }
+
   /** Repoints any open tabs for `oldNoteId` at `newNoteId` (e.g. after a move/cut-paste or an external rename). */
   renameNoteId(oldNoteId: string, newNoteId: string, newTitle: string): void {
     this.tabs.update((tabs) =>

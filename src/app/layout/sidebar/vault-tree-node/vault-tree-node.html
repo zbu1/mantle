@@ -21,7 +21,7 @@
   }
   @if (expanded()) {
   <div class="relative">
-    <div class="pointer-events-none absolute top-0 bottom-0 w-px bg-border" [style.left.px]="8 + depth() * 16 + 6"></div>
+    <div class="pointer-events-none absolute top-0 bottom-0 z-10 w-px bg-border" [style.left.px]="8 + depth() * 16 + 6"></div>
     @for (child of folder.children; track child.relPath) {
     <app-vault-tree-node [node]="child" [depth]="depth() + 1" [openLockedHint]="openLockedHint()"
       (openNote)="openNote.emit($event)" (openNoteInBackground)="openNoteInBackground.emit($event)"
@@ -34,10 +34,10 @@
   }
 </div>
 } @else if (asNote(); as note) {
-<div [style.padding-left.px]="depth() * 16 + 16" [attr.data-note-path]="note.relPath" [draggable]="!renaming() && !note.locked"
+<div [attr.data-note-path]="note.relPath" [draggable]="!renaming() && !note.locked"
   (dragstart)="onNoteDragStart(note, $event)">
   @if (renaming()) {
-  <div class="flex items-center gap-2 px-2 py-1.5">
+  <div [style.padding-left.px]="depth() * 16 + 16" class="flex items-center gap-2 py-1.5 pr-2">
     <svg class="shrink-0 text-muted-foreground" lucideFileText [size]="14"></svg>
     <input #renameInput type="text" [value]="note.name" (keydown)="onRenameKeydown($event)"
       (blur)="onNoteRenameBlur(note, renameInput.value)" (click)="$event.stopPropagation()"
@@ -45,7 +45,7 @@
   </div>
   } @else {
   <app-sidebar-item-button [label]="note.name" [selected]="selectionState.isSelected(note.relPath)"
-    (clicked)="onNoteClick(note, $event)" (middleClicked)="openNoteInBackground.emit(note)"
+    [indent]="depth() * 16 + 8" (clicked)="onNoteClick(note, $event)" (middleClicked)="openNoteInBackground.emit(note)"
     (contextMenu)="onNoteContextMenu(note, $event)">
     @if (note.locked) {
     <svg sidebarItemIcon lucideLock [size]="13" class="shrink-0"></svg>
@@ -55,7 +55,8 @@
   </app-sidebar-item-button>
   }
   @if (openLockedHint() === note.relPath) {
-  <div class="px-2 pb-1 text-[11px] text-muted-foreground">Encrypted notes aren't supported yet.</div>
+  <div [style.padding-left.px]="depth() * 16 + 16" class="pb-1 pr-2 text-[11px] text-muted-foreground">Encrypted notes
+    aren't supported yet.</div>
   }
 </div>
 }
