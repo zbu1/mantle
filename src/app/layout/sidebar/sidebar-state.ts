@@ -6,6 +6,7 @@ interface PersistedSidebarState {
   width: number;
   collapsed: boolean;
   sections: Record<SectionId, boolean>;
+  tagsHeight: number;
 }
 
 const STORAGE_KEY = 'mantle.sidebar.v1';
@@ -18,10 +19,15 @@ const MAX_WIDTH = 400;
 // (from the collapsed edge) snaps it back open.
 export const COLLAPSE_THRESHOLD = MIN_WIDTH / 2;
 
+const DEFAULT_TAGS_HEIGHT = 160;
+const MIN_TAGS_HEIGHT = 80;
+const MAX_TAGS_HEIGHT = 400;
+
 const DEFAULT_STATE: PersistedSidebarState = {
   width: DEFAULT_WIDTH,
   collapsed: false,
   sections: { favorites: true, recent: true, workspace: true, tags: true },
+  tagsHeight: DEFAULT_TAGS_HEIGHT,
 };
 
 function clamp(value: number, min: number, max: number): number {
@@ -37,6 +43,7 @@ function readFromStorage(): PersistedSidebarState {
       width: clamp(Number(parsed.width) || DEFAULT_WIDTH, MIN_WIDTH, MAX_WIDTH),
       collapsed: Boolean(parsed.collapsed),
       sections: { ...DEFAULT_STATE.sections, ...(parsed.sections ?? {}) },
+      tagsHeight: clamp(Number(parsed.tagsHeight) || DEFAULT_TAGS_HEIGHT, MIN_TAGS_HEIGHT, MAX_TAGS_HEIGHT),
     };
   } catch {
     return DEFAULT_STATE;
@@ -50,6 +57,7 @@ export class SidebarState {
   readonly width = signal<number>(this.initial.width);
   readonly collapsed = signal<boolean>(this.initial.collapsed);
   readonly sections = signal<Record<SectionId, boolean>>(this.initial.sections);
+  readonly tagsHeight = signal<number>(this.initial.tagsHeight);
 
   // True while the sidebar is being drag-resized — used to suppress layout
   // transitions elsewhere (header toggle button, tab bar) so they don't lag
@@ -67,6 +75,7 @@ export class SidebarState {
         width: this.width(),
         collapsed: this.collapsed(),
         sections: this.sections(),
+        tagsHeight: this.tagsHeight(),
       };
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
@@ -78,6 +87,10 @@ export class SidebarState {
 
   setWidth(px: number): void {
     this.width.set(clamp(px, MIN_WIDTH, MAX_WIDTH));
+  }
+
+  setTagsHeight(px: number): void {
+    this.tagsHeight.set(clamp(px, MIN_TAGS_HEIGHT, MAX_TAGS_HEIGHT));
   }
 
   toggleCollapsed(): void {

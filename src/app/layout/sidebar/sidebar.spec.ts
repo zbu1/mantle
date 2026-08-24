@@ -99,4 +99,24 @@ describe('Sidebar', () => {
     handle.dispatchEvent(pointerEvent('pointermove', 100));
     expect(state.collapsed()).toBe(false);
   });
+
+  it('resets drag state on window blur (mouse released outside the window)', () => {
+    const fixture = TestBed.createComponent(Sidebar);
+    const state = TestBed.inject(SidebarState);
+    fixture.detectChanges();
+    const handle = resizeHandle(fixture);
+
+    handle.dispatchEvent(pointerEvent('pointerdown', 500));
+    expect(state.resizing()).toBe(true);
+
+    // Neither pointerup nor lostpointercapture fires when the button is
+    // released outside the OS window — only the window blur.
+    window.dispatchEvent(new Event('blur'));
+    expect(state.resizing()).toBe(false);
+
+    // A fresh drag should work normally afterwards.
+    handle.dispatchEvent(pointerEvent('pointerdown', 500));
+    handle.dispatchEvent(pointerEvent('pointermove', 470));
+    expect(state.width()).toBe(210);
+  });
 });

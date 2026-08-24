@@ -1,4 +1,4 @@
-import { Component, effect, inject, signal } from '@angular/core';
+import { Component, HostListener, effect, inject, signal } from '@angular/core';
 import { LucideClock, LucideFileText, LucideFolders, LucideStar, LucideTags } from '@lucide/angular';
 import { join } from '@tauri-apps/api/path';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
@@ -55,6 +55,9 @@ export class Sidebar {
 
   private readonly dragStartX = signal<number | null>(null);
   private readonly dragStartWidth = signal<number>(0);
+
+  private readonly tagsDragStartY = signal<number | null>(null);
+  private readonly tagsDragStartHeight = signal<number>(0);
 
   constructor() {
     // Drop selected notes that no longer exist once the tree changes (deleted/moved externally).
@@ -459,8 +462,51 @@ export class Sidebar {
     this.endResize();
   }
 
+  // Shrinking the sidebar means dragging toward the window's own left edge,
+  // so it's easy to release the mouse button outside the OS window — in that
+  // case the handle never gets a pointerup or lostpointercapture, leaving the
+  // drag stuck until reload. The window blurs whenever that happens (the
+  // release hands focus to whatever is under the cursor), so use it as a
+  // fallback to always end the drag.
+  @HostListener('window:blur')
+  protected onWindowBlur(): void {
+    if (this.dragStartX() !== null) this.endResize();
+    if (this.tagsDragStartY() !== null) this.endTagsResize();
+  }
+
   private endResize(): void {
     this.dragStartX.set(null);
     this.state.resizing.set(false);
+  }
+
+  protected onTagsResizePointerDown(event: PointerEvent): void {
+    if (!this.state.isSectionExpanded('tags')) return;
+    const handle = event.currentTarget as HTMLElement;
+    handle.setPointerCapture(event.pointerId);
+    this.tagsDragStartY.set(event.clientY);
+    this.tagsDragStartHeight.set(this.state.tagsHeight());
+  }
+
+  // The handle sits above the (bottom-pinned) tags panel, so dragging up
+  // (clientY decreasing) should grow it.
+  protected onTagsResizePointerMove(event: PointerEvent): void {
+    const startY = this.tagsDragStartY();
+    if (startY === null) return;
+    const delta = startY - event.clientY;
+    this.state.setTagsHeight(this.tagsDragStartHeight() + delta);
+  }
+
+  protected onTagsResizePointerUp(event: PointerEvent): void {
+    const handle = event.currentTarget as HTMLElement;
+    handle.releasePointerCapture(event.pointerId);
+    this.endTagsResize();
+  }
+
+  protected onTagsResizeLostPointerCapture(): void {
+    this.endTagsResize();
+  }
+
+  private endTagsResize(): void {
+    this.tagsDragStartY.set(null);
   }
 }

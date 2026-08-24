@@ -1,7 +1,7 @@
 <button #button type="button" [title]="label()" (click)="onClick($event)" (mousedown)="onMouseDown($event)" (auxclick)="onAuxClick($event)" (contextmenu)="onContextMenu($event)" (blur)="onBlur()"
   class="flex items-center gap-2 rounded-md text-xs text-foreground/80"
   [class]="(collapsed() ? 'h-9 w-full justify-center' : 'w-full pr-2 py-1.5 text-left') + (selected() ? ' bg-primary/15 text-foreground' : ' hover:bg-background hover:text-foreground') + (forceFocusRing() ? ' focus-ring-forced' : '')"
-  [style.padding-left.px]="collapsed() ? null : 8 + indent()">
+  [style.padding-left.px]="collapsed() ? null : 36 + indent()">
   <span class="shrink-0 text-muted-foreground">
     <ng-content select="[sidebarItemIcon]" />
   </span>

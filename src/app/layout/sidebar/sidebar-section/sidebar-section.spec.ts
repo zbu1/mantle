@@ -33,6 +33,7 @@ describe('SidebarSection', () => {
     fixture.detectChanges();
 
     expect(state.isSectionExpanded('tags')).toBe(false);
-    expect(fixture.nativeElement.querySelector('ng-content, [class*="mt-0.5"]')).toBeFalsy();
+    const content: HTMLElement = fixture.nativeElement.querySelector('[class*="mt-0.5"]').parentElement.parentElement;
+    expect(content.style.gridTemplateRows).toBe('0fr');
   });
 });
