@@ -1,7 +1,7 @@
 <div class="flex flex-col">
   <button type="button" (click)="toggle()"
     class="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:bg-background hover:text-foreground"
-    [class.sticky]="stickyHeader()" [class.top-0]="stickyHeader()" [class.z-10]="stickyHeader()"
+    [class.sticky]="stickyHeader()" [class.top-0]="stickyHeader()" [class.z-20]="stickyHeader()"
     [class.bg-surface]="stickyHeader()">
     <svg lucideChevronRight [size]="12" class="shrink-0 transition-transform duration-200"
       [class.rotate-90]="expanded()"></svg>
@@ -13,7 +13,7 @@
 
   <div class="grid transition-[grid-template-rows] duration-200 ease-out"
     [style.grid-template-rows]="expanded() ? '1fr' : '0fr'">
-    <div class="overflow-hidden">
+    <div class="overflow-hidden p-0.5">
       <div class="mt-0.5 flex flex-col gap-0.5">
         <ng-content />
       </div>
