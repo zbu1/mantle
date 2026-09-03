@@ -1,0 +1,14 @@
+<app-explorer-row [label]="group().name" [expanded]="expanded()" (toggle)="toggleExpanded()">
+  <span explorerIcon class="h-1.5 w-1.5 shrink-0 rounded-full" [style.background-color]="group().color"></span>
+</app-explorer-row>
+
+<app-explorer-body [expanded]="expanded()">
+  <div class="mt-0.5 flex flex-col">
+    @for (note of group().notes; track note.id) {
+    <app-sidebar-item-button [label]="note.title" [indent]="24" (clicked)="openNote.emit(note)"
+      (middleClicked)="openNoteInBackground.emit(note)" (contextMenu)="noteContextMenu.emit({ event: $event, note })">
+      <svg sidebarItemIcon lucideFileText [size]="14" class="shrink-0" [style.color]="group().color"></svg>
+    </app-sidebar-item-button>
+    }
+  </div>
+</app-explorer-body>

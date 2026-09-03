@@ -6,15 +6,13 @@ import { SectionId, SidebarState } from '../sidebar-state';
   selector: 'app-sidebar-section',
   imports: [LucideChevronRight],
   templateUrl: './sidebar-section.html',
+  host: { class: 'flex flex-col rounded-md' },
 })
 export class SidebarSection {
   readonly id = input.required<SectionId>();
   readonly label = input.required<string>();
-  // Pins the header to the top of the nearest scrolling ancestor, e.g. for
-  // sections (like the vault tree) whose content scrolls independently.
-  readonly stickyHeader = input(false);
 
-  private readonly state = inject(SidebarState);
+  protected readonly state = inject(SidebarState);
 
   protected readonly expanded = computed(() => this.state.isSectionExpanded(this.id()));
 

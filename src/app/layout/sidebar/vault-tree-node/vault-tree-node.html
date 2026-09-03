@@ -10,18 +10,14 @@
       class="w-full min-w-0 flex-1 rounded-sm border border-primary/50 bg-background px-1 py-0 text-xs text-foreground outline-none" />
   </div>
   } @else {
-  <button type="button" draggable="true" (dragstart)="onFolderDragStart(folder, $event)" (click)="toggleExpanded()"
-    (contextmenu)="folderContextMenu.emit({ event: $event, folder })" [style.padding-left.px]="36 + depth() * 16"
-    class="flex w-full items-center gap-1.5 rounded-md py-1 pr-2 text-xs text-foreground/80 hover:bg-background hover:text-foreground">
-    <svg lucideChevronRight [size]="12" class="shrink-0 transition-transform duration-200"
-      [class.rotate-90]="expanded()"></svg>
-    <svg lucideFolder [size]="14" class="shrink-0 text-muted-foreground"></svg>
-    <span class="truncate">{{ folder.name }}</span>
-  </button>
+  <app-explorer-row [label]="folder.name" [depth]="depth()" [expanded]="expanded()" [draggable]="true"
+    (toggle)="toggleExpanded()" (headerDragStart)="onFolderDragStart(folder, $event)"
+    (headerContextMenu)="folderContextMenu.emit({ event: $event, folder })">
+    <svg explorerIcon lucideFolder [size]="14" class="shrink-0 text-muted-foreground"></svg>
+  </app-explorer-row>
   }
-  <div class="grid transition-[grid-template-rows] duration-200 ease-out"
-    [style.grid-template-rows]="expanded() ? '1fr' : '0fr'">
-    <div class="overflow-hidden p-0.5">
+  <app-explorer-body [expanded]="expanded()">
+    <div class="p-0.5">
       <div class="relative">
         <div class="pointer-events-none absolute top-0 bottom-0 z-10 w-px bg-border" [style.left.px]="36 + depth() * 16 + 6"></div>
         @for (child of folder.children; track child.relPath) {
@@ -34,7 +30,7 @@
         }
       </div>
     </div>
-  </div>
+  </app-explorer-body>
 </div>
 } @else if (asNote(); as note) {
 <div [attr.data-note-path]="note.relPath" [draggable]="!renaming()" (dragstart)="onNoteDragStart(note, $event)">

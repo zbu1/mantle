@@ -27,13 +27,13 @@ describe('SidebarSection', () => {
 
     const state = TestBed.inject(SidebarState);
     expect(state.isSectionExpanded('tags')).toBe(true);
+    expect(fixture.nativeElement.querySelector('.p-0\\.5')).toBeTruthy();
 
     const button: HTMLButtonElement = fixture.nativeElement.querySelector('button');
     button.click();
     fixture.detectChanges();
 
     expect(state.isSectionExpanded('tags')).toBe(false);
-    const content: HTMLElement = fixture.nativeElement.querySelector('[class*="mt-0.5"]').parentElement.parentElement;
-    expect(content.style.gridTemplateRows).toBe('0fr');
+    expect(fixture.nativeElement.querySelector('.p-0\\.5')).toBeNull();
   });
 });

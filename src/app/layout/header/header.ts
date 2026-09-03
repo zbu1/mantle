@@ -7,6 +7,7 @@ import { SidebarState } from '../sidebar/sidebar-state';
 import { TabsState } from '../../notes/tabs-state';
 import { VaultState } from '../../notes/vault-state';
 import { MainMenu } from './main-menu/main-menu';
+import { VaultMenu } from '../vault-menu/vault-menu';
 
 /** Size of the sidebar-toggle button (w-8 in header.html) — used to compute its animated position. */
 const TOGGLE_BUTTON_WIDTH = 32;
@@ -15,7 +16,7 @@ const TOGGLE_BUTTON_GAP = 8;
 
 @Component({
   selector: 'app-header',
-  imports: [LucidePanelLeft, LucideMinus, LucideSquare, LucideCopy, LucideX, LucidePlus, MainMenu],
+  imports: [LucidePanelLeft, LucideMinus, LucideSquare, LucideCopy, LucideX, LucidePlus, MainMenu, VaultMenu],
   templateUrl: './header.html',
 })
 export class Header {

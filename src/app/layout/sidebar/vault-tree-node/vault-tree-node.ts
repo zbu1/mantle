@@ -12,6 +12,8 @@ import { VaultDragState } from '../../../notes/vault-drag-state';
 import { VaultRenameState } from '../../../notes/vault-rename-state';
 import { VaultSelectionState } from '../../../notes/vault-selection-state';
 import { SidebarItemButton } from '../sidebar-item-button/sidebar-item-button';
+import { ExplorerRow } from '../explorer-row/explorer-row';
+import { ExplorerBody } from '../explorer-body/explorer-body';
 
 // Created once at module load (rather than per-dragstart) so it's already
 // decoded by the time a drag begins — Chromium falls back to a generic
@@ -26,6 +28,8 @@ EMPTY_DRAG_IMAGE.src =
   selector: 'app-vault-tree-node',
   imports: [
     SidebarItemButton,
+    ExplorerRow,
+    ExplorerBody,
     VaultTreeNode,
     LucideChevronRight,
     LucideFileText,

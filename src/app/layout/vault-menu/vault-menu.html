@@ -1,15 +1,13 @@
 <button #trigger type="button" title="Switch vault" (click)="toggle()" [attr.aria-expanded]="open()"
-  class="inline-flex h-8 w-full items-center gap-1.5 overflow-hidden rounded-md px-2 text-xs text-foreground/80 hover:bg-background hover:text-foreground"
-  [class.justify-center]="collapsed()" [class.bg-background]="open()">
-  <svg lucideFolders [size]="14" class="shrink-0"></svg>
-  @if (!collapsed()) {
-  <span class="min-w-0 flex-1 truncate text-left">{{ vaultName() ?? 'No Vault' }}</span>
+  class="inline-flex h-8 shrink-0 items-center gap-1.5 overflow-hidden rounded-md px-2 text-xs text-muted-foreground hover:bg-background hover:text-foreground"
+  [class.bg-background]="open()" [class.text-foreground]="open()">
+  <svg lucideFolders [size]="13" class="shrink-0"></svg>
+  <span class="max-w-32 truncate text-left">{{ vaultName() ?? 'No Vault' }}</span>
   <svg lucideChevronsUpDown [size]="12" class="shrink-0 text-muted-foreground"></svg>
-  }
 </button>
 
 @if (open()) {
-<app-menu-surface #panel class="absolute left-0 bottom-full z-50 mb-1 w-64">
+<app-menu-surface #panel class="absolute left-0 top-full z-50 mt-1 w-64">
   <div class="px-3 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Vaults</div>
   @for (vault of recentVaults(); track vault.path) {
   <app-menu-item [label]="vault.name" (selected)="switchVault(vault.path)">

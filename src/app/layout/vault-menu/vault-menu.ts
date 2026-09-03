@@ -1,9 +1,9 @@
-import { Component, ElementRef, HostListener, computed, inject, input, signal, viewChild } from '@angular/core';
+import { Component, ElementRef, HostListener, computed, inject, signal, viewChild } from '@angular/core';
 import { LucideCheck, LucideChevronsUpDown, LucideFolderPlus, LucideFolders, LucideSettings } from '@lucide/angular';
-import { MenuItem } from '../../../shared/menu/menu-item';
-import { MenuSeparator } from '../../../shared/menu/menu-separator';
-import { MenuSurface } from '../../../shared/menu/menu-surface';
-import { VaultState, vaultNameFromPath } from '../../../notes/vault-state';
+import { MenuItem } from '../../shared/menu/menu-item';
+import { MenuSeparator } from '../../shared/menu/menu-separator';
+import { MenuSurface } from '../../shared/menu/menu-surface';
+import { VaultState, vaultNameFromPath } from '../../notes/vault-state';
 
 interface RecentVault {
   path: string;
@@ -12,22 +12,19 @@ interface RecentVault {
 }
 
 /**
- * The workspace/vault switcher pinned to the bottom of the sidebar: a button
- * showing the current vault's name that opens a menu anchored to itself
- * (not the click position) for switching vaults, opening another one, or
- * reaching settings.
+ * The workspace/vault switcher in the top bar, alongside the editor tabs: a
+ * compact button showing the current vault's name that opens a menu anchored
+ * to itself (not the click position) for switching vaults, opening another
+ * one, or reaching settings.
  */
 @Component({
   selector: 'app-vault-menu',
   imports: [MenuSurface, MenuItem, MenuSeparator, LucideFolders, LucideChevronsUpDown, LucideCheck, LucideFolderPlus, LucideSettings],
   templateUrl: './vault-menu.html',
-  host: { class: 'relative flex min-w-0 flex-1' },
+  host: { class: 'relative inline-flex min-w-0 shrink-0' },
 })
 export class VaultMenu {
   private readonly vaultState = inject(VaultState);
-
-  /** Icon-only trigger when the sidebar is collapsed to its rail width. */
-  readonly collapsed = input(false);
 
   protected readonly open = signal(false);
 

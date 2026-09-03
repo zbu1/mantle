@@ -5,8 +5,8 @@ import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { SidebarSection } from './sidebar-section/sidebar-section';
 import { SidebarItemButton } from './sidebar-item-button/sidebar-item-button';
 import { VaultTreeNode } from './vault-tree-node/vault-tree-node';
-import { VaultMenu } from './vault-menu/vault-menu';
 import { CredentialsSection } from './credentials-section/credentials-section';
+import { TagGroupRow } from './tag-group-row/tag-group-row';
 import { CredentialsState } from '../../notes/credentials-state';
 import { NoteEncryptionActions } from '../../notes/note-encryption-actions';
 import { FAVORITE_NOTES, MockNote, RECENT_NOTES, TAG_GROUPS } from '../../notes/notes-data';
@@ -31,7 +31,7 @@ import { DialogState } from '../../shared/dialog/dialog-state';
 
 @Component({
   selector: 'app-sidebar',
-  imports: [SidebarSection, SidebarItemButton, VaultTreeNode, VaultMenu, CredentialsSection, LucideFolders, LucideStar, LucideClock, LucideTags, LucideFileText],
+  imports: [SidebarSection, SidebarItemButton, VaultTreeNode, CredentialsSection, TagGroupRow, LucideFolders, LucideStar, LucideClock, LucideTags, LucideFileText],
   templateUrl: './sidebar.html',
   host: { class: 'contents' },
 })
@@ -58,9 +58,6 @@ export class Sidebar {
 
   private readonly dragStartX = signal<number | null>(null);
   private readonly dragStartWidth = signal<number>(0);
-
-  private readonly tagsDragStartY = signal<number | null>(null);
-  private readonly tagsDragStartHeight = signal<number>(0);
 
   constructor() {
     // Drop selected notes that no longer exist once the tree changes (deleted/moved externally).
@@ -132,6 +129,10 @@ export class Sidebar {
       { kind: 'item', label: 'Delete', icon: 'delete', danger: true, action: () => {} },
     ];
     this.contextMenuState.open(event, items);
+  }
+
+  protected onTagNoteContextMenu(payload: { event: MouseEvent; note: MockNote }): void {
+    this.openNoteContextMenu(payload.event, payload.note);
   }
 
   protected onOpenNote(note: VaultNoteNode): void {
@@ -479,42 +480,10 @@ export class Sidebar {
   @HostListener('window:blur')
   protected onWindowBlur(): void {
     if (this.dragStartX() !== null) this.endResize();
-    if (this.tagsDragStartY() !== null) this.endTagsResize();
   }
 
   private endResize(): void {
     this.dragStartX.set(null);
     this.state.resizing.set(false);
-  }
-
-  protected onTagsResizePointerDown(event: PointerEvent): void {
-    if (!this.state.isSectionExpanded('tags')) return;
-    const handle = event.currentTarget as HTMLElement;
-    handle.setPointerCapture(event.pointerId);
-    this.tagsDragStartY.set(event.clientY);
-    this.tagsDragStartHeight.set(this.state.tagsHeight());
-  }
-
-  // The handle sits above the (bottom-pinned) tags panel, so dragging up
-  // (clientY decreasing) should grow it.
-  protected onTagsResizePointerMove(event: PointerEvent): void {
-    const startY = this.tagsDragStartY();
-    if (startY === null) return;
-    const delta = startY - event.clientY;
-    this.state.setTagsHeight(this.tagsDragStartHeight() + delta);
-  }
-
-  protected onTagsResizePointerUp(event: PointerEvent): void {
-    const handle = event.currentTarget as HTMLElement;
-    handle.releasePointerCapture(event.pointerId);
-    this.endTagsResize();
-  }
-
-  protected onTagsResizeLostPointerCapture(): void {
-    this.endTagsResize();
-  }
-
-  private endTagsResize(): void {
-    this.tagsDragStartY.set(null);
   }
 }

@@ -1,15 +1,11 @@
 import { Component, computed, inject, input, output, signal } from '@angular/core';
-import {
-  LucideChevronRight,
-  LucideLock,
-  LucideLockOpen,
-  LucidePlus,
-  LucideTriangleAlert,
-} from '@lucide/angular';
+import { LucideLock, LucideLockOpen, LucidePlus, LucideTriangleAlert } from '@lucide/angular';
 import { CredentialsState } from '../../../notes/credentials-state';
 import { NoteEncryptionActions } from '../../../notes/note-encryption-actions';
 import { VaultNoteNode } from '../../../notes/vault-tree.model';
 import { SidebarItemButton } from '../sidebar-item-button/sidebar-item-button';
+import { ExplorerRow } from '../explorer-row/explorer-row';
+import { ExplorerBody } from '../explorer-body/explorer-body';
 
 /**
  * One row in the Credential Profiles section: a profile's lock status, name
@@ -21,14 +17,7 @@ import { SidebarItemButton } from '../sidebar-item-button/sidebar-item-button';
  */
 @Component({
   selector: 'app-credential-profile-row',
-  imports: [
-    SidebarItemButton,
-    LucideChevronRight,
-    LucideLock,
-    LucideLockOpen,
-    LucidePlus,
-    LucideTriangleAlert,
-  ],
+  imports: [SidebarItemButton, ExplorerRow, ExplorerBody, LucideLock, LucideLockOpen, LucidePlus, LucideTriangleAlert],
   templateUrl: './credential-profile-row.html',
   host: { class: 'block' },
 })
