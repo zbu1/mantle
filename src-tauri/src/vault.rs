@@ -1,25 +1,53 @@
 //! Tauri commands for browsing and persisting a vault: a directory tree of
-//! `.mntl` (plaintext) and `.mntl.enc` (encrypted, currently read-only/listed
-//! but not decryptable) note files.
+//! `.mntl` (plaintext) and `.mntl.enc` (encrypted) note files.
+//!
+//! Reading and writing an encrypted note requires its credential profile to be
+//! unlocked in [`crate::credentials::SessionKeys`]. Everything structural —
+//! rename, move, duplicate, copy, delete — works regardless, because those
+//! operations never look at a note's contents.
 
+use crate::credentials::SessionKeys;
 use crate::logging::logged;
 use serde::Serialize;
-use std::fs;
+use std::fs::{self, File};
+use std::io::Read;
 use std::path::{Path, PathBuf};
+use tauri::State;
+
+/// Extension of a plaintext note file.
+pub(crate) const EXT_PLAIN: &str = ".mntl";
+
+/// Extension of an encrypted note file. A compound extension, so it must
+/// always be tested before [`EXT_PLAIN`] — `.mntl.enc` also ends with `.enc`
+/// but *starts* a `.mntl` suffix match only by accident of ordering.
+pub(crate) const EXT_ENCRYPTED: &str = ".mntl.enc";
 
 /// Classify a filename as a note file this app understands, returning its
 /// display title (filename stem) and whether it's the encrypted format.
 ///
 /// `.mntl.enc` is a compound extension, so it must be checked before `.mntl`.
 fn classify_note_file(filename: &str) -> Option<(String, bool)> {
-    if let Some(stem) = filename.strip_suffix(".mntl.enc") {
+    if let Some(stem) = filename.strip_suffix(EXT_ENCRYPTED) {
         return Some((stem.to_string(), true));
     }
-    if let Some(stem) = filename.strip_suffix(".mntl") {
+    if let Some(stem) = filename.strip_suffix(EXT_PLAIN) {
         return Some((stem.to_string(), false));
     }
     None
 }
+
+/// Prefix of the error returned when a note's credential profile is locked,
+/// followed by the profile's id (e.g. `mantle:locked:my-diary`).
+///
+/// The backend is the single authority on lock state: having the frontend
+/// check before calling would duplicate that authority and force `NotesState`
+/// to depend on `CredentialsState`, which already depends on it.
+pub const LOCKED_ERR_PREFIX: &str = "mantle:locked:";
+
+/// Largest `.mntl.enc` header we will allocate for during a scan. Real headers
+/// are ~200 bytes; this only exists so a corrupt length prefix can't ask us
+/// for gigabytes.
+const MAX_SCANNED_HEADER_LEN: usize = 8192;
 
 #[derive(Serialize, Clone, Debug)]
 #[serde(tag = "type", rename_all = "camelCase")]
@@ -34,7 +62,15 @@ pub enum VaultNode {
     Note {
         name: String,
         rel_path: String,
-        locked: bool,
+        /// Whether this is a `.mntl.enc` file. **Not** whether it is currently
+        /// readable — that depends on session state the scan knows nothing
+        /// about. The frontend derives "locked" as
+        /// `encrypted && !unlockedProfiles.has(profile)`.
+        encrypted: bool,
+        /// Credential profile this note is encrypted under, read from its
+        /// header. `None` for plaintext notes and for encrypted notes whose
+        /// header could not be parsed.
+        profile: Option<String>,
     },
 }
 
@@ -49,6 +85,51 @@ fn to_slash(path: &Path) -> String {
         .map(|c| c.as_os_str().to_string_lossy().into_owned())
         .collect::<Vec<_>>()
         .join("/")
+}
+
+/// Read just the framing bytes and JSON header of a `.mntl.enc` file — enough
+/// for [`mntl_core::extract_encrypted_header`], and nothing of the ciphertext.
+///
+/// A real header is a couple of hundred bytes, so this keeps both a vault scan
+/// and an overwrite cheap regardless of how large the notes are.
+pub(crate) fn read_header_prefix(path: &Path) -> Result<Vec<u8>, String> {
+    let mut file = File::open(path).map_err(|e| format!("Failed to read note: {e}"))?;
+
+    let mut prefix = [0u8; mntl_core::HEADER_OFFSET];
+    file.read_exact(&mut prefix)
+        .map_err(|e| format!("Failed to read note header: {e}"))?;
+    if &prefix[0..4] != mntl_core::MAGIC_MENC {
+        return Err("Not an encrypted note".to_string());
+    }
+
+    let header_len = u32::from_le_bytes(
+        prefix[4..8]
+            .try_into()
+            .map_err(|_| "Malformed note header".to_string())?,
+    ) as usize;
+    // Bound the allocation before trusting a length read off disk.
+    if header_len == 0 || header_len > MAX_SCANNED_HEADER_LEN {
+        return Err("Malformed note header".to_string());
+    }
+
+    let mut buf = vec![0u8; mntl_core::HEADER_OFFSET + header_len];
+    buf[..mntl_core::HEADER_OFFSET].copy_from_slice(&prefix);
+    file.read_exact(&mut buf[mntl_core::HEADER_OFFSET..])
+        .map_err(|e| format!("Failed to read note header: {e}"))?;
+
+    Ok(buf)
+}
+
+/// The credential profile id in a `.mntl.enc` file's header.
+///
+/// Returns `None` for anything malformed rather than an error: one corrupt
+/// file must never make a whole vault fail to open. Such a note simply shows
+/// up with no profile, which the UI presents as an orphan.
+fn read_profile_id(path: &Path) -> Option<String> {
+    let buf = read_header_prefix(path).ok()?;
+    mntl_core::extract_encrypted_header(&buf)
+        .ok()
+        .map(|h| h.credential_profile)
 }
 
 fn scan_dir(abs_dir: &Path, rel_dir: &Path) -> std::io::Result<Vec<VaultNode>> {
@@ -72,11 +153,17 @@ fn scan_dir(abs_dir: &Path, rel_dir: &Path) -> std::io::Result<Vec<VaultNode>> {
                 children,
             });
         } else if file_type.is_file() {
-            if let Some((title, locked)) = classify_note_file(&name) {
+            if let Some((title, encrypted)) = classify_note_file(&name) {
+                let profile = if encrypted {
+                    read_profile_id(&entry.path())
+                } else {
+                    None
+                };
                 notes.push(VaultNode::Note {
                     name: title,
                     rel_path: to_slash(&child_rel),
-                    locked,
+                    encrypted,
+                    profile,
                 });
             }
         }
@@ -90,7 +177,7 @@ fn scan_dir(abs_dir: &Path, rel_dir: &Path) -> std::io::Result<Vec<VaultNode>> {
 
 /// Resolve a vault-relative path to an absolute path, guarding against path
 /// traversal (`..`, absolute components, symlink escapes).
-fn resolve_rel_path(vault_root: &str, rel_path: &str) -> Result<PathBuf, String> {
+pub(crate) fn resolve_rel_path(vault_root: &str, rel_path: &str) -> Result<PathBuf, String> {
     if rel_path.is_empty() {
         return Err("rel_path must not be empty".to_string());
     }
@@ -152,31 +239,133 @@ pub fn scan_vault(vault_root: String) -> Result<VaultNode, String> {
     })
 }
 
-#[tauri::command]
-pub fn read_note(vault_root: String, rel_path: String) -> Result<String, String> {
-    logged("read_note", || {
-        if rel_path.ends_with(".mntl.enc") {
-            return Err("Encrypted notes are not supported yet".to_string());
-        }
-        let path = resolve_rel_path(&vault_root, &rel_path)?;
-        let raw = fs::read_to_string(&path).map_err(|e| format!("Failed to read note: {e}"))?;
-        mntl_core::decode_unencrypted_note(&raw).map_err(|e| e.to_string())
-    })
+/// The master key for the profile a `.mntl.enc` blob names, or the
+/// `mantle:locked:<id>` sentinel if that profile is not unlocked.
+pub(crate) fn master_key_for(
+    vault_root: &str,
+    blob: &[u8],
+    keys: &SessionKeys,
+) -> Result<(String, mntl_core::MasterKey), String> {
+    let header = mntl_core::extract_encrypted_header(blob)
+        .map_err(|e| format!("Not a readable encrypted note: {e}"))?;
+    let profile_id = header.credential_profile;
+
+    match keys.get(vault_root, &profile_id)? {
+        Some(mk) => Ok((profile_id, mk)),
+        None => Err(format!("{LOCKED_ERR_PREFIX}{profile_id}")),
+    }
 }
 
 #[tauri::command]
-pub fn write_note(vault_root: String, rel_path: String, content: String) -> Result<(), String> {
+pub fn read_note(
+    vault_root: String,
+    rel_path: String,
+    keys: State<SessionKeys>,
+) -> Result<String, String> {
+    logged("read_note", || read_note_inner(&vault_root, &rel_path, &keys))
+}
+
+pub(crate) fn read_note_inner(
+    vault_root: &str,
+    rel_path: &str,
+    keys: &SessionKeys,
+) -> Result<String, String> {
+    let path = resolve_rel_path(vault_root, rel_path)?;
+
+    if rel_path.ends_with(EXT_ENCRYPTED) {
+        let bytes = fs::read(&path).map_err(|e| format!("Failed to read note: {e}"))?;
+        let (_, mk) = master_key_for(vault_root, &bytes, keys)?;
+        let document = mntl_core::decrypt_note(&mk, &bytes).map_err(|e| e.to_string())?;
+        let document =
+            std::str::from_utf8(&document).map_err(|_| "Decrypted note is not UTF-8".to_string())?;
+        return mntl_core::decode_unencrypted_note(document).map_err(|e| e.to_string());
+    }
+
+    let raw = fs::read_to_string(&path).map_err(|e| format!("Failed to read note: {e}"))?;
+    mntl_core::decode_unencrypted_note(&raw).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn write_note(
+    vault_root: String,
+    rel_path: String,
+    content: String,
+    keys: State<SessionKeys>,
+) -> Result<(), String> {
     logged("write_note", || {
-        if rel_path.ends_with(".mntl.enc") {
-            return Err("Encrypted notes are not supported yet".to_string());
-        }
-        let path = resolve_rel_path(&vault_root, &rel_path)?;
-        let encoded = mntl_core::encode_unencrypted_note(&content).map_err(|e| e.to_string())?;
-        fs::write(&path, encoded).map_err(|e| format!("Failed to write note: {e}"))
+        write_note_inner(&vault_root, &rel_path, &content, &keys)
     })
 }
 
-#[derive(Serialize)]
+pub(crate) fn write_note_inner(
+    vault_root: &str,
+    rel_path: &str,
+    content: &str,
+    keys: &SessionKeys,
+) -> Result<(), String> {
+    let path = resolve_rel_path(vault_root, rel_path)?;
+    let encoded = mntl_core::encode_unencrypted_note(content).map_err(|e| e.to_string())?;
+
+    if rel_path.ends_with(EXT_ENCRYPTED) {
+        // Re-seal under the profile the file already names. A write never
+        // re-homes a note to a different profile — that is
+        // `notes_crypto::move_note_to_profile`'s job, and it has to re-encrypt
+        // rather than just relabel, since the header is the AAD.
+        //
+        // Read only the framing + header, not the (potentially large)
+        // ciphertext we are about to replace wholesale.
+        let existing = read_header_prefix(&path)?;
+        let (profile_id, mk) = master_key_for(vault_root, &existing, keys)?;
+        // `encrypt_note` generates a fresh content key and nonce on every
+        // call, so nothing from the previous version of the file is reused.
+        let blob =
+            mntl_core::encrypt_note(&mk, &profile_id, encoded.as_bytes()).map_err(|e| e.to_string())?;
+        return write_atomic(&path, &blob);
+    }
+
+    fs::write(&path, encoded).map_err(|e| format!("Failed to write note: {e}"))
+}
+
+/// Write `bytes` to `path` via a temp file and a rename, so an interrupted
+/// write can't leave a truncated file behind.
+///
+/// Plaintext notes are written in place because a truncated Markdown file is
+/// still partly readable; a truncated ciphertext is unrecoverable, so
+/// atomicity matters more here, not less.
+///
+/// The temp file is dot-prefixed so `scan_dir` skips it if a crash leaves one
+/// behind.
+pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    use std::io::Write;
+
+    let dir = path.parent().ok_or("Invalid note path")?;
+    let file_name = path
+        .file_name()
+        .ok_or("Invalid note path")?
+        .to_string_lossy()
+        .into_owned();
+    let tmp = dir.join(format!(".{file_name}.tmp"));
+
+    // Register before writing, so the notification can never beat us to it.
+    // Both paths, because a rename event names the source and the destination
+    // and the watcher only ignores an event when *all* of its paths are ours.
+    crate::watcher::suppress(&tmp);
+    crate::watcher::suppress(path);
+
+    let mut file = File::create(&tmp).map_err(|e| format!("Failed to write note: {e}"))?;
+    file.write_all(bytes)
+        .map_err(|e| format!("Failed to write note: {e}"))?;
+    file.sync_all()
+        .map_err(|e| format!("Failed to flush note: {e}"))?;
+    drop(file);
+
+    fs::rename(&tmp, path).map_err(|e| {
+        let _ = fs::remove_file(&tmp);
+        format!("Failed to save note: {e}")
+    })
+}
+
+#[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct CreatedNote {
     pub name: String,
@@ -189,11 +378,7 @@ pub fn create_note(vault_root: String, rel_dir: String, name: String) -> Result<
         if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains(':') {
             return Err("Invalid note name".to_string());
         }
-        let rel_path = if rel_dir.is_empty() {
-            format!("{name}.mntl")
-        } else {
-            format!("{rel_dir}/{name}.mntl")
-        };
+        let rel_path = join_rel_note_path(&rel_dir, &name, EXT_PLAIN);
         let path = resolve_rel_path(&vault_root, &rel_path)?;
         if path.exists() {
             return Err(format!("A note named \"{name}\" already exists in this folder"));
@@ -209,20 +394,17 @@ pub fn create_note(vault_root: String, rel_dir: String, name: String) -> Result<
 
 #[tauri::command]
 pub fn rename_note(vault_root: String, rel_path: String, new_name: String) -> Result<CreatedNote, String> {
+    // Works for encrypted notes too: a rename is a pure `fs::rename` that
+    // never inspects content, so it needs no key and no unlocked profile.
     logged("rename_note", || {
-        if rel_path.ends_with(".mntl.enc") {
-            return Err("Encrypted notes are not supported yet".to_string());
-        }
         if new_name.is_empty() || new_name.contains('/') || new_name.contains('\\') || new_name.contains(':') {
             return Err("Invalid note name".to_string());
         }
         let source = resolve_rel_path(&vault_root, &rel_path)?;
-        let (dir_rel, _) = split_rel_note_path(&rel_path);
-        let dest_rel = if dir_rel.is_empty() {
-            format!("{new_name}.mntl")
-        } else {
-            format!("{dir_rel}/{new_name}.mntl")
-        };
+        // Preserve the note's own extension: renaming an encrypted note must
+        // not silently turn it into a `.mntl`.
+        let (dir_rel, _, ext) = split_rel_note_path(&rel_path);
+        let dest_rel = join_rel_note_path(&dir_rel, &new_name, ext);
         let dest = resolve_rel_path(&vault_root, &dest_rel)?;
         if dest != source && dest.exists() {
             return Err(format!("A note named \"{new_name}\" already exists in this folder"));
@@ -256,7 +438,7 @@ pub fn delete_folder(vault_root: String, rel_path: String) -> Result<(), String>
 
 /// Resolve a vault-relative directory (empty string means the vault root)
 /// to an absolute path, guarding against traversal outside the vault.
-fn resolve_rel_dir(vault_root: &str, rel_dir: &str) -> Result<PathBuf, String> {
+pub(crate) fn resolve_rel_dir(vault_root: &str, rel_dir: &str) -> Result<PathBuf, String> {
     let canonical_root = PathBuf::from(vault_root)
         .canonicalize()
         .map_err(|e| format!("Invalid vault root: {e}"))?;
@@ -287,43 +469,72 @@ fn resolve_rel_dir(vault_root: &str, rel_dir: &str) -> Result<PathBuf, String> {
     Ok(canonical)
 }
 
-/// Split a vault-relative note path into its parent dir (possibly empty)
-/// and file stem (name without the `.mntl` extension).
-fn split_rel_note_path(rel_path: &str) -> (String, String) {
+/// Split a vault-relative note path into its parent dir (possibly empty),
+/// file stem, and note extension.
+///
+/// Returning the extension is what keeps `.mntl.enc` intact through rename,
+/// duplicate, copy and move: stripping only `.mntl` would leave the stem of
+/// `secret.mntl.enc` as `secret.mntl` and rebuild it as `secret.mntl.mntl`, or
+/// on the rename path hand a ciphertext file a plaintext extension.
+///
+/// A path with neither extension is treated as plaintext, matching the
+/// previous `unwrap_or` behavior.
+pub(crate) fn split_rel_note_path(rel_path: &str) -> (String, String, &'static str) {
     let (dir_rel, file_name) = match rel_path.rsplit_once('/') {
         Some((dir, file)) => (dir.to_string(), file.to_string()),
         None => (String::new(), rel_path.to_string()),
     };
-    let stem = file_name.strip_suffix(".mntl").unwrap_or(&file_name).to_string();
-    (dir_rel, stem)
+
+    if let Some(stem) = file_name.strip_suffix(EXT_ENCRYPTED) {
+        return (dir_rel, stem.to_string(), EXT_ENCRYPTED);
+    }
+    let stem = file_name.strip_suffix(EXT_PLAIN).unwrap_or(&file_name);
+    (dir_rel, stem.to_string(), EXT_PLAIN)
 }
 
-/// Find a non-colliding `.mntl` filename for `stem` inside `dir_abs`.
-/// If `force_suffix` is true (or the plain name already collides), tries
-/// "stem copy.mntl", "stem copy 2.mntl", etc. Returns the absolute path and
-/// the resulting vault-relative path (`dir_rel/name.mntl`).
-fn unique_sibling_note_path(dir_abs: &Path, dir_rel: &str, stem: &str, force_suffix: bool) -> (PathBuf, String) {
-    let make_rel = |name: &str| {
-        if dir_rel.is_empty() {
-            format!("{name}.mntl")
-        } else {
-            format!("{dir_rel}/{name}.mntl")
-        }
-    };
+/// The display title of a note at `rel_path`, i.e. its filename with the note
+/// extension removed.
+///
+/// Use this rather than `Path::file_stem`, which strips a single extension and
+/// so leaves `"note.mntl"` for `"note.mntl.enc"`.
+pub(crate) fn note_display_name(rel_path: &str) -> String {
+    let (_, stem, _) = split_rel_note_path(rel_path);
+    stem
+}
 
+/// Build a vault-relative note path from a directory, stem and extension.
+pub(crate) fn join_rel_note_path(dir_rel: &str, stem: &str, ext: &str) -> String {
+    if dir_rel.is_empty() {
+        format!("{stem}{ext}")
+    } else {
+        format!("{dir_rel}/{stem}{ext}")
+    }
+}
+
+/// Find a non-colliding filename for `stem` + `ext` inside `dir_abs`.
+/// If `force_suffix` is true (or the plain name already collides), tries
+/// "stem copy", "stem copy 2", etc. Returns the absolute path and the
+/// resulting vault-relative path.
+pub(crate) fn unique_sibling_note_path(
+    dir_abs: &Path,
+    dir_rel: &str,
+    stem: &str,
+    ext: &str,
+    force_suffix: bool,
+) -> (PathBuf, String) {
     if !force_suffix {
-        let path = dir_abs.join(format!("{stem}.mntl"));
+        let path = dir_abs.join(format!("{stem}{ext}"));
         if !path.exists() {
-            return (path, make_rel(stem));
+            return (path, join_rel_note_path(dir_rel, stem, ext));
         }
     }
 
     let mut n = 1;
     loop {
         let candidate_stem = if n == 1 { format!("{stem} copy") } else { format!("{stem} copy {n}") };
-        let path = dir_abs.join(format!("{candidate_stem}.mntl"));
+        let path = dir_abs.join(format!("{candidate_stem}{ext}"));
         if !path.exists() {
-            return (path, make_rel(&candidate_stem));
+            return (path, join_rel_note_path(dir_rel, &candidate_stem, ext));
         }
         n += 1;
     }
@@ -331,21 +542,22 @@ fn unique_sibling_note_path(dir_abs: &Path, dir_rel: &str, stem: &str, force_suf
 
 #[tauri::command]
 pub fn duplicate_note(vault_root: String, rel_path: String) -> Result<CreatedNote, String> {
+    // Duplicating an encrypted note copies its bytes verbatim, so the copy
+    // temporarily shares the original's content key and nonce. That is not
+    // nonce reuse in the dangerous sense — the plaintexts are identical, so
+    // the ciphertexts already were — and the first edit to either copy
+    // regenerates both.
     logged("duplicate_note", || {
-        if rel_path.ends_with(".mntl.enc") {
-            return Err("Encrypted notes are not supported yet".to_string());
-        }
         let source = resolve_rel_path(&vault_root, &rel_path)?;
         let dir_abs = source.parent().ok_or("Invalid rel_path")?.to_path_buf();
-        let (dir_rel, stem) = split_rel_note_path(&rel_path);
+        let (dir_rel, stem, ext) = split_rel_note_path(&rel_path);
 
-        let (dest_abs, dest_rel) = unique_sibling_note_path(&dir_abs, &dir_rel, &stem, true);
+        let (dest_abs, dest_rel) = unique_sibling_note_path(&dir_abs, &dir_rel, &stem, ext, true);
         fs::copy(&source, &dest_abs).map_err(|e| format!("Failed to duplicate note: {e}"))?;
         Ok(CreatedNote {
-            name: dest_abs
-                .file_stem()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default(),
+            // Not `dest_abs.file_stem()`: on "note copy.mntl.enc" that yields
+            // "note copy.mntl", since `file_stem` strips one extension only.
+            name: note_display_name(&dest_rel),
             rel_path: dest_rel,
         })
     })
@@ -353,21 +565,17 @@ pub fn duplicate_note(vault_root: String, rel_path: String) -> Result<CreatedNot
 
 #[tauri::command]
 pub fn copy_note(vault_root: String, source_rel_path: String, dest_rel_dir: String) -> Result<CreatedNote, String> {
+    // See `duplicate_note` on copying encrypted bytes verbatim.
     logged("copy_note", || {
-        if source_rel_path.ends_with(".mntl.enc") {
-            return Err("Encrypted notes are not supported yet".to_string());
-        }
         let source = resolve_rel_path(&vault_root, &source_rel_path)?;
         let dest_dir_abs = resolve_rel_dir(&vault_root, &dest_rel_dir)?;
-        let (_, stem) = split_rel_note_path(&source_rel_path);
+        let (_, stem, ext) = split_rel_note_path(&source_rel_path);
 
-        let (dest_abs, dest_rel) = unique_sibling_note_path(&dest_dir_abs, &dest_rel_dir, &stem, false);
+        let (dest_abs, dest_rel) =
+            unique_sibling_note_path(&dest_dir_abs, &dest_rel_dir, &stem, ext, false);
         fs::copy(&source, &dest_abs).map_err(|e| format!("Failed to copy note: {e}"))?;
         Ok(CreatedNote {
-            name: dest_abs
-                .file_stem()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default(),
+            name: note_display_name(&dest_rel),
             rel_path: dest_rel,
         })
     })
@@ -428,21 +636,17 @@ pub fn rename_folder(vault_root: String, rel_path: String, new_name: String) -> 
 
 #[tauri::command]
 pub fn move_note(vault_root: String, source_rel_path: String, dest_rel_dir: String) -> Result<CreatedNote, String> {
+    // Like `rename_note`, a move is a pure `fs::rename` and needs no key.
     logged("move_note", || {
-        if source_rel_path.ends_with(".mntl.enc") {
-            return Err("Encrypted notes are not supported yet".to_string());
-        }
         let source = resolve_rel_path(&vault_root, &source_rel_path)?;
         let dest_dir_abs = resolve_rel_dir(&vault_root, &dest_rel_dir)?;
-        let (_, stem) = split_rel_note_path(&source_rel_path);
+        let (_, stem, ext) = split_rel_note_path(&source_rel_path);
 
-        let (dest_abs, dest_rel) = unique_sibling_note_path(&dest_dir_abs, &dest_rel_dir, &stem, false);
+        let (dest_abs, dest_rel) =
+            unique_sibling_note_path(&dest_dir_abs, &dest_rel_dir, &stem, ext, false);
         fs::rename(&source, &dest_abs).map_err(|e| format!("Failed to move note: {e}"))?;
         Ok(CreatedNote {
-            name: dest_abs
-                .file_stem()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default(),
+            name: note_display_name(&dest_rel),
             rel_path: dest_rel,
         })
     })
@@ -632,6 +836,223 @@ mod tests {
 
         delete_folder(root_str, "Work".to_string()).unwrap();
         assert!(!root.join("Work").exists());
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    // --- Compound `.mntl.enc` extension handling -------------------------
+
+    #[test]
+    fn split_rel_note_path_handles_double_extension() {
+        assert_eq!(
+            split_rel_note_path("Work/secret.mntl.enc"),
+            ("Work".to_string(), "secret".to_string(), ".mntl.enc")
+        );
+        assert_eq!(
+            split_rel_note_path("Work/todo.mntl"),
+            ("Work".to_string(), "todo".to_string(), ".mntl")
+        );
+        assert_eq!(
+            split_rel_note_path("root.mntl.enc"),
+            (String::new(), "root".to_string(), ".mntl.enc")
+        );
+        // A stem that itself ends in ".mntl" must survive a round trip.
+        assert_eq!(
+            split_rel_note_path("notes.mntl.mntl.enc"),
+            (String::new(), "notes.mntl".to_string(), ".mntl.enc")
+        );
+    }
+
+    #[test]
+    fn note_display_name_strips_the_whole_compound_extension() {
+        // `Path::file_stem` would return "secret.mntl" here.
+        assert_eq!(note_display_name("Work/secret.mntl.enc"), "secret");
+        assert_eq!(note_display_name("Work/todo.mntl"), "todo");
+    }
+
+    #[test]
+    fn unique_sibling_note_path_preserves_enc_extension() {
+        let root = temp_dir("unique-sibling-enc");
+        fs::write(root.join("secret.mntl.enc"), b"MENC").unwrap();
+
+        let (abs, rel) = unique_sibling_note_path(&root, "", "secret", ".mntl.enc", true);
+        assert_eq!(rel, "secret copy.mntl.enc");
+        assert!(abs.ends_with("secret copy.mntl.enc"));
+
+        // And a non-colliding plaintext name is returned untouched.
+        let (_, plain) = unique_sibling_note_path(&root, "Work", "todo", ".mntl", false);
+        assert_eq!(plain, "Work/todo.mntl");
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn rename_note_keeps_the_enc_extension() {
+        let root = temp_dir("rename-enc");
+        fs::write(root.join("secret.mntl.enc"), b"MENC placeholder").unwrap();
+        let root_str = root.to_string_lossy().into_owned();
+
+        let renamed = rename_note(
+            root_str,
+            "secret.mntl.enc".to_string(),
+            "diary".to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(renamed.rel_path, "diary.mntl.enc");
+        assert_eq!(renamed.name, "diary");
+        assert!(root.join("diary.mntl.enc").is_file());
+        assert!(!root.join("diary.mntl").exists());
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn duplicate_note_of_encrypted_produces_an_enc_copy() {
+        let root = temp_dir("duplicate-enc");
+        fs::write(root.join("secret.mntl.enc"), b"MENC placeholder").unwrap();
+        let root_str = root.to_string_lossy().into_owned();
+
+        let copy = duplicate_note(root_str, "secret.mntl.enc".to_string()).unwrap();
+
+        assert_eq!(copy.rel_path, "secret copy.mntl.enc");
+        assert_eq!(copy.name, "secret copy");
+        assert!(root.join("secret copy.mntl.enc").is_file());
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn move_note_of_encrypted_keeps_the_enc_extension() {
+        let root = temp_dir("move-enc");
+        fs::create_dir_all(root.join("Work")).unwrap();
+        fs::write(root.join("secret.mntl.enc"), b"MENC placeholder").unwrap();
+        let root_str = root.to_string_lossy().into_owned();
+
+        let moved = move_note(
+            root_str,
+            "secret.mntl.enc".to_string(),
+            "Work".to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(moved.rel_path, "Work/secret.mntl.enc");
+        assert_eq!(moved.name, "secret");
+        assert!(root.join("Work").join("secret.mntl.enc").is_file());
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    // --- Scanning encrypted notes ----------------------------------------
+
+    /// Seal a real `.mntl.enc` file so scan tests exercise the actual format
+    /// rather than a hand-rolled approximation of it.
+    fn write_encrypted(path: &Path, profile_id: &str, body: &str) -> mntl_core::MasterKey {
+        let mk = mntl_core::generate_master_key().unwrap();
+        let document = mntl_core::encode_unencrypted_note(body).unwrap();
+        let blob = mntl_core::encrypt_note(&mk, profile_id, document.as_bytes()).unwrap();
+        fs::write(path, blob).unwrap();
+        mk
+    }
+
+    fn find_note<'a>(nodes: &'a [VaultNode], name: &str) -> &'a VaultNode {
+        nodes
+            .iter()
+            .find(|n| node_name(n) == name)
+            .unwrap_or_else(|| panic!("no node named {name}"))
+    }
+
+    #[test]
+    fn scan_vault_reports_the_profile_of_encrypted_notes() {
+        let root = temp_dir("scan-profile");
+        write_encrypted(&root.join("secret.mntl.enc"), "my-diary", "# Private");
+        fs::write(root.join("todo.mntl"), "---\nv: 2\n---\n# Public").unwrap();
+
+        let tree = scan_vault(root.to_string_lossy().into_owned()).unwrap();
+        let VaultNode::Folder { children, .. } = &tree else {
+            panic!("root should be a folder");
+        };
+
+        match find_note(children, "secret") {
+            VaultNode::Note {
+                encrypted, profile, ..
+            } => {
+                assert!(encrypted);
+                assert_eq!(profile.as_deref(), Some("my-diary"));
+            }
+            other => panic!("expected a note, got {other:?}"),
+        }
+
+        match find_note(children, "todo") {
+            VaultNode::Note {
+                encrypted, profile, ..
+            } => {
+                assert!(!encrypted);
+                assert_eq!(profile.as_deref(), None);
+            }
+            other => panic!("expected a note, got {other:?}"),
+        }
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn scan_vault_tolerates_a_corrupt_encrypted_header() {
+        // One unreadable file must not make the whole vault fail to open.
+        let root = temp_dir("scan-corrupt");
+        fs::write(root.join("broken.mntl.enc"), b"MENC\xff\xff\xff\xffgarbage").unwrap();
+        fs::write(root.join("truncated.mntl.enc"), b"MEN").unwrap();
+        fs::write(root.join("todo.mntl"), "---\nv: 2\n---\n# Public").unwrap();
+
+        let tree = scan_vault(root.to_string_lossy().into_owned()).unwrap();
+        let VaultNode::Folder { children, .. } = &tree else {
+            panic!("root should be a folder");
+        };
+        assert_eq!(children.len(), 3);
+
+        for name in ["broken", "truncated"] {
+            match find_note(children, name) {
+                VaultNode::Note {
+                    encrypted, profile, ..
+                } => {
+                    assert!(encrypted, "{name} should still be listed as encrypted");
+                    assert_eq!(profile.as_deref(), None, "{name} should have no profile");
+                }
+                other => panic!("expected a note, got {other:?}"),
+            }
+        }
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn read_header_prefix_rejects_an_absurd_header_length() {
+        // Guards the allocation bound: the length prefix comes off disk and is
+        // not to be trusted.
+        let root = temp_dir("header-bound");
+        let path = root.join("huge.mntl.enc");
+        fs::write(&path, b"MENC\xff\xff\xff\xffgarbage").unwrap();
+
+        assert!(read_header_prefix(&path).is_err());
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn write_atomic_replaces_content_and_leaves_no_temp_file() {
+        let root = temp_dir("write-atomic");
+        let path = root.join("note.mntl.enc");
+        fs::write(&path, b"old contents").unwrap();
+
+        write_atomic(&path, b"new contents").unwrap();
+
+        assert_eq!(fs::read(&path).unwrap(), b"new contents");
+        let leftovers: Vec<_> = fs::read_dir(&root)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|n| n.ends_with(".tmp"))
+            .collect();
+        assert!(leftovers.is_empty(), "left temp files: {leftovers:?}");
 
         let _ = fs::remove_dir_all(&root);
     }

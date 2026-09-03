@@ -18,7 +18,9 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
-const STATE_DIR: &str = ".mantle";
+/// The vault-local metadata directory. Dotfile-prefixed, so `vault::scan_dir`
+/// and `watcher::is_hidden` both skip it for free.
+pub(crate) const STATE_DIR: &str = ".mantle";
 const STATE_FILE: &str = "state.json";
 const CURRENT_VERSION: u32 = 1;
 
