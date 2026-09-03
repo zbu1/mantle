@@ -53,7 +53,8 @@ pub enum MntlError {
     #[error("Invalid crypto metadata: {0}")]
     InvalidCryptoMetadata(String),
 
-    /// The header's `v` field did not match [`crate::CURRENT_VERSION`].
+    /// The header's `v` field did not match [`crate::NOTE_VERSION`] (for a
+    /// `.mntl` note) or [`crate::ENVELOPE_VERSION`] (for a `.mntl.enc` envelope).
     #[error("Unsupported format version: {0}")]
     UnsupportedVersion(u8),
 

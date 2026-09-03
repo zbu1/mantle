@@ -10,13 +10,14 @@
 //!   ([`encode_unencrypted_note`] / [`decode_unencrypted_note`]).
 //! - **`.mntl.enc` (encrypted)**: a zero-knowledge encrypted binary envelope.
 //!   A user password is stretched into a 256-bit Key Encryption Key (KEK)
-//!   with Argon2id ([`derive_kek`]). Each note is encrypted with a freshly
-//!   generated Data Encryption Key (DEK) using XChaCha20-Poly1305, and the
-//!   DEK itself is wrapped with the KEK using AES-KW
-//!   ([`encrypt_note`] / [`decrypt_note`]). The envelope is a small binary
-//!   container: magic bytes, a length-prefixed JSON [`EncryptedHeader`], and
-//!   the ciphertext. The header is passed to the cipher as associated data
-//!   (AAD), so any tampering with it invalidates decryption.
+//!   with Argon2id ([`derive_kek`]), which wraps a per-profile [`MasterKey`].
+//!   Each note is encrypted with a freshly generated content encryption key
+//!   using XChaCha20-Poly1305, and that key is wrapped with the master key
+//!   using AES-KW ([`encrypt_note`] / [`decrypt_note`]). The envelope is a
+//!   small binary container: magic bytes, a length-prefixed JSON
+//!   [`EncryptedHeader`], and the ciphertext. The header is passed to the
+//!   cipher as associated data (AAD), so any tampering with it invalidates
+//!   decryption. See the [`keys`] module for the full key hierarchy.
 //!
 //! # `.mntl` frontmatter format
 //!
@@ -40,18 +41,30 @@
 //!
 //! # Examples
 //!
-//! Encrypting and decrypting a note:
+//! Creating a credential profile's key material, then encrypting a note under it:
 //!
 //! ```
-//! use mntl_core::{derive_kek, encrypt_note, decrypt_note};
+//! use mntl_core::{
+//!     decrypt_note, derive_kek, encrypt_note, generate_master_key, unwrap_master_key,
+//!     wrap_master_key,
+//! };
 //!
-//! let salt = b"a unique per-user salt";
+//! // Once, when the profile is created: wrap a fresh master key with a
+//! // password-derived KEK. Only `salt` and `wrapped` are stored.
+//! let salt = b"a unique per-profile salt";
 //! let kek = derive_kek("correct horse battery staple", salt)?;
+//! let master_key = generate_master_key()?;
+//! let wrapped = wrap_master_key(&kek, &master_key)?;
 //!
-//! let blob = encrypt_note(&kek[..], salt, "profile-id", b"secret note contents")?;
-//! let plaintext = decrypt_note(&kek[..], &blob)?;
+//! // Later, on unlock: re-derive the KEK and recover the same master key.
+//! let kek = derive_kek("correct horse battery staple", salt)?;
+//! let master_key = unwrap_master_key(&kek, &wrapped)?;
 //!
-//! assert_eq!(plaintext, b"secret note contents");
+//! // Every note in the profile is then sealed under that one master key.
+//! let blob = encrypt_note(&master_key, "profile-id", b"secret note contents")?;
+//! let plaintext = decrypt_note(&master_key, &blob)?;
+//!
+//! assert_eq!(&plaintext[..], b"secret note contents");
 //! # Ok::<(), mntl_core::MntlError>(())
 //! ```
 //!
@@ -70,6 +83,7 @@
 
 pub mod error;
 pub mod header;
+pub mod keys;
 
 use aes_kw::KekAes256;
 use argon2::{Algorithm, Argon2, Params, Version};
@@ -82,8 +96,12 @@ use zeroize::Zeroizing;
 
 pub use error::MntlError;
 pub use header::{
-    CryptoMeta, EncryptedHeader, KdfParams, NoteFrontmatter, CURRENT_VERSION, HEADER_OFFSET,
-    MAGIC_MENC,
+    CryptoMeta, EncryptedHeader, KdfParams, NoteFrontmatter, ENVELOPE_VERSION, HEADER_OFFSET,
+    MAGIC_MENC, NOTE_VERSION,
+};
+pub use keys::{
+    compute_verifier, generate_master_key, unwrap_master_key, verify_master_key, wrap_master_key,
+    KeyEncryptionKey, MasterKey, WRAPPED_KEY_LEN,
 };
 
 /// Derive a 256-bit Key Encryption Key (KEK) using Argon2id with default KDF parameters.
@@ -93,13 +111,14 @@ pub use header::{
 /// # Errors
 ///
 /// Returns [`MntlError::KdfError`] if Argon2 hashing fails (e.g. invalid parameters).
-pub fn derive_kek(password: &str, salt: &[u8]) -> Result<Zeroizing<[u8; 32]>, MntlError> {
+pub fn derive_kek(password: &str, salt: &[u8]) -> Result<KeyEncryptionKey, MntlError> {
     derive_kek_with_params(password, salt, &KdfParams::default())
 }
 
 /// Derive a 256-bit Key Encryption Key (KEK) using Argon2id with explicit KDF parameters.
 ///
-/// The returned key is wrapped in [`Zeroizing`] so it is scrubbed from memory when dropped.
+/// The returned key zeroizes itself when dropped. It is only ever used to
+/// wrap and unwrap a [`MasterKey`] — see the [`keys`] module.
 ///
 /// # Errors
 ///
@@ -108,7 +127,7 @@ pub fn derive_kek_with_params(
     password: &str,
     salt: &[u8],
     params: &KdfParams,
-) -> Result<Zeroizing<[u8; 32]>, MntlError> {
+) -> Result<KeyEncryptionKey, MntlError> {
     let argon2_params = Params::new(params.m_cost, params.t_cost, params.p_cost, Some(32))
         .map_err(|e| MntlError::KdfError(e.to_string()))?;
 
@@ -119,82 +138,58 @@ pub fn derive_kek_with_params(
         .hash_password_into(password.as_bytes(), salt, kek.as_mut_slice())
         .map_err(|e| MntlError::KdfError(e.to_string()))?;
 
-    Ok(kek)
+    Ok(KeyEncryptionKey::from_bytes(*kek))
 }
 
 /// Encrypt a note payload using XChaCha20-Poly1305 envelope encryption.
 ///
-/// Generates a random 256-bit DEK and a 192-bit Nonce.
-/// The DEK is wrapped using AES-KW with the supplied 256-bit KEK.
-/// The raw JSON header bytes are passed into the cipher as Associated Data (AD).
+/// Generates a random 256-bit content encryption key (CEK) and a 192-bit
+/// nonce. The CEK is wrapped using AES-KW with the credential profile's
+/// [`MasterKey`]. The raw JSON header bytes are passed into the cipher as
+/// Associated Data (AD).
 ///
-/// `salt` is recorded in the resulting header's [`CryptoMeta`] so the KEK can
-/// be re-derived from the same password on decryption; it is not used
-/// directly by this function. `kdf_params` defaults to [`KdfParams::default`];
-/// use [`encrypt_note_with_params`] to record different parameters.
+/// A fresh CEK and nonce are generated on **every** call, so overwriting an
+/// existing note never reuses the previous pair.
+///
+/// `plaintext` is expected to be a complete `.mntl` document — frontmatter and
+/// body, as produced by [`encode_unencrypted_note`] — so that everything about
+/// a note except which profile owns it is sealed inside the ciphertext.
 ///
 /// Returns the serialized `.mntl.enc` binary envelope.
 ///
 /// # Errors
 ///
-/// Returns [`MntlError::KeyWrapError`] if `kek` is not 32 bytes or DEK wrapping
-/// fails, and [`MntlError::EncryptionFailed`] if the cipher fails.
+/// Returns [`MntlError::KeyWrapError`] if CEK wrapping fails, and
+/// [`MntlError::EncryptionFailed`] if the cipher fails.
 pub fn encrypt_note(
-    kek: &[u8],
-    salt: &[u8],
+    mk: &MasterKey,
     profile_id: &str,
     plaintext: &[u8],
 ) -> Result<Vec<u8>, MntlError> {
-    encrypt_note_with_params(kek, salt, profile_id, plaintext, &KdfParams::default())
-}
-
-/// Encrypt a note payload with explicit KDF parameters recorded in header metadata.
-///
-/// See [`encrypt_note`] for details; this variant additionally records
-/// `kdf_params` in the envelope header so a non-default Argon2id cost can be
-/// reproduced when the KEK is re-derived for decryption.
-///
-/// # Errors
-///
-/// Returns [`MntlError::KeyWrapError`] if `kek` is not 32 bytes or DEK wrapping
-/// fails, and [`MntlError::EncryptionFailed`] if the cipher fails.
-pub fn encrypt_note_with_params(
-    kek: &[u8],
-    salt: &[u8],
-    profile_id: &str,
-    plaintext: &[u8],
-    kdf_params: &KdfParams,
-) -> Result<Vec<u8>, MntlError> {
-    let kek_array: [u8; 32] = kek
-        .try_into()
-        .map_err(|_| MntlError::KeyWrapError)?;
-
-    // 1. Generate random 256-bit DEK and 192-bit Nonce
-    let mut dek = Zeroizing::new([0u8; 32]);
-    OsRng.fill_bytes(dek.as_mut_slice());
+    // 1. Generate random 256-bit CEK and 192-bit Nonce
+    let mut cek = Zeroizing::new([0u8; 32]);
+    OsRng.fill_bytes(cek.as_mut_slice());
 
     let mut nonce_bytes = [0u8; 24];
     OsRng.fill_bytes(&mut nonce_bytes);
 
-    // 2. Wrap DEK using AES-KW (AES-256)
-    let kw = KekAes256::from(kek_array);
-    let mut wrapped_key = vec![0u8; 40]; // 32-byte key wrapped with AES-KW is 40 bytes
-    kw.wrap(dek.as_slice(), &mut wrapped_key)
+    // 2. Wrap CEK using AES-KW (AES-256) under the profile's master key
+    let kw = KekAes256::from(*mk.expose());
+    let mut wrapped_key = [0u8; keys::WRAPPED_KEY_LEN];
+    kw.wrap(cek.as_slice(), &mut wrapped_key)
         .map_err(|_| MntlError::KeyWrapError)?;
 
     // 3. Assemble JSON Header metadata
     let crypto_meta = CryptoMeta {
         iv: BASE64.encode(nonce_bytes),
-        salt: BASE64.encode(salt),
-        wrapped_key: BASE64.encode(&wrapped_key),
-        kdf: kdf_params.clone(),
+        wrapped_key: BASE64.encode(wrapped_key),
     };
 
     let header = EncryptedHeader::new(profile_id, crypto_meta);
     let header_json = serde_json::to_vec(&header)?;
 
     // 4. Encrypt payload with XChaCha20-Poly1305 using header_json as Associated Data (AD)
-    let cipher = XChaCha20Poly1305::new(Key::from_slice(dek.as_slice()));
+    let cipher = XChaCha20Poly1305::new(Key::from_slice(cek.as_slice()));
     let nonce = XNonce::from_slice(&nonce_bytes);
     let payload = Payload {
         msg: plaintext,
@@ -219,12 +214,17 @@ pub fn encrypt_note_with_params(
 
 /// Decrypt an encrypted `.mntl.enc` binary blob.
 ///
-/// Parses the envelope, unwraps the DEK using the supplied KEK,
-/// verifies header authenticity via Associated Data (AD), and decrypts the payload.
+/// Parses the envelope, unwraps the note's content encryption key using the
+/// credential profile's [`MasterKey`], verifies header authenticity via
+/// Associated Data (AD), and decrypts the payload.
 ///
-/// `kek` must be the same 32-byte key produced by [`derive_kek`] (or
-/// [`derive_kek_with_params`]) for the password and salt recorded in the
-/// envelope's header.
+/// `mk` must be the master key of the profile named in the envelope's
+/// `credential_profile` field — recover it with [`unwrap_master_key`].
+///
+/// The returned plaintext is wrapped in [`Zeroizing`], so the buffer is
+/// scrubbed when dropped. That is process-local hygiene, not an end-to-end
+/// guarantee: once a caller converts it to a `String` and hands it to another
+/// process or language runtime, this crate can no longer wipe it.
 ///
 /// # Errors
 ///
@@ -233,10 +233,14 @@ pub fn encrypt_note_with_params(
 /// header JSON is invalid (including a missing `crypto` section),
 /// [`MntlError::UnsupportedVersion`] for an unrecognized envelope version,
 /// [`MntlError::InvalidBase64`] or [`MntlError::InvalidCryptoMetadata`] for
-/// malformed metadata fields, [`MntlError::KeyWrapError`] if `kek` is not 32
-/// bytes or DEK unwrapping fails, and [`MntlError::DecryptionFailed`] if the
-/// ciphertext or header has been tampered with.
-pub fn decrypt_note(kek: &[u8], mntl_enc_bytes: &[u8]) -> Result<Vec<u8>, MntlError> {
+/// malformed metadata fields, [`MntlError::KeyWrapError`] if unwrapping the
+/// content key fails (i.e. `mk` belongs to a different profile), and
+/// [`MntlError::DecryptionFailed`] if the ciphertext or header has been
+/// tampered with.
+pub fn decrypt_note(
+    mk: &MasterKey,
+    mntl_enc_bytes: &[u8],
+) -> Result<Zeroizing<Vec<u8>>, MntlError> {
     if mntl_enc_bytes.len() < HEADER_OFFSET {
         return Err(MntlError::InvalidHeaderSize);
     }
@@ -264,7 +268,7 @@ pub fn decrypt_note(kek: &[u8], mntl_enc_bytes: &[u8]) -> Result<Vec<u8>, MntlEr
     // 3. Deserialize JSON Header
     let header: EncryptedHeader = serde_json::from_slice(header_json_bytes)?;
 
-    if header.v != CURRENT_VERSION {
+    if header.v != ENVELOPE_VERSION {
         return Err(MntlError::UnsupportedVersion(header.v));
     }
 
@@ -282,18 +286,19 @@ pub fn decrypt_note(kek: &[u8], mntl_enc_bytes: &[u8]) -> Result<Vec<u8>, MntlEr
         return Err(MntlError::InvalidCryptoMetadata("Invalid nonce length".into()));
     }
 
-    // 5. Unwrap DEK using KEK
-    let kek_array: [u8; 32] = kek
-        .try_into()
+    // 5. Unwrap the note's content key using the profile's master key
+    let kw = KekAes256::from(*mk.expose());
+    let mut cek = Zeroizing::new([0u8; 32]);
+    kw.unwrap(&wrapped_key_bytes, cek.as_mut_slice())
         .map_err(|_| MntlError::KeyWrapError)?;
 
-    let kw = KekAes256::from(kek_array);
-    let mut dek = Zeroizing::new([0u8; 32]);
-    kw.unwrap(&wrapped_key_bytes, dek.as_mut_slice())
-        .map_err(|_| MntlError::KeyWrapError)?;
-
-    // 6. Decrypt ciphertext using XChaCha20-Poly1305 with raw header_json_bytes as AD
-    let cipher = XChaCha20Poly1305::new(Key::from_slice(dek.as_slice()));
+    // 6. Decrypt ciphertext using XChaCha20-Poly1305 with raw header_json_bytes as AD.
+    //
+    // The AAD is the header slice exactly as it appears on disk, never a
+    // re-serialization of `header`. Re-serializing would work right up until
+    // serde emitted one byte differently (field order, string escaping) and
+    // then silently fail to decrypt every existing note.
+    let cipher = XChaCha20Poly1305::new(Key::from_slice(cek.as_slice()));
     let nonce = XNonce::from_slice(&nonce_bytes);
     let payload = Payload {
         msg: ciphertext,
@@ -304,7 +309,7 @@ pub fn decrypt_note(kek: &[u8], mntl_enc_bytes: &[u8]) -> Result<Vec<u8>, MntlEr
         .decrypt(nonce, payload)
         .map_err(|_| MntlError::DecryptionFailed)?;
 
-    Ok(plaintext)
+    Ok(Zeroizing::new(plaintext))
 }
 
 /// The `---\n` delimiter line that opens and closes a `.mntl` frontmatter block.
@@ -364,12 +369,12 @@ pub fn encode_unencrypted_note(content: &str) -> Result<String, MntlError> {
 /// Returns [`MntlError::MissingFrontmatter`] if `note` does not start with a
 /// well-formed `---` frontmatter block, [`MntlError::FrontmatterParseError`]
 /// if the frontmatter YAML is invalid, and [`MntlError::UnsupportedVersion`]
-/// if its `v` field does not match [`CURRENT_VERSION`].
+/// if its `v` field does not match [`NOTE_VERSION`].
 pub fn decode_unencrypted_note(note: &str) -> Result<String, MntlError> {
     let (frontmatter, body) = split_frontmatter(note)?;
     let header: NoteFrontmatter = serde_yaml::from_str(frontmatter)?;
 
-    if header.v != CURRENT_VERSION {
+    if header.v != NOTE_VERSION {
         return Err(MntlError::UnsupportedVersion(header.v));
     }
 

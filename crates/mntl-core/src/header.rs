@@ -12,19 +12,35 @@ pub const MAGIC_MENC: &[u8; 4] = b"MENC";
 /// prefix (4).
 pub const HEADER_OFFSET: usize = 8;
 
-/// The format version written by this crate, for both `.mntl.enc` envelopes
-/// and `.mntl` frontmatter.
+/// The `.mntl` plaintext note format version written by this crate.
 ///
-/// Stored in [`EncryptedHeader::v`] and [`NoteFrontmatter::v`]; decoding
+/// Stored in [`NoteFrontmatter::v`]; [`crate::decode_unencrypted_note`]
 /// rejects any other value via [`crate::MntlError::UnsupportedVersion`].
-pub const CURRENT_VERSION: u8 = 2;
+///
+/// Deliberately separate from [`ENVELOPE_VERSION`]: the two formats evolve
+/// independently, and sharing one constant meant a change to either format
+/// silently invalidated every file of the other.
+pub const NOTE_VERSION: u8 = 2;
+
+/// The `.mntl.enc` encrypted envelope format version written by this crate.
+///
+/// Stored in [`EncryptedHeader::v`]; [`crate::decrypt_note`] rejects any other
+/// value via [`crate::MntlError::UnsupportedVersion`]. See [`NOTE_VERSION`].
+///
+/// Version 3 introduced the per-profile master key: [`CryptoMeta::wrapped_key`]
+/// is now the note's content key wrapped by the profile's master key, where in
+/// version 2 it was wrapped directly by the password-derived KEK. The field is
+/// the same name and the same length, so a version 2 reader handed a version 3
+/// file would produce garbage rather than an error — hence the bump.
+pub const ENVELOPE_VERSION: u8 = 3;
 
 /// Argon2id cost parameters used to derive a Key Encryption Key from a password.
 ///
-/// Recorded alongside the salt in [`CryptoMeta`] so the same KEK can be
-/// re-derived later even if the default parameters change in a future
-/// version of this crate.
+/// Stored once per credential profile, alongside that profile's salt, by
+/// whoever owns the profile registry — **not** in note headers. See
+/// [`CryptoMeta`] for why.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct KdfParams {
     /// Memory cost in KiB.
     pub m_cost: u32,
@@ -49,16 +65,19 @@ impl Default for KdfParams {
 ///
 /// All binary fields are stored as standard Base64 strings so the header
 /// serializes as plain JSON.
+///
+/// Note what is deliberately *absent*: the Argon2id salt and cost parameters.
+/// Those describe the credential profile, not the note, and live in the
+/// profile registry. Copying them into every note header would mean N drifting
+/// duplicates of one value — after a KDF-cost upgrade every header would hold
+/// numbers that are either ignored or actively wrong.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CryptoMeta {
     /// Base64-encoded 192-bit XChaCha20-Poly1305 nonce.
     pub iv: String,
-    /// Base64-encoded salt used to derive the Key Encryption Key.
-    pub salt: String,
-    /// Base64-encoded Data Encryption Key, AES-KW-wrapped with the Key Encryption Key.
+    /// Base64-encoded content encryption key for this note, AES-KW-wrapped
+    /// with the credential profile's master key.
     pub wrapped_key: String,
-    /// Argon2id parameters used to derive the Key Encryption Key from the password and `salt`.
-    pub kdf: KdfParams,
 }
 
 /// The JSON header stored in every `.mntl.enc` binary envelope.
@@ -66,9 +85,21 @@ pub struct CryptoMeta {
 /// Serialized bytes of this struct are passed to the payload cipher as
 /// associated data, so any tampering with the header causes decryption to
 /// fail. See the [crate-level docs](crate) for the full envelope layout.
+///
+/// # Why this struct stays minimal
+///
+/// Because the header *is* the AAD, a field can never be added to an existing
+/// note's header without re-encrypting its body. So the header carries only
+/// what is needed to *find the key* — which profile, which wrapped content
+/// key, which nonce — and nothing that changes over a note's lifetime.
+///
+/// Everything else about a note (its title, tags, timestamps) belongs in the
+/// [`NoteFrontmatter`] of the plaintext document, which is sealed *inside* the
+/// ciphertext. That is what keeps the note format free to evolve: adding a
+/// field there is invisible to the envelope and costs no re-encryption.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EncryptedHeader {
-    /// Envelope format version; must equal [`CURRENT_VERSION`] to decrypt.
+    /// Envelope format version; must equal [`ENVELOPE_VERSION`] to decrypt.
     pub v: u8,
     /// Identifier of the credential profile the note is encrypted under.
     pub credential_profile: String,
@@ -80,7 +111,7 @@ impl EncryptedHeader {
     /// Build a header for an encrypted note with the given profile and crypto metadata.
     pub fn new(profile_id: impl Into<String>, crypto: CryptoMeta) -> Self {
         Self {
-            v: CURRENT_VERSION,
+            v: ENVELOPE_VERSION,
             credential_profile: profile_id.into(),
             crypto,
         }
@@ -105,12 +136,12 @@ impl EncryptedHeader {
 /// plaintext note isn't encrypted under any credential.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NoteFrontmatter {
-    /// Note format version; must equal [`CURRENT_VERSION`] to decode.
+    /// Note format version; must equal [`NOTE_VERSION`] to decode.
     pub v: u8,
 }
 
 impl Default for NoteFrontmatter {
     fn default() -> Self {
-        Self { v: CURRENT_VERSION }
+        Self { v: NOTE_VERSION }
     }
 }
