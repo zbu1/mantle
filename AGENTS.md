@@ -17,12 +17,49 @@ Angular 22 (frontend, signals-based, no NgModules).
   collapsed folders — a vault-local file so this metadata travels with the
   vault across machines/sync rather than living in this app install's local
   storage (see `goals/vault-state-future.md`).
+  `src-tauri/src/credentials.rs` owns credential profiles: the
+  `.mantle/profiles.json` registry and the in-memory session keys of unlocked
+  profiles. `src-tauri/src/notes_crypto.rs` converts notes between the
+  plaintext and encrypted formats and moves them between profiles.
 - **`crates/mntl-core`**: standalone Rust crate (Cargo workspace member,
   independent of Tauri) implementing the `.mntl` note format — plaintext
   Markdown with a YAML frontmatter header — and the `.mntl.enc` encrypted
   envelope format (Argon2id KEK derivation, XChaCha20-Poly1305 + AES-KW
-  envelope encryption). Encrypted notes can currently be listed but not
-  decrypted from the frontend.
+  envelope encryption).
+
+## Encryption
+
+Notes can be encrypted under a named **credential profile**. A profile's
+password derives an Argon2id KEK, which AES-KW-wraps a random per-profile
+**master key**; each note has its own content key, wrapped by that master key
+and stored in the note's header. Unlocking one profile therefore opens all of
+its notes from a single password entry, and changing a password would only
+need to rewrap the master key rather than rewrite every note.
+
+Things to know before touching this code:
+
+- **The `.mntl.enc` JSON header is the AEAD's associated data.** A field can
+  never be added to an existing note's header without re-encrypting its body,
+  so the header holds only what's needed to find the key (profile id, wrapped
+  content key, nonce). Everything else about a note belongs in the
+  `NoteFrontmatter` sealed inside the ciphertext. `decrypt_note` must keep
+  passing the header bytes *as they appear on disk* as AAD, never a
+  re-serialization — `test_decrypts_a_golden_fixture_blob` guards this.
+- **`.mantle/profiles.json` holds the only copy of each wrapped master key.**
+  Losing it makes every encrypted note in that vault unrecoverable, even with
+  the right password. Hence the `.bak` written on every save.
+- **Errors from `credentials.rs` and `notes_crypto.rs` reach the on-disk log**
+  via `logging::logged` — never interpolate a password, key, or decrypted note
+  content into one. Key types have hand-written redacting `Debug` impls so a
+  stray `{:?}` cannot leak.
+- **Master keys never cross the IPC boundary.** The frontend only learns
+  whether a profile is unlocked; `read_note`/`write_note` return the sentinel
+  `mantle:locked:<profile-id>` when it isn't.
+- **Locking must flush pending writes first** — `NotesState` debounces saves by
+  a second, and a pending write still needs the key.
+- Encrypted-note filenames are deliberately plaintext on disk for now.
+- The design gives at-rest confidentiality of the vault directory; it does not
+  resist an attacker who can read a running Mantle process's memory.
 
 ## Commands
 
@@ -39,7 +76,8 @@ Package manager is **pnpm** (see `pnpm-lock.yaml`), not npm.
 
 - Frontend tests use Jest with `jest-preset-angular` (config in `jest.config.ts`, setup in `setup-jest.ts`).
 - Test files live next to the code they test (e.g. `header.spec.ts` next to `header.ts`).
-- Rust: `#[cfg(test)]` unit tests in `src-tauri/src/vault.rs` (path traversal, note classification) and `src-tauri/src/vault_meta.rs` (default-on-missing, round trip, forward-compatible parsing); `crates/mntl-core/tests/crypto_tests.rs` covers the encryption/decryption round trip.
+- Rust: `#[cfg(test)]` unit tests in `src-tauri/src/vault.rs` (path traversal, note classification, compound `.mntl.enc` extension handling, scanning), `src-tauri/src/vault_meta.rs` (default-on-missing, round trip, forward-compatible parsing), `src-tauri/src/credentials.rs` (slugs, registry, unlock), and `src-tauri/src/notes_crypto.rs` (encrypt/decrypt conversion); `crates/mntl-core/tests/crypto_tests.rs` covers the key hierarchy and the envelope format.
+- Rust tests that need an unlocked profile use `SessionKeys::unlock_for_test` and cheap `KdfParams`, rather than paying for a production-cost Argon2id derivation per test.
 
 ## Conventions
 
