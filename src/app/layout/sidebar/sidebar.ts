@@ -6,6 +6,9 @@ import { SidebarSection } from './sidebar-section/sidebar-section';
 import { SidebarItemButton } from './sidebar-item-button/sidebar-item-button';
 import { VaultTreeNode } from './vault-tree-node/vault-tree-node';
 import { VaultMenu } from './vault-menu/vault-menu';
+import { CredentialsSection } from './credentials-section/credentials-section';
+import { CredentialsState } from '../../notes/credentials-state';
+import { NoteEncryptionActions } from '../../notes/note-encryption-actions';
 import { FAVORITE_NOTES, MockNote, RECENT_NOTES, TAG_GROUPS } from '../../notes/notes-data';
 import { COLLAPSE_THRESHOLD, SidebarState } from './sidebar-state';
 import { NotesState } from '../../notes/notes-state';
@@ -28,7 +31,7 @@ import { DialogState } from '../../shared/dialog/dialog-state';
 
 @Component({
   selector: 'app-sidebar',
-  imports: [SidebarSection, SidebarItemButton, VaultTreeNode, VaultMenu, LucideFolders, LucideStar, LucideClock, LucideTags, LucideFileText],
+  imports: [SidebarSection, SidebarItemButton, VaultTreeNode, VaultMenu, CredentialsSection, LucideFolders, LucideStar, LucideClock, LucideTags, LucideFileText],
   templateUrl: './sidebar.html',
   host: { class: 'contents' },
 })
@@ -43,12 +46,12 @@ export class Sidebar {
   protected readonly dragState = inject(VaultDragState);
   private readonly renameState = inject(VaultRenameState);
   private readonly dialogState = inject(DialogState);
+  protected readonly credentialsState = inject(CredentialsState);
+  private readonly encryptionActions = inject(NoteEncryptionActions);
 
   protected readonly favorites = FAVORITE_NOTES;
   protected readonly recentFiles = RECENT_NOTES;
   protected readonly tagGroups = TAG_GROUPS;
-
-  protected readonly lockedHint = signal<string | null>(null);
 
   /** Session-only favorite toggle stub — not persisted, not wired to the real Favorites section yet. */
   protected readonly favoritedPaths = signal<ReadonlySet<string>>(new Set());
@@ -139,8 +142,11 @@ export class Sidebar {
     this.tabsState.openNoteInBackground({ id: note.relPath, title: note.name });
   }
 
-  protected onLockedClicked(relPath: string): void {
-    this.lockedHint.update((current) => (current === relPath ? null : relPath));
+  /** A locked note was clicked: offer to unlock its profile, then open it. */
+  protected async onLockedClicked(note: VaultNoteNode): Promise<void> {
+    if (await this.credentialsState.promptUnlock(note.profile)) {
+      this.onOpenNote(note);
+    }
   }
 
   protected onNoteContextMenu(payload: { event: MouseEvent; note: VaultNoteNode }): void {
@@ -186,6 +192,8 @@ export class Sidebar {
             },
           ]
         : []),
+      { kind: 'separator' },
+      ...this.encryptionActions.menuItems(note),
       { kind: 'separator' },
       { kind: 'item', label: 'Rename', icon: 'rename', action: () => this.renameState.start(note.relPath) },
       {

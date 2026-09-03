@@ -54,7 +54,8 @@ export function installMockVaultInvoke(): jest.Mock {
             type: 'note',
             name: n.title,
             relPath: n.id,
-            locked: false,
+            encrypted: false,
+            profile: null,
           })),
         };
       }
@@ -81,6 +82,13 @@ export function installMockVaultInvoke(): jest.Mock {
       }
       case 'start_vault_watch':
       case 'stop_vault_watch':
+        return undefined;
+      // Credential profiles: a vault with none. Present so that any component
+      // pulling in CredentialsState doesn't trip the `default` throw below.
+      case 'list_credential_profiles':
+        return [];
+      case 'lock_credential_profile':
+      case 'lock_all_credential_profiles':
         return undefined;
       case 'plugin:event|listen':
         return 0;

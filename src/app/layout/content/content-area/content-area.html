@@ -16,9 +16,17 @@
     </button>
     <span class="h-4 w-px shrink-0 bg-border"></span>
     <span class="truncate text-xs text-muted-foreground">{{ notePath(tab) }}</span>
-    <button type="button" title="Encryption"
+    <button type="button" title="Encryption" (click)="onEncryptionClick($event)"
       class="inline-flex h-7 shrink-0 items-center gap-1 rounded px-1.5 text-muted-foreground hover:bg-surface hover:text-foreground">
+      @if (lockedProfileId()) {
       <svg lucideLock [size]="13"></svg>
+      <span class="max-w-24 truncate text-xs">{{ lockedProfileName() }}</span>
+      } @else if (activeNode(); as node) {
+      <svg lucideLockOpen [size]="13" class="text-primary"></svg>
+      <span class="max-w-24 truncate text-xs">{{ credentialsState.displayNameOf(node.profile) }}</span>
+      } @else {
+      <svg lucideFileText [size]="13"></svg>
+      }
       <svg lucideChevronDown [size]="12"></svg>
     </button>
     <span class="flex-1"></span>
@@ -52,7 +60,33 @@
     <input #titleInput type="text" [value]="tab.title" (input)="onTitleInput(tab, titleInput.value)"
       (keydown)="onTitleKeydown($event, tab, titleInput)" (blur)="onTitleBlur(tab)"
       class="mb-4 w-full min-w-0 truncate border-0 bg-transparent p-0 text-2xl font-semibold text-foreground outline-none!" />
+    @if (lockedProfileId()) {
+    <!-- Replaces the editor rather than covering it: destroying app-note-editor
+         is what drops the decrypted ProseMirror document from memory, and it
+         resets the editor's "already applied" guard so the note re-renders
+         after a lock/unlock cycle. -->
+    <div class="flex flex-col items-center justify-center gap-3 py-16 text-center">
+      <svg lucideLock [size]="32" class="text-muted-foreground"></svg>
+      <div class="text-sm font-medium text-foreground">This note is locked</div>
+      @if (lockedProfileUnknown()) {
+      <div class="max-w-md text-xs text-muted-foreground">
+        It's encrypted under the profile "{{ lockedProfileName() }}", which isn't in this vault.
+        It was most likely copied in from another vault.
+      </div>
+      } @else {
+      <div class="max-w-md text-xs text-muted-foreground">
+        Unlock the "{{ lockedProfileName() }}" profile to read it.
+      </div>
+      <button type="button" (click)="unlockActiveNote()"
+        class="mt-1 inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:opacity-90">
+        <svg lucideLockOpen [size]="13"></svg>
+        Unlock
+      </button>
+      }
+    </div>
+    } @else {
     <app-note-editor [noteId]="tab.noteId" class="block h-full" />
+    }
   </div>
   } @else {
   <div class="flex flex-1 items-center justify-center px-6 pb-6 text-sm text-muted-foreground">

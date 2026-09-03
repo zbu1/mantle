@@ -1,11 +1,12 @@
 import { Component, ElementRef, computed, effect, inject, input, output, signal, viewChild } from '@angular/core';
-import { LucideChevronRight, LucideFileText, LucideFolder, LucideLock } from '@lucide/angular';
+import { LucideChevronRight, LucideFileText, LucideFolder, LucideLock, LucideLockOpen } from '@lucide/angular';
 import {
   VAULT_FOLDER_DRAG_MIME,
   VAULT_NOTE_DRAG_MIME,
   VaultFolderNode,
   VaultNode,
   VaultNoteNode,
+  isNoteLocked,
 } from '../../../notes/vault-tree.model';
 import { VaultDragState } from '../../../notes/vault-drag-state';
 import { VaultRenameState } from '../../../notes/vault-rename-state';
@@ -23,20 +24,34 @@ EMPTY_DRAG_IMAGE.src =
 
 @Component({
   selector: 'app-vault-tree-node',
-  imports: [SidebarItemButton, VaultTreeNode, LucideChevronRight, LucideFileText, LucideFolder, LucideLock],
+  imports: [
+    SidebarItemButton,
+    VaultTreeNode,
+    LucideChevronRight,
+    LucideFileText,
+    LucideFolder,
+    LucideLock,
+    LucideLockOpen,
+  ],
   templateUrl: './vault-tree-node.html',
   host: { class: 'contents' },
 })
 export class VaultTreeNode {
   readonly node = input.required<VaultNode>();
   readonly depth = input(0);
-  readonly openLockedHint = input<string | null>(null);
+  /**
+   * Ids of the credential profiles currently unlocked. Threaded down the
+   * recursion rather than injected, keeping this component driven purely by
+   * its inputs the way the rest of the tree is.
+   */
+  readonly unlockedProfiles = input<ReadonlySet<string>>(new Set<string>());
 
   readonly openNote = output<VaultNoteNode>();
   readonly openNoteInBackground = output<VaultNoteNode>();
   readonly noteContextMenu = output<{ event: MouseEvent; note: VaultNoteNode }>();
   readonly folderContextMenu = output<{ event: MouseEvent; folder: VaultFolderNode }>();
-  readonly lockedClicked = output<string>();
+  /** A locked note was clicked; the sidebar prompts to unlock its profile. */
+  readonly lockedClicked = output<VaultNoteNode>();
   readonly notesDropped = output<{ relPaths: string[]; destRelDir: string }>();
   readonly folderDropped = output<{ relPath: string; destRelDir: string }>();
   readonly noteRenamed = output<{ relPath: string; newName: string }>();
@@ -77,9 +92,14 @@ export class VaultTreeNode {
     this.expanded.update((v) => !v);
   }
 
+  /** True when this note is encrypted *and* its profile isn't unlocked. */
+  protected isLocked(note: VaultNoteNode): boolean {
+    return isNoteLocked(note, this.unlockedProfiles());
+  }
+
   protected onNoteClick(note: VaultNoteNode, event: MouseEvent): void {
-    if (note.locked) {
-      this.lockedClicked.emit(note.relPath);
+    if (this.isLocked(note)) {
+      this.lockedClicked.emit(note);
       return;
     }
     if (event.shiftKey) {
@@ -107,11 +127,9 @@ export class VaultTreeNode {
       .filter((path): path is string => !!path);
   }
 
+  // Encrypted notes are draggable whether or not they're unlocked: moving a
+  // note is a plain filesystem rename that never touches its contents.
   protected onNoteDragStart(note: VaultNoteNode, event: DragEvent): void {
-    if (note.locked) {
-      event.preventDefault();
-      return;
-    }
     if (!this.selectionState.isSelected(note.relPath)) {
       this.selectionState.selectOnly(note.relPath);
     }

@@ -1,6 +1,6 @@
 import { Injectable, computed, effect, signal } from '@angular/core';
 
-export type SectionId = 'favorites' | 'recent' | 'workspace' | 'tags';
+export type SectionId = 'favorites' | 'recent' | 'workspace' | 'tags' | 'credentials';
 
 interface PersistedSidebarState {
   width: number;
@@ -26,7 +26,9 @@ const MAX_TAGS_HEIGHT = 400;
 const DEFAULT_STATE: PersistedSidebarState = {
   width: DEFAULT_WIDTH,
   collapsed: false,
-  sections: { favorites: true, recent: true, workspace: true, tags: true },
+  // `readFromStorage` spreads these under whatever is persisted, so adding a
+  // section here back-fills existing users without a storage version bump.
+  sections: { favorites: true, recent: true, workspace: true, tags: true, credentials: true },
   tagsHeight: DEFAULT_TAGS_HEIGHT,
 };
 

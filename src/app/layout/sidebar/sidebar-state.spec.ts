@@ -14,7 +14,13 @@ describe('SidebarState', () => {
     const state = TestBed.inject(SidebarState);
     expect(state.width()).toBe(240);
     expect(state.collapsed()).toBe(false);
-    expect(state.sections()).toEqual({ favorites: true, recent: true, workspace: true, tags: true });
+    expect(state.sections()).toEqual({
+      favorites: true,
+      recent: true,
+      workspace: true,
+      tags: true,
+      credentials: true,
+    });
   });
 
   it('falls back to defaults when storage is corrupt', () => {

@@ -10,6 +10,8 @@ import {
   LucideFolderOpen,
   LucideFolderPlus,
   LucideFolders,
+  LucideLock,
+  LucideLockOpen,
   LucidePencil,
   LucideScissors,
   LucideSquarePlus,
@@ -54,6 +56,8 @@ const VIEWPORT_MARGIN = 8;
     LucideTrash2,
     LucideFolders,
     LucideCheck,
+    LucideLock,
+    LucideLockOpen,
   ],
   templateUrl: './context-menu.html',
 })

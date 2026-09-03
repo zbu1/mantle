@@ -1,22 +1,27 @@
-import { Component, ElementRef, computed, inject, viewChild } from '@angular/core';
+import { Component, ElementRef, computed, effect, inject, viewChild } from '@angular/core';
 import {
   LucideArrowLeft,
   LucideArrowRight,
   LucideChevronDown,
   LucideEllipsis,
   LucideExpand,
+  LucideFileText,
   LucideFolderOpen,
   LucideLock,
+  LucideLockOpen,
   LucideRefreshCw,
   LucideTriangleAlert,
 } from '@lucide/angular';
 import { TabsState, NoteTab } from '../../../notes/tabs-state';
 import { NotesState, titleFromRelPath } from '../../../notes/notes-state';
+import { CredentialsState } from '../../../notes/credentials-state';
+import { NoteEncryptionActions } from '../../../notes/note-encryption-actions';
 import { VaultState } from '../../../notes/vault-state';
 import { NoteEditor } from '../../../notes/editor/note-editor';
 import { ContextMenuState } from '../../../shared/context-menu/context-menu-state';
 import { ContextMenuItem } from '../../../shared/context-menu/context-menu.model';
 import { DialogState } from '../../../shared/dialog/dialog-state';
+import { VaultNoteNode, flattenEncryptedNotes } from '../../../notes/vault-tree.model';
 
 const RENAME_DEBOUNCE_MS = 1000;
 
@@ -29,6 +34,8 @@ const RENAME_DEBOUNCE_MS = 1000;
     LucideExpand,
     LucideEllipsis,
     LucideLock,
+    LucideLockOpen,
+    LucideFileText,
     LucideChevronDown,
     LucideTriangleAlert,
     LucideRefreshCw,
@@ -40,6 +47,8 @@ export class ContentArea {
   protected readonly tabsState = inject(TabsState);
   private readonly notesState = inject(NotesState);
   protected readonly vaultState = inject(VaultState);
+  protected readonly credentialsState = inject(CredentialsState);
+  private readonly encryptionActions = inject(NoteEncryptionActions);
   private readonly contextMenuState = inject(ContextMenuState);
   private readonly dialogState = inject(DialogState);
 
@@ -53,6 +62,88 @@ export class ContentArea {
 
   /** Vault failed to open (bad/missing path, permissions, etc.) — show a fallback screen instead of the editor. */
   protected readonly vaultError = computed(() => (this.vaultState.tree() ? null : this.vaultState.error()));
+
+  /** The active note's tree node, for its encryption state. */
+  protected readonly activeNode = computed<VaultNoteNode | undefined>(() => {
+    const tab = this.activeTab();
+    const tree = this.vaultState.tree();
+    if (!tab || !tree) return undefined;
+    return flattenEncryptedNotes(tree).find((n) => n.relPath === tab.noteId);
+  });
+
+  /**
+   * The credential profile of the active note while it's locked, or null.
+   *
+   * Read from the note's cached entry rather than the tree, so the panel also
+   * covers a profile that was locked while the note was open.
+   */
+  protected readonly lockedProfileId = computed<string | null>(() => {
+    const tab = this.activeTab();
+    if (!tab) return null;
+    const entry = this.notesState.entry(tab.noteId);
+    return entry?.status === 'locked' ? entry.profileId : null;
+  });
+
+  protected readonly lockedProfileName = computed(() =>
+    this.credentialsState.displayNameOf(this.lockedProfileId()),
+  );
+
+  /** True when the locked note names a profile this vault has no record of. */
+  protected readonly lockedProfileUnknown = computed(() => {
+    const id = this.lockedProfileId();
+    return id !== null && !this.credentialsState.profileById(id);
+  });
+
+  constructor() {
+    // `NoteEditor` normally triggers the load itself, but the locked panel
+    // replaces the editor — so without this nothing would ever ask for the
+    // note, and a locked note could never report that it's locked.
+    effect(() => {
+      const tab = this.activeTab();
+      if (tab) this.notesState.ensureLoaded(tab.noteId);
+    });
+  }
+
+  protected async unlockActiveNote(): Promise<void> {
+    const tab = this.activeTab();
+    const profileId = this.lockedProfileId();
+    if (!tab || profileId === null) return;
+    if (await this.credentialsState.promptUnlock(profileId)) {
+      this.notesState.reload(tab.noteId);
+    }
+  }
+
+  /** Encryption menu for the toolbar button — the same actions as the sidebar's note menu. */
+  protected onEncryptionClick(event: MouseEvent): void {
+    const note = this.activeNode() ?? this.plaintextNodeForActiveTab();
+    if (!note) return;
+
+    const items: ContextMenuItem[] = [...this.encryptionActions.menuItems(note)];
+    if (note.encrypted && this.credentialsState.isUnlocked(note.profile) && note.profile) {
+      const profileId = note.profile;
+      items.push({ kind: 'separator' });
+      items.push({
+        kind: 'item',
+        label: `Lock "${this.credentialsState.displayNameOf(profileId)}"`,
+        icon: 'lock',
+        action: () => void this.credentialsState.lock(profileId),
+      });
+    }
+    this.contextMenuState.open(event, items);
+  }
+
+  /** A stand-in node for a plaintext active tab, which `flattenEncryptedNotes` skips. */
+  private plaintextNodeForActiveTab(): VaultNoteNode | undefined {
+    const tab = this.activeTab();
+    if (!tab) return undefined;
+    return {
+      type: 'note',
+      name: tab.title,
+      relPath: tab.noteId,
+      encrypted: false,
+      profile: null,
+    };
+  }
 
   protected retryOpenVault(): void {
     void this.vaultState.refresh();

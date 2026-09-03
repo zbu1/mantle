@@ -39,7 +39,8 @@
           <div class="px-2 py-1 text-xs text-destructive">{{ err }}</div>
           } @else if (vaultState.tree(); as tree) {
           @for (child of tree.children; track child.relPath) {
-          <app-vault-tree-node [node]="child" [openLockedHint]="lockedHint()" (openNote)="onOpenNote($event)"
+          <app-vault-tree-node [node]="child" [unlockedProfiles]="credentialsState.unlockedIds()"
+            (openNote)="onOpenNote($event)"
             (openNoteInBackground)="onOpenNoteInBackground($event)" (noteContextMenu)="onNoteContextMenu($event)"
             (folderContextMenu)="onFolderContextMenu($event)" (lockedClicked)="onLockedClicked($event)"
             (notesDropped)="onNotesDropped($event)" (folderDropped)="onFolderDropped($event)"
@@ -82,6 +83,8 @@
             }
           </div>
         </app-sidebar-section>
+
+        <app-credentials-section (openNote)="onOpenNote($event)" />
       </div>
     </div>
   </div>

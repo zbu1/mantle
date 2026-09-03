@@ -15,7 +15,9 @@ export type ContextMenuIcon =
   | 'close'
   | 'delete'
   | 'vault'
-  | 'check';
+  | 'check'
+  | 'lock'
+  | 'unlock';
 
 export interface ContextMenuAction {
   kind: 'item';

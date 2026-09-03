@@ -25,7 +25,7 @@
       <div class="relative">
         <div class="pointer-events-none absolute top-0 bottom-0 z-10 w-px bg-border" [style.left.px]="36 + depth() * 16 + 6"></div>
         @for (child of folder.children; track child.relPath) {
-        <app-vault-tree-node [node]="child" [depth]="depth() + 1" [openLockedHint]="openLockedHint()"
+        <app-vault-tree-node [node]="child" [depth]="depth() + 1" [unlockedProfiles]="unlockedProfiles()"
           (openNote)="openNote.emit($event)" (openNoteInBackground)="openNoteInBackground.emit($event)"
           (noteContextMenu)="noteContextMenu.emit($event)" (folderContextMenu)="folderContextMenu.emit($event)"
           (lockedClicked)="lockedClicked.emit($event)" (notesDropped)="notesDropped.emit($event)"
@@ -37,8 +37,7 @@
   </div>
 </div>
 } @else if (asNote(); as note) {
-<div [attr.data-note-path]="note.relPath" [draggable]="!renaming() && !note.locked"
-  (dragstart)="onNoteDragStart(note, $event)">
+<div [attr.data-note-path]="note.relPath" [draggable]="!renaming()" (dragstart)="onNoteDragStart(note, $event)">
   @if (renaming()) {
   <div [style.padding-left.px]="depth() * 16 + 44" class="flex items-center gap-2 py-1.5 pr-2">
     <svg class="shrink-0 text-muted-foreground" lucideFileText [size]="14"></svg>
@@ -50,16 +49,14 @@
   <app-sidebar-item-button [label]="note.name" [selected]="selectionState.isSelected(note.relPath)"
     [indent]="depth() * 16 + 8" (clicked)="onNoteClick(note, $event)" (middleClicked)="openNoteInBackground.emit(note)"
     (contextMenu)="onNoteContextMenu(note, $event)">
-    @if (note.locked) {
+    @if (isLocked(note)) {
     <svg sidebarItemIcon lucideLock [size]="13" class="shrink-0"></svg>
+    } @else if (note.encrypted) {
+    <svg sidebarItemIcon lucideLockOpen [size]="13" class="shrink-0 text-primary"></svg>
     } @else {
     <svg sidebarItemIcon lucideFileText [size]="14" class="shrink-0"></svg>
     }
   </app-sidebar-item-button>
-  }
-  @if (openLockedHint() === note.relPath) {
-  <div [style.padding-left.px]="depth() * 16 + 44" class="pb-1 pr-2 text-[11px] text-muted-foreground">Encrypted notes
-    aren't supported yet.</div>
   }
 </div>
 }

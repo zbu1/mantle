@@ -15,10 +15,23 @@ export interface VaultNoteNode {
   type: 'note';
   name: string;
   relPath: string;
-  locked: boolean;
+  /**
+   * Whether this is a `.mntl.enc` file — NOT whether it is currently readable.
+   * A note is locked only if it's encrypted *and* its profile isn't unlocked;
+   * use `isNoteLocked` rather than reading this flag directly.
+   */
+  encrypted: boolean;
+  /** Credential profile this note is encrypted under, or null for plaintext notes and unreadable headers. */
+  profile: string | null;
 }
 
 export type VaultNode = VaultFolderNode | VaultNoteNode;
+
+/** True when `note` is encrypted and its credential profile is not currently unlocked. */
+export function isNoteLocked(note: VaultNoteNode, unlockedProfiles: ReadonlySet<string>): boolean {
+  if (!note.encrypted) return false;
+  return note.profile === null || !unlockedProfiles.has(note.profile);
+}
 
 /** Returns a copy of `root` with the note at `relPath` renamed in place (name + relPath updated). No-op (same reference) if not found. */
 export function withRenamedNote(root: VaultFolderNode, relPath: string, newRelPath: string, newName: string): VaultFolderNode {
@@ -38,6 +51,26 @@ export function flattenVaultNotes(root: VaultFolderNode): Map<string, string> {
   const visit = (node: VaultNode): void => {
     if (node.type === 'note') {
       notes.set(node.relPath, node.name);
+      return;
+    }
+    for (const child of node.children) visit(child);
+  };
+  visit(root);
+  return notes;
+}
+
+/**
+ * Every `.mntl.enc` note in the tree, in traversal order.
+ *
+ * Profile membership is derived from the vault scan rather than fetched
+ * separately, so the sidebar's profile list and the note tree can never
+ * disagree about which notes belong where.
+ */
+export function flattenEncryptedNotes(root: VaultFolderNode): VaultNoteNode[] {
+  const notes: VaultNoteNode[] = [];
+  const visit = (node: VaultNode): void => {
+    if (node.type === 'note') {
+      if (node.encrypted) notes.push(node);
       return;
     }
     for (const child of node.children) visit(child);

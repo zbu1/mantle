@@ -1,16 +1,34 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { invoke } from '@tauri-apps/api/core';
+import { logError } from '../core/logger';
 import { Note } from './note.model';
 import { VaultState } from './vault-state';
 
 export type NoteEntry =
   | { status: 'loading' }
   | { status: 'loaded'; note: Note }
+  | { status: 'locked'; profileId: string }
   | { status: 'error'; message: string };
+
+/**
+ * Prefix the Rust `read_note`/`write_note` commands use to report that a
+ * note's credential profile is locked, followed by the profile id. The backend
+ * is the single authority on lock state — see `vault.rs`'s `LOCKED_ERR_PREFIX`.
+ */
+const LOCKED_ERR_PREFIX = 'mantle:locked:';
+
+/** The profile id in a locked-note error, or null if `err` is a different failure. */
+function lockedProfileFrom(err: unknown): string | null {
+  const message = String(err);
+  const at = message.indexOf(LOCKED_ERR_PREFIX);
+  return at === -1 ? null : message.slice(at + LOCKED_ERR_PREFIX.length).trim();
+}
 
 export function titleFromRelPath(relPath: string): string {
   const last = relPath.split('/').pop() ?? relPath;
-  return last.replace(/\.mntl$/, '');
+  // `.mntl.enc` first: it's a compound extension, so stripping `.mntl` alone
+  // would leave every encrypted note titled "Dream journal.mntl.enc".
+  return last.replace(/\.mntl\.enc$/, '').replace(/\.mntl$/, '');
 }
 
 const DEBOUNCE_MS = 1000;
@@ -48,8 +66,63 @@ export class NotesState {
       const note: Note = { id, title: titleFromRelPath(id), content };
       this.entries.update((entries) => ({ ...entries, [id]: { status: 'loaded', note } }));
     } catch (err) {
-      this.entries.update((entries) => ({ ...entries, [id]: { status: 'error', message: String(err) } }));
+      const profileId = lockedProfileFrom(err);
+      const entry: NoteEntry = profileId
+        ? { status: 'locked', profileId }
+        : { status: 'error', message: String(err) };
+      this.entries.update((entries) => ({ ...entries, [id]: entry }));
     }
+  }
+
+  /**
+   * Drop the decrypted content of `ids` and show them as locked.
+   *
+   * Sets the entries rather than deleting them so the locked panel appears
+   * immediately, with no round trip through `read_note` just to be told what
+   * we already know.
+   */
+  markLocked(ids: readonly string[], profileId: string): void {
+    if (ids.length === 0) return;
+    this.entries.update((entries) => {
+      const next = { ...entries };
+      for (const id of ids) {
+        if (id in next) next[id] = { status: 'locked', profileId };
+      }
+      return next;
+    });
+  }
+
+  /** Forget an entry so the next `ensureLoaded` re-fetches it — e.g. after unlocking its profile. */
+  reload(id: string): void {
+    this.entries.update((entries) => {
+      const { [id]: _dropped, ...rest } = entries;
+      return rest;
+    });
+    this.ensureLoaded(id);
+  }
+
+  /**
+   * Write out any debounced edits now, for `ids` or for every pending note.
+   *
+   * Locking a profile has to await this first: a pending write still holds
+   * decrypted content and still needs the key, so locking mid-debounce would
+   * discard the user's last second of typing. Both the timer cancellation and
+   * the write must complete before the entries are marked locked, because
+   * `flush` bails on any entry that isn't `loaded`.
+   */
+  async flushPending(ids?: readonly string[]): Promise<void> {
+    const targets = ids ?? [...this.pendingWrites.keys()];
+    const writes: Promise<void>[] = [];
+
+    for (const id of targets) {
+      const timer = this.pendingWrites.get(id);
+      if (!timer) continue;
+      clearTimeout(timer);
+      this.pendingWrites.delete(id);
+      writes.push(this.flush(id));
+    }
+
+    await Promise.all(writes);
   }
 
   /** Re-keys an already-loaded entry after a rename, so the editor doesn't re-fetch content it already has. */
@@ -102,7 +175,16 @@ export class NotesState {
     try {
       await invoke('write_note', { vaultRoot: root, relPath: id, content: entry.note.content });
     } catch (err) {
-      console.error(`Failed to save note "${id}":`, err);
+      // A save can fail because the note's profile was locked while the write
+      // was in flight. Either way this is unsaved user work, so it belongs in
+      // the app log rather than only the browser console.
+      const profileId = lockedProfileFrom(err);
+      if (profileId) {
+        logError(`Could not save "${id}": the "${profileId}" profile was locked before the edit was written.`);
+        this.entries.update((entries) => ({ ...entries, [id]: { status: 'locked', profileId } }));
+        return;
+      }
+      logError(`Failed to save note "${id}": ${String(err)}`);
     }
   }
 }
