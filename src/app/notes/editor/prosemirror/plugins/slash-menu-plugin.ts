@@ -78,8 +78,11 @@ export function createSlashMenuPlugin(
             return;
           }
 
+          // Requires the '/' to open the block (or follow whitespace) rather
+          // than matching anywhere in the text \u2014 otherwise typing a URL or a
+          // fraction like "https://example.com" or "3/4" would pop the menu.
           const textBefore = $from.parent.textBetween(0, $from.parentOffset, null, '\ufffc');
-          const match = textBefore.match(/\/([\w-]*)$/);
+          const match = textBefore.match(/(?:^|\s)\/([\w-]*)$/);
 
           if (!match) {
             hide(panel);
@@ -87,7 +90,7 @@ export function createSlashMenuPlugin(
           }
 
           const query = match[1];
-          const slashPos = $from.pos - match[0].length;
+          const slashPos = $from.pos - query.length - 1;
           activeRange = { from: slashPos, to: $from.pos };
 
           const filtered = filterSlashCommands(query);
