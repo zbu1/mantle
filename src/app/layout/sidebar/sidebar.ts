@@ -1,7 +1,5 @@
 import { Component, HostListener, effect, inject, signal } from '@angular/core';
 import { LucideClock, LucideFileText, LucideFolders, LucideStar, LucideTags } from '@lucide/angular';
-import { join } from '@tauri-apps/api/path';
-import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { SidebarSection } from './sidebar-section/sidebar-section';
 import { SidebarItemButton } from './sidebar-item-button/sidebar-item-button';
 import { VaultTreeNode } from './vault-tree-node/vault-tree-node';
@@ -178,7 +176,7 @@ export class Sidebar {
       { kind: 'item', label: 'Open', icon: 'open', action: () => this.onOpenNote(note) },
       { kind: 'item', label: 'Open in New Tab', icon: 'open-new-tab', action: () => this.onOpenNoteInBackground(note) },
       { kind: 'separator' },
-      { kind: 'item', label: 'Show in File Explorer', icon: 'reveal', action: () => void this.revealRelPath(note.relPath) },
+      { kind: 'item', label: 'Show in File Explorer', icon: 'reveal', action: () => void this.vaultState.revealInFileExplorer(note.relPath) },
       { kind: 'separator' },
       { kind: 'item', label: 'Duplicate', icon: 'duplicate', action: () => void this.vaultState.duplicateNote(note.relPath) },
       { kind: 'item', label: 'Copy', icon: 'copy', action: () => this.clipboardState.copy(note) },
@@ -219,7 +217,7 @@ export class Sidebar {
         kind: 'item',
         label: 'Show in File Explorer',
         icon: 'reveal',
-        action: () => void this.revealRelPath(folder.relPath),
+        action: () => void this.vaultState.revealInFileExplorer(folder.relPath),
       },
       { kind: 'separator' },
       { kind: 'item', label: 'Rename', icon: 'rename', action: () => this.renameState.start(folder.relPath) },
@@ -371,13 +369,6 @@ export class Sidebar {
     } catch (err) {
       await this.dialogState.alert(String(err), { title: 'Rename Failed', tone: 'error' });
     }
-  }
-
-  private async revealRelPath(relPath: string): Promise<void> {
-    const root = this.vaultState.rootPath();
-    if (!root) return;
-    const absolute = relPath ? await join(root, ...relPath.split('/')) : root;
-    await revealItemInDir(absolute);
   }
 
   private async deleteNote(note: VaultNoteNode): Promise<void> {

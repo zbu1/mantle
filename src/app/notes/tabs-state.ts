@@ -145,6 +145,12 @@ export class TabsState {
     this.activeId.set(id);
   }
 
+  closeAllTabs(): void {
+    this.tabs.set([]);
+    this.activeId.set(null);
+    this.historyByTabId.set({});
+  }
+
   closeByNoteId(noteId: string): void {
     for (const tab of this.tabs().filter((tab) => tab.noteId === noteId)) {
       this.closeTab(tab.id);

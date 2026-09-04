@@ -2,9 +2,6 @@
   [style.grid-template-columns]="gridTemplateColumns()" [style.transition]="layoutTransition()">
   <div class="flex min-w-0 items-center gap-1 pl-2 pr-1">
     <app-main-menu />
-    @if (!sidebarState.collapsed()) {
-    <app-vault-menu />
-    }
   </div>
   <button type="button" title="Toggle sidebar" (click)="toggleSidebar()"
     class="absolute top-1 z-10 inline-flex h-8 w-8 items-center justify-center rounded-md text-foreground hover:bg-background"

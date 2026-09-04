@@ -10,7 +10,8 @@
 <app-menu-surface #panel class="absolute left-0 top-full z-50 mt-1 w-64">
   <div class="px-3 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Vaults</div>
   @for (vault of recentVaults(); track vault.path) {
-  <app-menu-item [label]="vault.name" (selected)="switchVault(vault.path)">
+  <app-menu-item [label]="vault.name" [active]="hoveredKey() === vault.path"
+    (hovered)="hoveredKey.set(vault.path)" (selected)="switchVault(vault.path)">
     <svg menuItemIcon lucideFolders [size]="14"></svg>
     @if (vault.active) {
     <svg menuItemTrailing lucideCheck [size]="14" class="text-foreground"></svg>
@@ -22,12 +23,14 @@
   }
 
   <app-menu-separator />
-  <app-menu-item label="Open Another Vault…" (selected)="openAnotherVault()">
+  <app-menu-item label="Open Another Vault…" [active]="hoveredKey() === 'openAnother'"
+    (hovered)="hoveredKey.set('openAnother')" (selected)="openAnotherVault()">
     <svg menuItemIcon lucideFolderPlus [size]="14"></svg>
   </app-menu-item>
 
   <app-menu-separator />
-  <app-menu-item label="Settings" (selected)="openSettings()">
+  <app-menu-item label="Settings" [active]="hoveredKey() === 'settings'"
+    (hovered)="hoveredKey.set('settings')" (selected)="openSettings()">
     <svg menuItemIcon lucideSettings [size]="14"></svg>
   </app-menu-item>
 </app-menu-surface>

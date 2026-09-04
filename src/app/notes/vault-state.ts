@@ -1,7 +1,9 @@
 import { Injectable, effect, inject, signal, untracked } from '@angular/core';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { join } from '@tauri-apps/api/path';
 import { open } from '@tauri-apps/plugin-dialog';
+import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { flattenVaultNotes, withRenamedNote, VaultFolderNode } from './vault-tree.model';
 import { TabsState } from './tabs-state';
 import { formatError, logError, logInfo } from '../core/logger';
@@ -124,6 +126,15 @@ export class VaultState {
     await this.refresh();
   }
 
+  /** Closes the open vault and any tabs into it, returning to the no-vault-open state. */
+  closeVault(): void {
+    this.rootPath.set(null);
+    this.tree.set(null);
+    this.previousRoot = null;
+    this.previousNotes = null;
+    this.tabsState.closeAllTabs();
+  }
+
   private rememberRecentVault(path: string): void {
     const current = untracked(this.recentVaults);
     const next = [path, ...current.filter((p) => p !== path)].slice(0, MAX_RECENT_VAULTS);
@@ -187,10 +198,40 @@ export class VaultState {
     return created;
   }
 
+  /** Creates an "Untitled" note at the vault root (retrying on name collisions) and opens it in a new tab. */
+  async createAndOpenNote(): Promise<CreatedNote | null> {
+    const base = 'Untitled';
+    for (let i = 0; i < 50; i++) {
+      const name = i === 0 ? base : `${base} ${i + 1}`;
+      try {
+        const created = await this.createNote('', name);
+        this.tabsState.openInNewTab({ id: created.relPath, title: created.name });
+        return created;
+      } catch {
+        // name collision — try the next candidate
+      }
+    }
+    return null;
+  }
+
   async createFolder(relDir: string, name: string): Promise<CreatedFolder> {
     const root = this.rootPath();
     if (!root) throw new Error('No vault open');
     return invoke<CreatedFolder>('create_folder', { vaultRoot: root, relDir, name });
+  }
+
+  /** Creates a "New Folder" in `relDir` (retrying on name collisions). */
+  async createFolderWithUniqueName(relDir = ''): Promise<CreatedFolder> {
+    const base = 'New Folder';
+    for (let i = 0; i < 50; i++) {
+      const name = i === 0 ? base : `${base} ${i + 1}`;
+      try {
+        return await this.createFolder(relDir, name);
+      } catch {
+        // name collision — try the next candidate
+      }
+    }
+    throw new Error('Could not find an available folder name');
   }
 
   async deleteNote(relPath: string): Promise<void> {
@@ -264,5 +305,13 @@ export class VaultState {
       sourceRelPath,
       destRelDir,
     });
+  }
+
+  /** Reveals `relPath` (or the vault root, if empty) in the OS file explorer. */
+  async revealInFileExplorer(relPath: string): Promise<void> {
+    const root = this.rootPath();
+    if (!root) return;
+    const absolute = relPath ? await join(root, ...relPath.split('/')) : root;
+    await revealItemInDir(absolute);
   }
 }

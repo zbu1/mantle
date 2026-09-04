@@ -1,4 +1,4 @@
-import { Component, ElementRef, HostListener, computed, inject, signal, viewChild } from '@angular/core';
+import { Component, ElementRef, HostListener, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { LucideCheck, LucideChevronsUpDown, LucideFolderPlus, LucideFolders, LucideSettings } from '@lucide/angular';
 import { MenuItem } from '../../shared/menu/menu-item';
 import { MenuSeparator } from '../../shared/menu/menu-separator';
@@ -27,6 +27,15 @@ export class VaultMenu {
   private readonly vaultState = inject(VaultState);
 
   protected readonly open = signal(false);
+
+  // Drives which row is highlighted, keyed by a vault path or a static
+  // item's own key — see MenuItem.active for why this is JS-driven rather
+  // than plain CSS :hover.
+  protected readonly hoveredKey = signal<string | null>(null);
+  private readonly resetHoverOnToggle = effect(() => {
+    this.open();
+    this.hoveredKey.set(null);
+  });
 
   protected readonly vaultName = computed(() => {
     const path = this.vaultState.rootPath();
