@@ -1,0 +1,385 @@
+@if (state.isOpen()) {
+<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" (pointerdown)="onBackdropPointerDown($event)">
+  <div #panel tabindex="-1" class="flex h-[560px] w-[720px] max-h-[85vh] flex-col overflow-hidden rounded-lg border border-border bg-surface text-surface-foreground shadow-xl outline-none">
+    <div class="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
+      <h2 class="text-sm font-semibold">Settings</h2>
+      <button type="button" title="Close" (click)="state.close()"
+        class="rounded-md p-1 text-muted-foreground hover:bg-background hover:text-foreground">
+        <svg lucideX [size]="14"></svg>
+      </button>
+    </div>
+
+    <div class="flex flex-1 overflow-hidden">
+      <nav class="w-44 shrink-0 overflow-y-auto border-r border-border p-2">
+        @for (cat of categories; track cat.id) {
+        <button type="button" (click)="state.selectCategory(cat.id)"
+          class="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs"
+          [class]="state.category() === cat.id ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-background hover:text-foreground'">
+          <span class="flex size-3.5 shrink-0 items-center justify-center">
+            @switch (cat.id) {
+            @case ('general') { <svg lucideSettings2 [size]="14"></svg> }
+            @case ('appearance') { <svg lucidePalette [size]="14"></svg> }
+            @case ('editor') { <svg lucideType [size]="14"></svg> }
+            @case ('sidebar') { <svg lucidePanelLeft [size]="14"></svg> }
+            @case ('files') { <svg lucideFolderOpen [size]="14"></svg> }
+            @case ('encryption') { <svg lucideShieldCheck [size]="14"></svg> }
+            @case ('shortcuts') { <svg lucideKeyboard [size]="14"></svg> }
+            @case ('advanced') { <svg lucideWrench [size]="14"></svg> }
+            @case ('about') { <svg lucideInfo [size]="14"></svg> }
+            }
+          </span>
+          <span class="truncate">{{ cat.label }}</span>
+        </button>
+        }
+      </nav>
+
+      <div class="flex-1 overflow-y-auto px-6 py-4">
+        @switch (state.category()) {
+
+        @case ('general') {
+        <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">General</h3>
+        <app-settings-row label="Reopen Last Vault on Launch" description="Automatically open the most recently used vault when Mantle starts.">
+          <app-toggle [checked]="reopenLastVault()" (changed)="reopenLastVault.set($event)" />
+        </app-settings-row>
+        <app-settings-row label="New Notes Go In" description="Where a new note is created from the New Note action.">
+          <select [value]="defaultNoteLocation()" (change)="defaultNoteLocation.set($any($event.target).value)"
+            class="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-accent">
+            <option value="root">Vault root</option>
+            <option value="current">Current folder</option>
+          </select>
+        </app-settings-row>
+        <app-settings-row label="Default Note Title" description="Used as the filename when a new note isn't given one.">
+          <input type="text" [value]="defaultNoteTitle()" (input)="defaultNoteTitle.set($any($event.target).value)"
+            spellcheck="false"
+            class="w-36 rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-accent" />
+        </app-settings-row>
+        <app-settings-row label="Confirm Before Deleting" description="Ask before permanently removing a note or folder.">
+          <app-toggle [checked]="confirmBeforeDelete()" (changed)="confirmBeforeDelete.set($event)" />
+        </app-settings-row>
+        <app-settings-row label="Language">
+          <select [value]="'en-US'" disabled
+            class="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground opacity-70 outline-none">
+            <option value="en-US">English (US)</option>
+          </select>
+        </app-settings-row>
+        }
+
+        @case ('appearance') {
+        <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Appearance</h3>
+        <app-settings-row label="Theme" description="Follows your OS setting by default.">
+          <div class="flex overflow-hidden rounded-md border border-border">
+            @for (mode of ['system', 'light', 'dark']; track mode) {
+            <button type="button" (click)="themeMode.set($any(mode))"
+              class="px-2.5 py-1 text-xs capitalize"
+              [class]="themeMode() === mode ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-background hover:text-foreground'">
+              {{ mode }}
+            </button>
+            }
+          </div>
+        </app-settings-row>
+        <app-settings-row label="Accent Color">
+          <div class="flex items-center gap-1.5">
+            @for (swatch of accentSwatches; track swatch) {
+            <button type="button" [title]="swatch" (click)="accentColor.set(swatch)"
+              [style.background-color]="swatch"
+              class="size-5 rounded-full ring-offset-2 ring-offset-surface"
+              [class.ring-2]="accentColor() === swatch" [class.ring-foreground]="accentColor() === swatch"></button>
+            }
+          </div>
+        </app-settings-row>
+        <app-settings-row label="Interface Text Size">
+          <select [value]="interfaceTextSize()" (change)="interfaceTextSize.set($any($event.target).value)"
+            class="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-accent">
+            <option value="sm">Small</option>
+            <option value="md">Medium</option>
+            <option value="lg">Large</option>
+          </select>
+        </app-settings-row>
+        <app-settings-row label="Editor Font">
+          <select [value]="editorFont()" (change)="editorFont.set($any($event.target).value)"
+            class="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-accent">
+            <option value="default">Default</option>
+            <option value="serif">Serif</option>
+            <option value="mono">Monospace</option>
+          </select>
+        </app-settings-row>
+        <app-settings-row label="Editor Font Size">
+          <div class="flex items-center gap-2">
+            <button type="button" (click)="stepEditorFontSize(-1)"
+              class="flex size-6 items-center justify-center rounded-md border border-border text-xs hover:bg-background">−</button>
+            <span class="w-6 text-center text-xs tabular-nums">{{ editorFontSize() }}</span>
+            <button type="button" (click)="stepEditorFontSize(1)"
+              class="flex size-6 items-center justify-center rounded-md border border-border text-xs hover:bg-background">+</button>
+          </div>
+        </app-settings-row>
+        <app-settings-row label="Show File Extensions" description="Display .mntl / .mntl.enc suffixes in the sidebar.">
+          <app-toggle [checked]="showFileExtensions()" (changed)="showFileExtensions.set($event)" />
+        </app-settings-row>
+        <app-settings-row label="Compact Spacing" description="Reduce padding throughout the interface.">
+          <app-toggle [checked]="compactSpacing()" (changed)="compactSpacing.set($event)" />
+        </app-settings-row>
+        }
+
+        @case ('editor') {
+        <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Editor</h3>
+        <app-settings-row label="Autosave Delay" description="How long to wait after you stop typing before saving.">
+          <select [value]="autosaveDelay()" (change)="autosaveDelay.set($any($event.target).value)"
+            class="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-accent">
+            <option value="immediate">Immediate</option>
+            <option value="1s">1 second</option>
+            <option value="3s">3 seconds</option>
+            <option value="5s">5 seconds</option>
+          </select>
+        </app-settings-row>
+        <app-settings-row label="Spellcheck">
+          <app-toggle [checked]="spellcheck()" (changed)="spellcheck.set($event)" />
+        </app-settings-row>
+        <app-settings-row label="Line Wrap">
+          <app-toggle [checked]="lineWrap()" (changed)="lineWrap.set($event)" />
+        </app-settings-row>
+        <app-settings-row label="Readable Line Length" description="Center content and cap its width for long lines.">
+          <app-toggle [checked]="readableLineLength()" (changed)="readableLineLength.set($event)" />
+        </app-settings-row>
+        <app-settings-row label="Typewriter Scrolling" description="Keep the cursor vertically centered while typing.">
+          <app-toggle [checked]="typewriterScrolling()" (changed)="typewriterScrolling.set($event)" />
+        </app-settings-row>
+        <app-settings-row label="Smart Lists" description="Continue bullet and numbered lists automatically on Enter.">
+          <app-toggle [checked]="smartLists()" (changed)="smartLists.set($event)" />
+        </app-settings-row>
+        <app-settings-row label="Tab Key" description="What pressing Tab does inside the editor.">
+          <select [value]="tabBehavior()" (change)="tabBehavior.set($any($event.target).value)"
+            class="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-accent">
+            <option value="spaces">Insert spaces</option>
+            <option value="indent">Indent list item</option>
+          </select>
+        </app-settings-row>
+        }
+
+        @case ('sidebar') {
+        <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Sections</h3>
+        <app-settings-row label="Favorites">
+          <app-toggle [checked]="sidebarState.isSectionExpanded('favorites')" (changed)="toggleSidebarSection('favorites')" />
+        </app-settings-row>
+        <app-settings-row label="Recent Files">
+          <app-toggle [checked]="sidebarState.isSectionExpanded('recent')" (changed)="toggleSidebarSection('recent')" />
+        </app-settings-row>
+        <app-settings-row label="Vault">
+          <app-toggle [checked]="sidebarState.isSectionExpanded('workspace')" (changed)="toggleSidebarSection('workspace')" />
+        </app-settings-row>
+        <app-settings-row label="Tags">
+          <app-toggle [checked]="sidebarState.isSectionExpanded('tags')" (changed)="toggleSidebarSection('tags')" />
+        </app-settings-row>
+        <app-settings-row label="Credential Profiles">
+          <app-toggle [checked]="sidebarState.isSectionExpanded('credentials')" (changed)="toggleSidebarSection('credentials')" />
+        </app-settings-row>
+
+        <h3 class="mb-1 mt-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Layout</h3>
+        <app-settings-row label="Sidebar Width" [description]="sidebarState.width() + 'px'">
+          <button type="button" (click)="resetSidebarWidth()"
+            class="rounded-md border border-border px-2.5 py-1 text-xs text-foreground hover:bg-background">
+            Reset to Default
+          </button>
+        </app-settings-row>
+        <app-settings-row label="Default Sort Order">
+          <select [value]="sidebarSortMode()" (change)="sidebarSortMode.set($any($event.target).value)"
+            class="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-accent">
+            <option value="name-asc">Name (A → Z)</option>
+            <option value="name-desc">Name (Z → A)</option>
+            <option value="modified">Date modified</option>
+            <option value="created">Date created</option>
+            <option value="manual">Manual order</option>
+          </select>
+        </app-settings-row>
+        <app-settings-row label="Auto-Expand Active Folder" description="Reveal and expand the folder containing the open note.">
+          <app-toggle [checked]="autoExpandActiveFolder()" (changed)="autoExpandActiveFolder.set($event)" />
+        </app-settings-row>
+        }
+
+        @case ('files') {
+        <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Current Vault</h3>
+        <app-settings-row label="Vault Path" [description]="vaultState.rootPath() ?? 'No vault open'">
+          <button type="button" (click)="revealVault()" [disabled]="!vaultState.rootPath()"
+            class="rounded-md border border-border px-2.5 py-1 text-xs text-foreground hover:bg-background disabled:pointer-events-none disabled:opacity-40">
+            Reveal in File Explorer
+          </button>
+        </app-settings-row>
+        <app-settings-row label="Vault Metadata" description="Favorites, sort order, and collapsed folders live in .mantle/.">
+          <button type="button" (click)="revealMantleFolder()" [disabled]="!vaultState.rootPath()"
+            class="rounded-md border border-border px-2.5 py-1 text-xs text-foreground hover:bg-background disabled:pointer-events-none disabled:opacity-40">
+            Open .mantle Folder
+          </button>
+        </app-settings-row>
+        <app-settings-row label="Default Attachment Folder">
+          <input type="text" [value]="defaultAttachmentFolder()" (input)="defaultAttachmentFolder.set($any($event.target).value)"
+            spellcheck="false"
+            class="w-36 rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-accent" />
+        </app-settings-row>
+        <app-settings-row label="Watch for External Changes" description="Refresh the vault tree when files change outside Mantle.">
+          <app-toggle [checked]="watchExternalChanges()" (changed)="watchExternalChanges.set($event)" />
+        </app-settings-row>
+        <app-settings-row label="Deleted Files">
+          <select [value]="deletedFileHandling()" (change)="deletedFileHandling.set($any($event.target).value)"
+            class="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-accent">
+            <option value="trash">Move to system trash</option>
+            <option value="local-trash">Move to .trash/</option>
+            <option value="permanent">Delete permanently</option>
+          </select>
+        </app-settings-row>
+
+        <h3 class="mb-1 mt-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Recent Vaults</h3>
+        @for (vault of recentVaultRows(); track vault.path) {
+        <app-settings-row [label]="vault.name" [description]="vault.path">
+          @if (vault.active) {
+          <span class="text-[11px] text-muted-foreground">Current</span>
+          } @else {
+          <button type="button" (click)="switchVault(vault.path)"
+            class="rounded-md border border-border px-2.5 py-1 text-xs text-foreground hover:bg-background">
+            Open
+          </button>
+          }
+        </app-settings-row>
+        }
+        @if (recentVaultRows().length === 0) {
+        <p class="py-2 text-xs text-muted-foreground">No vaults opened yet.</p>
+        }
+        @if (recentVaultRows().length > 0) {
+        <button type="button" (click)="clearRecentVaults()"
+          class="mt-2 rounded-md border border-border px-2.5 py-1 text-xs text-foreground hover:bg-background">
+          Clear Recent Vaults
+        </button>
+        }
+        }
+
+        @case ('encryption') {
+        <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Credential Profiles</h3>
+        @for (profile of credentialsState.profiles(); track profile.id) {
+        <app-settings-row [label]="profile.displayName" [description]="profile.unlocked ? 'Unlocked' : 'Locked'">
+          @if (profile.unlocked) {
+          <button type="button" (click)="lockProfile(profile.id)"
+            class="rounded-md border border-border px-2.5 py-1 text-xs text-foreground hover:bg-background">
+            Lock
+          </button>
+          } @else {
+          <button type="button" (click)="unlockProfile(profile.id)"
+            class="rounded-md border border-border px-2.5 py-1 text-xs text-foreground hover:bg-background">
+            Unlock
+          </button>
+          }
+        </app-settings-row>
+        }
+        @if (credentialsState.profiles().length === 0) {
+        <p class="py-2 text-xs text-muted-foreground">No credential profiles in this vault yet.</p>
+        }
+        <div class="mt-2 flex gap-2">
+          <button type="button" (click)="createProfile()"
+            class="rounded-md border border-border px-2.5 py-1 text-xs text-foreground hover:bg-background">
+            New Profile…
+          </button>
+          @if (credentialsState.profiles().length > 0) {
+          <button type="button" (click)="lockAllProfiles()"
+            class="rounded-md border border-border px-2.5 py-1 text-xs text-foreground hover:bg-background">
+            Lock All
+          </button>
+          }
+        </div>
+
+        <h3 class="mb-1 mt-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Privacy</h3>
+        <app-settings-row label="Auto-Lock After Inactivity">
+          <select [value]="autoLockTimeout()" (change)="autoLockTimeout.set($any($event.target).value)"
+            class="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-accent">
+            <option value="never">Never</option>
+            <option value="5m">5 minutes</option>
+            <option value="15m">15 minutes</option>
+            <option value="1h">1 hour</option>
+          </select>
+        </app-settings-row>
+        <app-settings-row label="Lock When App Loses Focus">
+          <app-toggle [checked]="lockOnBlur()" (changed)="lockOnBlur.set($event)" />
+        </app-settings-row>
+        <app-settings-row label="Clear Clipboard After Copying" description="Automatically clear copied text from decrypted notes.">
+          <app-toggle [checked]="clearClipboardAfterCopy()" (changed)="clearClipboardAfterCopy.set($event)" />
+        </app-settings-row>
+        }
+
+        @case ('shortcuts') {
+        <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Keyboard Shortcuts</h3>
+        <div class="relative mb-2">
+          <svg lucideSearch [size]="13" class="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground"></svg>
+          <input type="text" placeholder="Search shortcuts…" [value]="shortcutSearch()"
+            (input)="shortcutSearch.set($any($event.target).value)" spellcheck="false"
+            class="w-full rounded-md border border-border bg-background py-1.5 pl-7 pr-2 text-xs text-foreground outline-none focus:border-accent" />
+        </div>
+        @for (shortcut of filteredShortcuts(); track shortcut.action) {
+        <app-settings-row [label]="shortcut.action">
+          <kbd class="rounded-md border border-border bg-background px-2 py-1 text-[11px] text-muted-foreground">{{ shortcut.keys }}</kbd>
+        </app-settings-row>
+        }
+        @if (filteredShortcuts().length === 0) {
+        <p class="py-2 text-xs text-muted-foreground">No shortcuts match "{{ shortcutSearch() }}".</p>
+        }
+        }
+
+        @case ('advanced') {
+        <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Performance</h3>
+        <app-settings-row label="Hardware Acceleration">
+          <app-toggle [checked]="hardwareAcceleration()" (changed)="hardwareAcceleration.set($event)" />
+        </app-settings-row>
+        <app-settings-row label="Editor Zoom">
+          <div class="flex items-center gap-2">
+            <button type="button" (click)="stepZoomLevel(-10)"
+              class="flex size-6 items-center justify-center rounded-md border border-border text-xs hover:bg-background">−</button>
+            <span class="w-10 text-center text-xs tabular-nums">{{ zoomLevel() }}%</span>
+            <button type="button" (click)="stepZoomLevel(10)"
+              class="flex size-6 items-center justify-center rounded-md border border-border text-xs hover:bg-background">+</button>
+          </div>
+        </app-settings-row>
+
+        <h3 class="mb-1 mt-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Data</h3>
+        <app-settings-row label="Debug Log" description="Errors from encryption and vault operations are recorded on disk.">
+          <button type="button"
+            class="rounded-md border border-border px-2.5 py-1 text-xs text-foreground hover:bg-background">
+            Open Debug Log
+          </button>
+        </app-settings-row>
+        <app-settings-row label="Reset All Settings" description="Restore every setting on this page to its default.">
+          <button type="button" (click)="resetAllSettings()"
+            class="rounded-md bg-destructive px-2.5 py-1 text-xs text-destructive-foreground hover:opacity-90">
+            Reset…
+          </button>
+        </app-settings-row>
+        }
+
+        @case ('about') {
+        <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">About Mantle</h3>
+        <app-settings-row label="Version" description="0.1.0">
+          <button type="button"
+            class="rounded-md border border-border px-2.5 py-1 text-xs text-foreground hover:bg-background">
+            Check for Updates
+          </button>
+        </app-settings-row>
+        <app-settings-row label="License">
+          <button type="button"
+            class="rounded-md border border-border px-2.5 py-1 text-xs text-foreground hover:bg-background">
+            View License
+          </button>
+        </app-settings-row>
+        <app-settings-row label="Acknowledgments">
+          <button type="button"
+            class="rounded-md border border-border px-2.5 py-1 text-xs text-foreground hover:bg-background">
+            View
+          </button>
+        </app-settings-row>
+        <app-settings-row label="Report an Issue">
+          <button type="button"
+            class="rounded-md border border-border px-2.5 py-1 text-xs text-foreground hover:bg-background">
+            Report…
+          </button>
+        </app-settings-row>
+        }
+
+        }
+      </div>
+    </div>
+  </div>
+</div>
+}

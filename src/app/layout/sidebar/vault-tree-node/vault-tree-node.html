@@ -52,6 +52,9 @@
     } @else {
     <svg sidebarItemIcon lucideFileText [size]="14" class="shrink-0"></svg>
     }
+    @if (note.encrypted) {
+    <span sidebarItemTrailing class="shrink-0 truncate pl-1 text-[11px] text-muted-foreground">{{ profileName(note) }}</span>
+    }
   </app-sidebar-item-button>
   }
 </div>

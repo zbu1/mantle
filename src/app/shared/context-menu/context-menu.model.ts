@@ -3,6 +3,7 @@ export type ContextMenuIcon =
   | 'open-new-tab'
   | 'new-note'
   | 'new-folder'
+  | 'new-profile'
   | 'copy'
   | 'cut'
   | 'paste'

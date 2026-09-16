@@ -8,6 +8,7 @@ import {
   VaultNoteNode,
   isNoteLocked,
 } from '../../../notes/vault-tree.model';
+import { CredentialsState } from '../../../notes/credentials-state';
 import { VaultDragState } from '../../../notes/vault-drag-state';
 import { VaultRenameState } from '../../../notes/vault-rename-state';
 import { VaultSelectionState } from '../../../notes/vault-selection-state';
@@ -64,6 +65,7 @@ export class VaultTreeNode {
   protected readonly selectionState = inject(VaultSelectionState);
   protected readonly dragState = inject(VaultDragState);
   protected readonly renameState = inject(VaultRenameState);
+  protected readonly credentialsState = inject(CredentialsState);
 
   protected readonly expanded = signal(true);
 
@@ -99,6 +101,10 @@ export class VaultTreeNode {
   /** True when this note is encrypted *and* its profile isn't unlocked. */
   protected isLocked(note: VaultNoteNode): boolean {
     return isNoteLocked(note, this.unlockedProfiles());
+  }
+
+  protected profileName(note: VaultNoteNode): string {
+    return this.credentialsState.displayNameOf(note.profile);
   }
 
   protected onNoteClick(note: VaultNoteNode, event: MouseEvent): void {

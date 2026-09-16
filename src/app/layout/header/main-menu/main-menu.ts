@@ -29,6 +29,7 @@ import {
   LucideSaveAll,
   LucideScissors,
   LucideSearch,
+  LucideSettings,
   LucideShieldCheck,
   LucideStar,
   LucideTags,
@@ -41,6 +42,7 @@ import { MenuItem } from '../../../shared/menu/menu-item';
 import { MenuSeparator } from '../../../shared/menu/menu-separator';
 import { MenuSurface } from '../../../shared/menu/menu-surface';
 import { DialogState } from '../../../shared/dialog/dialog-state';
+import { SettingsModalState } from '../../../shared/settings/settings-modal-state';
 import { CredentialsState } from '../../../notes/credentials-state';
 import { NotesState } from '../../../notes/notes-state';
 import { TabsState } from '../../../notes/tabs-state';
@@ -75,6 +77,7 @@ type MenuCategory = 'file' | 'edit' | 'view' | 'help';
     LucideFolderPlus,
     LucideSave,
     LucideSaveAll,
+    LucideSettings,
     LucideX,
     LucideLayers,
     LucideFolders,
@@ -106,7 +109,7 @@ type MenuCategory = 'file' | 'edit' | 'view' | 'help';
     LucideBug,
   ],
   templateUrl: './main-menu.html',
-  host: { class: 'relative flex shrink-0 items-center gap-1' },
+  host: { class: 'relative flex shrink-0 items-center gap-2' },
 })
 export class MainMenu {
   private readonly vaultState = inject(VaultState);
@@ -116,6 +119,7 @@ export class MainMenu {
   private readonly credentialsState = inject(CredentialsState);
   protected readonly sidebarState = inject(SidebarState);
   private readonly dialogState = inject(DialogState);
+  private readonly settingsModalState = inject(SettingsModalState);
 
   /** Whether the horizontal File/Edit/View/Help bar is showing in place of the vault switcher. */
   protected readonly open = signal(false);
@@ -237,6 +241,11 @@ export class MainMenu {
   protected async lockAllProfiles(): Promise<void> {
     this.closeMenu();
     await this.credentialsState.lockAll();
+  }
+
+  protected openSettings(): void {
+    this.closeMenu();
+    this.settingsModalState.open();
   }
 
   protected exit(): void {

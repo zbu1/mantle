@@ -3,9 +3,12 @@ import { LucideLock, LucideLockOpen, LucidePlus, LucideTriangleAlert } from '@lu
 import { CredentialsState } from '../../../notes/credentials-state';
 import { NoteEncryptionActions } from '../../../notes/note-encryption-actions';
 import { VaultNoteNode } from '../../../notes/vault-tree.model';
+import { VaultSelectionState } from '../../../notes/vault-selection-state';
 import { SidebarItemButton } from '../sidebar-item-button/sidebar-item-button';
 import { ExplorerRow } from '../explorer-row/explorer-row';
 import { ExplorerBody } from '../explorer-body/explorer-body';
+import { ContextMenuState } from '../../../shared/context-menu/context-menu-state';
+import { ContextMenuItem } from '../../../shared/context-menu/context-menu.model';
 
 /**
  * One row in the Credential Profiles section: a profile's lock status, name
@@ -35,9 +38,12 @@ export class CredentialProfileRow {
   readonly unknown = input(false);
 
   readonly openNote = output<VaultNoteNode>();
+  readonly noteContextMenu = output<{ event: MouseEvent; note: VaultNoteNode }>();
 
   private readonly credentialsState = inject(CredentialsState);
   private readonly encryptionActions = inject(NoteEncryptionActions);
+  private readonly selectionState = inject(VaultSelectionState);
+  private readonly contextMenuState = inject(ContextMenuState);
 
   protected readonly expanded = signal(false);
   protected readonly noteCount = computed(() => this.notes().length);
@@ -49,7 +55,10 @@ export class CredentialProfileRow {
   protected async onLockToggle(event: MouseEvent): Promise<void> {
     // Without this the click also reaches the row and toggles expansion.
     event.stopPropagation();
+    await this.toggleLock();
+  }
 
+  private async toggleLock(): Promise<void> {
     const id = this.profileId();
     if (id === null) return;
 
@@ -61,6 +70,38 @@ export class CredentialProfileRow {
     if (this.unknown()) return;
     if (!this.unlocked() && !(await this.credentialsState.promptUnlock(this.profileId()))) return;
     this.openNote.emit(note);
+  }
+
+  protected onNoteContextMenu(note: VaultNoteNode, event: MouseEvent): void {
+    if (!this.selectionState.isSelected(note.relPath)) {
+      this.selectionState.selectOnly(note.relPath);
+    }
+    this.noteContextMenu.emit({ event, note });
+  }
+
+  protected onHeaderContextMenu(event: MouseEvent): void {
+    const items: ContextMenuItem[] = [];
+
+    if (!this.unknown()) {
+      items.push({ kind: 'item', label: 'New Note', icon: 'new-note', action: () => void this.onNewNote() });
+      items.push({ kind: 'separator' });
+      items.push({
+        kind: 'item',
+        label: this.unlocked() ? 'Lock' : 'Unlock',
+        icon: this.unlocked() ? 'lock' : 'unlock',
+        action: () => void this.toggleLock(),
+      });
+      items.push({ kind: 'separator' });
+    }
+
+    items.push({
+      kind: 'item',
+      label: 'New Profile…',
+      icon: 'new-profile',
+      action: () => void this.credentialsState.promptCreate(),
+    });
+
+    this.contextMenuState.open(event, items);
   }
 
   /** Create a note that is encrypted from the moment it exists. */

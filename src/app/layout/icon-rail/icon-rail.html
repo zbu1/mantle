@@ -35,8 +35,8 @@
       <span class="relative whitespace-nowrap rounded-md bg-foreground px-2 py-1 text-xs font-medium text-background shadow-lg">Calendar</span>
     </span>
   </button>
-  <button type="button" aria-label="Settings" aria-disabled="true"
-    class="group relative inline-flex h-9 w-9 cursor-default items-center justify-center rounded-md text-muted-foreground/60">
+  <button type="button" aria-label="Settings" (click)="openSettings()"
+    class="group relative inline-flex h-9 w-9 items-center justify-center rounded-md text-foreground/80 hover:bg-background hover:text-foreground">
     <svg lucideSettings [size]="18"></svg>
     <span class="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
       <span class="absolute top-1/2 -left-1 h-2 w-2 -translate-y-1/2 rotate-45 rounded-[1px] bg-foreground"></span>

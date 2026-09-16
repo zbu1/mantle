@@ -66,6 +66,12 @@
         </app-menu-item>
 
         <app-menu-separator />
+        <app-menu-item label="Settings…" [active]="hoveredItem() === 'settings'"
+          (hovered)="hoveredItem.set('settings')" (selected)="openSettings()">
+          <svg menuItemIcon lucideSettings [size]="14"></svg>
+        </app-menu-item>
+
+        <app-menu-separator />
         <app-menu-item label="Exit" [active]="hoveredItem() === 'exit'"
           (hovered)="hoveredItem.set('exit')" (selected)="exit()">
           <svg menuItemIcon lucideDoorOpen [size]="14"></svg>

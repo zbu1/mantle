@@ -2,6 +2,7 @@ import { Component, HostListener, effect, inject, signal } from '@angular/core';
 import { LucideClock, LucideFileText, LucideFolders, LucideStar, LucideTags } from '@lucide/angular';
 import { SidebarSection } from './sidebar-section/sidebar-section';
 import { SidebarItemButton } from './sidebar-item-button/sidebar-item-button';
+import { SidebarToolbar } from './sidebar-toolbar/sidebar-toolbar';
 import { VaultTreeNode } from './vault-tree-node/vault-tree-node';
 import { CredentialsSection } from './credentials-section/credentials-section';
 import { TagGroupRow } from './tag-group-row/tag-group-row';
@@ -29,7 +30,7 @@ import { DialogState } from '../../shared/dialog/dialog-state';
 
 @Component({
   selector: 'app-sidebar',
-  imports: [SidebarSection, SidebarItemButton, VaultTreeNode, CredentialsSection, TagGroupRow, LucideFolders, LucideStar, LucideClock, LucideTags, LucideFileText],
+  imports: [SidebarSection, SidebarItemButton, SidebarToolbar, VaultTreeNode, CredentialsSection, TagGroupRow, LucideFolders, LucideStar, LucideClock, LucideTags, LucideFileText],
   templateUrl: './sidebar.html',
   host: { class: 'contents' },
 })

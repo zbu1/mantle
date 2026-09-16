@@ -3,6 +3,7 @@ import { LucideCheck, LucideChevronsUpDown, LucideFolderPlus, LucideFolders, Luc
 import { MenuItem } from '../../shared/menu/menu-item';
 import { MenuSeparator } from '../../shared/menu/menu-separator';
 import { MenuSurface } from '../../shared/menu/menu-surface';
+import { SettingsModalState } from '../../shared/settings/settings-modal-state';
 import { VaultState, vaultNameFromPath } from '../../notes/vault-state';
 
 interface RecentVault {
@@ -25,6 +26,7 @@ interface RecentVault {
 })
 export class VaultMenu {
   private readonly vaultState = inject(VaultState);
+  private readonly settingsModalState = inject(SettingsModalState);
 
   protected readonly open = signal(false);
 
@@ -72,6 +74,7 @@ export class VaultMenu {
 
   protected openSettings(): void {
     this.close();
+    this.settingsModalState.open();
   }
 
   private close(): void {
