@@ -1,4 +1,4 @@
-<div #contentRoot class="scrollbar-thin flex h-full flex-col overflow-y-auto"
+<div #contentRoot class="scrollbar-thin mr-1 flex h-full flex-col overflow-y-auto overscroll-contain"
   (contextmenu)="onContentContextMenu($event)">
   <div class="sticky top-0 z-10 flex shrink-0 items-center gap-1 bg-background px-4 py-2">
     <button type="button" title="Back" [disabled]="!tabsState.canGoBack()" (click)="goBack()"
@@ -16,7 +16,8 @@
     </button>
     <span class="h-4 w-px shrink-0 bg-border"></span>
     <span class="truncate text-xs text-muted-foreground">{{ notePath(tab) }}</span>
-    <button type="button" title="Encryption" (click)="onEncryptionClick($event)"
+    <button #encryptionButton type="button" title="Encryption" (click)="onEncryptionClick()"
+      [class.bg-surface]="isEncryptionPanelOpen()" [class.text-foreground]="isEncryptionPanelOpen()"
       class="inline-flex h-7 shrink-0 items-center gap-1 rounded px-1.5 text-muted-foreground hover:bg-surface hover:text-foreground">
       @if (lockedProfileId()) {
       <svg lucideLock [size]="13"></svg>

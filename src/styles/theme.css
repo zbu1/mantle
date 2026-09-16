@@ -33,6 +33,16 @@
   --warning: #d97706;
   --destructive: #dc2626;
   --destructive-foreground: #ffffff;
+
+  /*
+   * Floating hover labels (e.g. the icon rail and vault tree tooltips).
+   * Deliberately its own dark scale rather than reusing --foreground: it
+   * floats over arbitrary content (the editor), including the dark theme's
+   * near-black background, so it needs a fixed identity that reads clearly
+   * against both themes rather than flipping with them.
+   */
+  --tooltip: #262626;
+  --tooltip-foreground: #f6f6f6;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -63,6 +73,10 @@
     --warning: #fbbf24;
     --destructive: #f87171;
     --destructive-foreground: #2c1c1d;
+
+    /* Lighter than the light-theme value on purpose — against this theme's near-black background, a matching near-black tooltip would be nearly invisible. */
+    --tooltip: #565656;
+    --tooltip-foreground: #f6f6f6;
   }
 }
 
@@ -94,6 +108,9 @@
   --color-warning: var(--warning);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+
+  --color-tooltip: var(--tooltip);
+  --color-tooltip-foreground: var(--tooltip-foreground);
 
   --font-sans: Inter, Avenir, Helvetica, Arial, sans-serif;
 }

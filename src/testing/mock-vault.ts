@@ -83,6 +83,12 @@ export function installMockVaultInvoke(): jest.Mock {
       case 'start_vault_watch':
       case 'stop_vault_watch':
         return undefined;
+      // `@tauri-apps/api/path`'s `join()`, used to resolve a note's full
+      // filesystem location for display.
+      case 'plugin:path|join': {
+        const paths = args['paths'] as string[];
+        return paths.join('/');
+      }
       // Credential profiles: a vault with none. Present so that any component
       // pulling in CredentialsState doesn't trip the `default` throw below.
       case 'list_credential_profiles':

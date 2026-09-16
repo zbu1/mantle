@@ -1,0 +1,31 @@
+@if (state.isOpen()) {
+<div class="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-[15vh]" (pointerdown)="onBackdropPointerDown($event)">
+  <div class="flex max-h-[60vh] w-[560px] flex-col overflow-hidden rounded-lg border border-border bg-surface text-surface-foreground shadow-xl">
+    <div class="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2.5">
+      <svg lucideFileSearch2 [size]="15" class="shrink-0 text-muted-foreground"></svg>
+      <input #input type="text" [value]="query()" (input)="onQueryInput(input.value)" placeholder="Go to note…"
+        spellcheck="false" autocomplete="off"
+        class="w-full min-w-0 border-0 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground" />
+    </div>
+    <div class="scrollbar-thin flex-1 overflow-y-auto py-1">
+      @for (item of results(); track item.note.relPath; let i = $index) {
+      <app-menu-item [label]="item.note.name" [active]="i === selectedIndex()" (hovered)="hover(i)" (selected)="select(item)">
+        <svg menuItemIcon lucideFileText [size]="14"></svg>
+        <span menuItemTrailing class="flex items-center gap-1 text-muted-foreground">
+          @if (isLocked(item)) {
+          <svg lucideLock [size]="12"></svg>
+          }
+          @if (item.dir) {
+          <span class="max-w-40 truncate text-[11px]">{{ item.dir }}</span>
+          }
+        </span>
+      </app-menu-item>
+      } @empty {
+      <div class="px-3 py-6 text-center text-xs text-muted-foreground">
+        {{ !hasVault() ? 'Open a vault to search notes' : query() ? 'No matching notes' : 'No notes in this vault' }}
+      </div>
+      }
+    </div>
+  </div>
+</div>
+}

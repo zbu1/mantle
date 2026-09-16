@@ -1,5 +1,5 @@
 <button #trigger type="button" title="Switch vault" (click)="toggle()" [attr.aria-expanded]="open()"
-  class="inline-flex h-8 shrink-0 items-center gap-1.5 overflow-hidden rounded-md px-2 text-xs text-muted-foreground hover:bg-background hover:text-foreground"
+  class="inline-flex h-8 shrink-0 items-center gap-1.5 overflow-hidden rounded-md border border-border bg-black/5 px-2 text-xs text-muted-foreground hover:bg-background hover:text-foreground"
   [class.bg-background]="open()" [class.text-foreground]="open()">
   <svg lucideFolders [size]="13" class="shrink-0"></svg>
   <span class="max-w-32 truncate text-left">{{ vaultName() ?? 'No Vault' }}</span>

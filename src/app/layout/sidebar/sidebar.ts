@@ -142,11 +142,13 @@ export class Sidebar {
     this.tabsState.openNoteInBackground({ id: note.relPath, title: note.name });
   }
 
-  /** A locked note was clicked: offer to unlock its profile, then open it. */
-  protected async onLockedClicked(note: VaultNoteNode): Promise<void> {
-    if (await this.credentialsState.promptUnlock(note.profile)) {
-      this.onOpenNote(note);
-    }
+  /**
+   * A locked note was clicked: open it like any other note. The content area
+   * shows a "this note is locked" screen with its own unlock affordance
+   * rather than prompting for a password immediately.
+   */
+  protected onLockedClicked(note: VaultNoteNode): void {
+    this.onOpenNote(note);
   }
 
   protected onNoteContextMenu(payload: { event: MouseEvent; note: VaultNoteNode }): void {

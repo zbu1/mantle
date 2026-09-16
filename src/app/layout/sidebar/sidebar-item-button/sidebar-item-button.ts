@@ -10,6 +10,8 @@ export class SidebarItemButton {
   readonly collapsed = input(false);
   readonly selected = input(false);
   readonly indent = input(0);
+  /** Set by callers that show their own hover tooltip, so the two don't stack. */
+  readonly suppressNativeTitle = input(false);
   readonly clicked = output<MouseEvent>();
   readonly middleClicked = output<void>();
   readonly contextMenu = output<MouseEvent>();

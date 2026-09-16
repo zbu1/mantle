@@ -236,7 +236,8 @@ export class NoteEncryptionActions {
     return null;
   }
 
-  private async createProfileThenEncrypt(note: VaultNoteNode): Promise<void> {
+  /** Prompt for a new profile and encrypt `note` into it. Public: also used by the editor toolbar's "New profile…" picker option. */
+  async createProfileThenEncrypt(note: VaultNoteNode): Promise<void> {
     const profileId = await this.credentialsState.promptCreate();
     if (profileId) await this.encrypt(note, profileId);
   }

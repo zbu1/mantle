@@ -1,5 +1,6 @@
 import { Component, input, output } from '@angular/core';
 import { LucideChevronRight } from '@lucide/angular';
+import { HoverTooltip } from '../../../shared/hover-tooltip/hover-tooltip';
 
 /**
  * The header row of an expandable sidebar entry — a rotating chevron, an
@@ -13,7 +14,7 @@ import { LucideChevronRight } from '@lucide/angular';
  */
 @Component({
   selector: 'app-explorer-row',
-  imports: [LucideChevronRight],
+  imports: [LucideChevronRight, HoverTooltip],
   templateUrl: './explorer-row.html',
   host: { class: 'contents' },
 })
@@ -33,5 +34,11 @@ export class ExplorerRow {
 
   protected onDragStart(event: DragEvent): void {
     this.headerDragStart.emit(event);
+  }
+
+  /** Space normally scrolls the page; the row's own role="button" needs it to toggle instead. */
+  protected onSpaceKey(event: Event): void {
+    event.preventDefault();
+    this.toggle.emit();
   }
 }

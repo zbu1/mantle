@@ -15,7 +15,7 @@ import {
 import { TabsState, NoteTab } from '../../../notes/tabs-state';
 import { NotesState, titleFromRelPath } from '../../../notes/notes-state';
 import { CredentialsState } from '../../../notes/credentials-state';
-import { NoteEncryptionActions } from '../../../notes/note-encryption-actions';
+import { EncryptionPanelState } from '../../../notes/encryption-panel/encryption-panel-state';
 import { VaultState } from '../../../notes/vault-state';
 import { NoteEditor } from '../../../notes/editor/note-editor';
 import { ContextMenuState } from '../../../shared/context-menu/context-menu-state';
@@ -48,11 +48,12 @@ export class ContentArea {
   private readonly notesState = inject(NotesState);
   protected readonly vaultState = inject(VaultState);
   protected readonly credentialsState = inject(CredentialsState);
-  private readonly encryptionActions = inject(NoteEncryptionActions);
+  private readonly encryptionPanelState = inject(EncryptionPanelState);
   private readonly contextMenuState = inject(ContextMenuState);
   private readonly dialogState = inject(DialogState);
 
   private readonly contentRoot = viewChild<ElementRef<HTMLElement>>('contentRoot');
+  private readonly encryptionButton = viewChild<ElementRef<HTMLButtonElement>>('encryptionButton');
   private readonly pendingRenames = new Map<string, ReturnType<typeof setTimeout>>();
 
   protected readonly activeTab = computed<NoteTab | undefined>(() => {
@@ -113,23 +114,18 @@ export class ContentArea {
     }
   }
 
-  /** Encryption menu for the toolbar button — the same actions as the sidebar's note menu. */
-  protected onEncryptionClick(event: MouseEvent): void {
-    const note = this.activeNode() ?? this.plaintextNodeForActiveTab();
-    if (!note) return;
+  /** True while the encryption panel is open for this tab's toolbar button. */
+  protected readonly isEncryptionPanelOpen = computed(() => {
+    const btn = this.encryptionButton()?.nativeElement;
+    return !!btn && this.encryptionPanelState.target()?.anchor === btn;
+  });
 
-    const items: ContextMenuItem[] = [...this.encryptionActions.menuItems(note)];
-    if (note.encrypted && this.credentialsState.isUnlocked(note.profile) && note.profile) {
-      const profileId = note.profile;
-      items.push({ kind: 'separator' });
-      items.push({
-        kind: 'item',
-        label: `Lock "${this.credentialsState.displayNameOf(profileId)}"`,
-        icon: 'lock',
-        action: () => void this.credentialsState.lock(profileId),
-      });
-    }
-    this.contextMenuState.open(event, items);
+  /** Opens/closes the encryption panel anchored under the toolbar button. */
+  protected onEncryptionClick(): void {
+    const note = this.activeNode() ?? this.plaintextNodeForActiveTab();
+    const btn = this.encryptionButton()?.nativeElement;
+    if (!note || !btn) return;
+    this.encryptionPanelState.toggle(btn, note);
   }
 
   /** A stand-in node for a plaintext active tab, which `flattenEncryptedNotes` skips. */

@@ -1,5 +1,5 @@
-import { Component, computed, inject, input, output, signal } from '@angular/core';
-import { LucideLock, LucideLockOpen, LucidePlus, LucideTriangleAlert } from '@lucide/angular';
+import { Component, OnDestroy, computed, inject, input, output, signal } from '@angular/core';
+import { LucidePlus } from '@lucide/angular';
 import { CredentialsState } from '../../../notes/credentials-state';
 import { NoteEncryptionActions } from '../../../notes/note-encryption-actions';
 import { VaultNoteNode } from '../../../notes/vault-tree.model';
@@ -7,8 +7,14 @@ import { VaultSelectionState } from '../../../notes/vault-selection-state';
 import { SidebarItemButton } from '../sidebar-item-button/sidebar-item-button';
 import { ExplorerRow } from '../explorer-row/explorer-row';
 import { ExplorerBody } from '../explorer-body/explorer-body';
+import { ProfileActionsMenu } from './profile-actions-menu';
+import { ProfileLockIcon, ProfileLockIconState } from './profile-lock-icon';
+import { ProfileLockStatus } from './profile-lock-status';
 import { ContextMenuState } from '../../../shared/context-menu/context-menu-state';
 import { ContextMenuItem } from '../../../shared/context-menu/context-menu.model';
+
+/** How long an armed "lock?" confirmation stays up before reverting on its own. */
+const LOCK_CONFIRM_TIMEOUT_MS = 4000;
 
 /**
  * One row in the Credential Profiles section: a profile's lock status, name
@@ -20,11 +26,11 @@ import { ContextMenuItem } from '../../../shared/context-menu/context-menu.model
  */
 @Component({
   selector: 'app-credential-profile-row',
-  imports: [SidebarItemButton, ExplorerRow, ExplorerBody, LucideLock, LucideLockOpen, LucidePlus, LucideTriangleAlert],
+  imports: [SidebarItemButton, ExplorerRow, ExplorerBody, ProfileActionsMenu, ProfileLockIcon, ProfileLockStatus, LucidePlus],
   templateUrl: './credential-profile-row.html',
   host: { class: 'block' },
 })
-export class CredentialProfileRow {
+export class CredentialProfileRow implements OnDestroy {
   /** Profile id, or null for the group of notes with an unreadable header. */
   readonly profileId = input.required<string | null>();
   readonly displayName = input.required<string>();
@@ -48,14 +54,66 @@ export class CredentialProfileRow {
   protected readonly expanded = signal(false);
   protected readonly noteCount = computed(() => this.notes().length);
 
+  /** True while the lock icon is armed, waiting for a confirming second click. */
+  protected readonly confirmingLock = signal(false);
+  private confirmLockTimer: ReturnType<typeof setTimeout> | null = null;
+
+  protected readonly lockIconState = computed<ProfileLockIconState>(() => {
+    if (this.unknown()) return 'unknown';
+    if (this.confirmingLock()) return 'confirming';
+    return this.unlocked() ? 'unlocked' : 'locked';
+  });
+
+  ngOnDestroy(): void {
+    this.clearConfirmLockTimer();
+  }
+
   protected toggleExpanded(): void {
+    if (this.confirmingLock()) this.disarmLockConfirm();
     this.expanded.update((v) => !v);
   }
 
-  protected async onLockToggle(event: MouseEvent): Promise<void> {
+  protected onLockIconClick(event: MouseEvent): void {
     // Without this the click also reaches the row and toggles expansion.
     event.stopPropagation();
-    await this.toggleLock();
+
+    if (this.unlocked()) {
+      if (this.confirmingLock()) void this.confirmLock();
+      else this.armLockConfirm();
+      return;
+    }
+
+    void this.toggleLock();
+  }
+
+  protected onCancelLock(event: MouseEvent): void {
+    event.stopPropagation();
+    this.disarmLockConfirm();
+  }
+
+  private armLockConfirm(): void {
+    this.clearConfirmLockTimer();
+    this.confirmingLock.set(true);
+    this.confirmLockTimer = setTimeout(() => this.disarmLockConfirm(), LOCK_CONFIRM_TIMEOUT_MS);
+  }
+
+  private disarmLockConfirm(): void {
+    this.clearConfirmLockTimer();
+    this.confirmingLock.set(false);
+  }
+
+  private clearConfirmLockTimer(): void {
+    if (this.confirmLockTimer !== null) {
+      clearTimeout(this.confirmLockTimer);
+      this.confirmLockTimer = null;
+    }
+  }
+
+  private async confirmLock(): Promise<void> {
+    this.disarmLockConfirm();
+    const id = this.profileId();
+    if (id === null) return;
+    await this.credentialsState.lock(id);
   }
 
   private async toggleLock(): Promise<void> {
@@ -66,9 +124,21 @@ export class CredentialProfileRow {
     else await this.credentialsState.promptUnlock(id);
   }
 
-  protected async onNoteClick(note: VaultNoteNode): Promise<void> {
+  protected onMenuToggleLock(): void {
+    void this.toggleLock();
+  }
+
+  /** Opens the credential profile's settings screen — not built yet. */
+  protected onMenuSettings(): void {}
+
+  /** Opens a "change master password" flow — not built yet. */
+  protected onMenuChangePassword(): void {}
+
+  protected onNoteClick(note: VaultNoteNode): void {
     if (this.unknown()) return;
-    if (!this.unlocked() && !(await this.credentialsState.promptUnlock(this.profileId()))) return;
+    // Opens the note even while its profile is locked — the content area
+    // shows a "this note is locked" screen with its own unlock affordance
+    // rather than prompting for a password immediately.
     this.openNote.emit(note);
   }
 

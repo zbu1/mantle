@@ -43,8 +43,9 @@
   </div>
   } @else {
   <app-sidebar-item-button [label]="note.name" [selected]="selectionState.isSelected(note.relPath)"
-    [indent]="depth() * 16 + 8" (clicked)="onNoteClick(note, $event)" (middleClicked)="openNoteInBackground.emit(note)"
-    (contextMenu)="onNoteContextMenu(note, $event)">
+    [indent]="depth() * 16 + 8" [suppressNativeTitle]="true" [appHoverTooltip]="note.name"
+    [appHoverTooltipSublabel]="encryptionStatus(note)" (clicked)="onNoteClick(note, $event)"
+    (middleClicked)="openNoteInBackground.emit(note)" (contextMenu)="onNoteContextMenu(note, $event)">
     @if (isLocked(note)) {
     <svg sidebarItemIcon lucideLock [size]="13" class="shrink-0"></svg>
     } @else if (note.encrypted) {

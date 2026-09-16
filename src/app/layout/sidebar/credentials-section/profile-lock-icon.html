@@ -1,0 +1,23 @@
+@switch (state()) {
+@case ('unknown') {
+<svg lucideTriangleAlert [size]="13" class="shrink-0 text-warning"></svg>
+}
+@case ('confirming') {
+<button type="button" (click)="onClick($event)" title="Confirm lock" aria-label="Confirm lock"
+  class="shrink-0 rounded p-1 hover:bg-surface">
+  <svg lucideLock [size]="13" class="text-destructive"></svg>
+</button>
+}
+@case ('unlocked') {
+<button type="button" (click)="onClick($event)" [title]="'Lock ' + displayName()"
+  [attr.aria-label]="'Lock ' + displayName()" class="shrink-0 rounded p-1 hover:bg-surface">
+  <svg lucideLockOpen [size]="13" class="text-success"></svg>
+</button>
+}
+@case ('locked') {
+<button type="button" (click)="onClick($event)" [title]="'Unlock ' + displayName()"
+  [attr.aria-label]="'Unlock ' + displayName()" class="shrink-0 rounded p-1 hover:bg-surface">
+  <svg lucideLock [size]="13" class="text-warning"></svg>
+</button>
+}
+}

@@ -1,0 +1,10 @@
+@if (state.content(); as tooltip) {
+<div class="pointer-events-none fixed z-50 -translate-y-1/2" [style.left.px]="state.editorBoundaryLeft() + 8" [style.top.px]="tooltip.anchor.top + tooltip.anchor.height / 2">
+  <span class="flex flex-col whitespace-nowrap rounded-md border border-tooltip-foreground/15 bg-tooltip px-2 py-1 text-xs font-medium text-tooltip-foreground shadow-xl">
+    <span>{{ tooltip.label }}</span>
+    @if (tooltip.sublabel) {
+    <span class="text-[10px] font-normal opacity-70">{{ tooltip.sublabel }}</span>
+    }
+  </span>
+</div>
+}

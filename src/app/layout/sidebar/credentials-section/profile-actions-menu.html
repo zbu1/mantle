@@ -1,0 +1,27 @@
+<button #trigger type="button" (click)="onTriggerClick($event)" title="More actions"
+  [attr.aria-label]="'More actions for ' + displayName()" [attr.aria-expanded]="open()"
+  class="shrink-0 rounded p-1 text-muted-foreground opacity-0 hover:bg-surface hover:text-foreground focus:opacity-100 group-hover/row:opacity-100"
+  [class.opacity-100]="open()" [class.bg-surface]="open()" [class.text-foreground]="open()">
+  <svg lucideEllipsis [size]="12"></svg>
+</button>
+
+@if (open()) {
+<app-menu-surface #panel class="absolute right-0 top-full z-50 mt-1">
+  <app-menu-item label="Settings" [active]="hoveredItem() === 'settings'" (hovered)="hoveredItem.set('settings')"
+    (selected)="onSettings()">
+    <svg menuItemIcon lucideSettings [size]="14"></svg>
+  </app-menu-item>
+  <app-menu-item [label]="unlocked() ? 'Lock' : 'Unlock'" [active]="hoveredItem() === 'lock'"
+    (hovered)="hoveredItem.set('lock')" (selected)="onLock()">
+    @if (unlocked()) {
+    <svg menuItemIcon lucideLock [size]="14"></svg>
+    } @else {
+    <svg menuItemIcon lucideLockOpen [size]="14"></svg>
+    }
+  </app-menu-item>
+  <app-menu-item label="Change Master Password…" [active]="hoveredItem() === 'password'"
+    (hovered)="hoveredItem.set('password')" (selected)="onChangePassword()">
+    <svg menuItemIcon lucideKeyRound [size]="14"></svg>
+  </app-menu-item>
+</app-menu-surface>
+}

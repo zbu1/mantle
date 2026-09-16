@@ -78,3 +78,17 @@ export function flattenEncryptedNotes(root: VaultFolderNode): VaultNoteNode[] {
   visit(root);
   return notes;
 }
+
+/** Every note in the tree (plaintext and encrypted alike), in traversal order — used by the quick switcher. */
+export function flattenAllNotes(root: VaultFolderNode): VaultNoteNode[] {
+  const notes: VaultNoteNode[] = [];
+  const visit = (node: VaultNode): void => {
+    if (node.type === 'note') {
+      notes.push(node);
+      return;
+    }
+    for (const child of node.children) visit(child);
+  };
+  visit(root);
+  return notes;
+}

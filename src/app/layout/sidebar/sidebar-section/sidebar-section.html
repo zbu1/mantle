@@ -1,11 +1,11 @@
 <button type="button" (click)="toggle()"
-  class="flex shrink-0 items-center gap-1.5 rounded-t-md px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:bg-surface hover:text-foreground">
+  class="flex w-full min-w-0 shrink-0 items-center gap-1.5 rounded-t-md px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:bg-surface hover:text-foreground">
   <svg lucideChevronRight [size]="12" class="shrink-0 transition-transform duration-200"
     [class.rotate-90]="expanded()"></svg>
   <span class="shrink-0">
     <ng-content select="[sidebarSectionIcon]" />
   </span>
-  <span>{{ label() }}</span>
+  <span class="min-w-0 truncate">{{ label() }}</span>
 </button>
 
 @if (expanded()) {

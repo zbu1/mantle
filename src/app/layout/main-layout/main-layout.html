@@ -3,12 +3,16 @@
   <div class="flex flex-1 overflow-hidden">
     <app-icon-rail />
     <app-sidebar />
-    <main class="mr-2 mb-2 flex-1 overflow-hidden rounded-xl border border-border bg-background">
+    <main #editorBoundary class="mr-2 mb-2 flex-1 overflow-hidden rounded-xl border border-border bg-background">
       <app-content-area />
     </main>
   </div>
   <app-context-menu />
+  <app-encryption-panel />
   <app-dialog />
   <app-settings-modal />
   <app-vault-drag-preview />
+  <app-quick-switcher />
+  <app-command-palette />
+  <app-hover-tooltip-host />
 </div>

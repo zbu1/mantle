@@ -1,0 +1,46 @@
+@if (state.isOpen()) {
+<div class="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-[15vh]" (pointerdown)="onBackdropPointerDown($event)">
+  <div class="flex max-h-[60vh] w-[560px] flex-col overflow-hidden rounded-lg border border-border bg-surface text-surface-foreground shadow-xl">
+    <div class="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2.5">
+      <svg lucideCommand [size]="15" class="shrink-0 text-muted-foreground"></svg>
+      <input #input type="text" [value]="query()" (input)="onQueryInput(input.value)" placeholder="Type a command…"
+        spellcheck="false" autocomplete="off"
+        class="w-full min-w-0 border-0 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground" />
+    </div>
+    <div class="scrollbar-thin flex-1 overflow-y-auto py-1">
+      @for (item of results(); track item.id; let i = $index) {
+      <app-menu-item [label]="item.label" [active]="i === selectedIndex()" (hovered)="hover(i)" (selected)="select(item)">
+        <span menuItemIcon>
+          @switch (item.icon) {
+          @case ('file-search') { <svg lucideFileSearch2 [size]="14"></svg> }
+          @case ('file-plus') { <svg lucideFilePlus [size]="14"></svg> }
+          @case ('folder-plus') { <svg lucideFolderPlus [size]="14"></svg> }
+          @case ('save') { <svg lucideSave [size]="14"></svg> }
+          @case ('save-all') { <svg lucideSaveAll [size]="14"></svg> }
+          @case ('x') { <svg lucideX [size]="14"></svg> }
+          @case ('layers') { <svg lucideLayers [size]="14"></svg> }
+          @case ('folders') { <svg lucideFolders [size]="14"></svg> }
+          @case ('folder-x') { <svg lucideFolderX [size]="14"></svg> }
+          @case ('lock') { <svg lucideLock [size]="14"></svg> }
+          @case ('panel-left') { <svg lucidePanelLeft [size]="14"></svg> }
+          @case ('star') { <svg lucideStar [size]="14"></svg> }
+          @case ('clock') { <svg lucideClock [size]="14"></svg> }
+          @case ('tags') { <svg lucideTags [size]="14"></svg> }
+          @case ('shield-check') { <svg lucideShieldCheck [size]="14"></svg> }
+          @case ('arrow-left') { <svg lucideArrowLeft [size]="14"></svg> }
+          @case ('arrow-right') { <svg lucideArrowRight [size]="14"></svg> }
+          @case ('expand') { <svg lucideExpand [size]="14"></svg> }
+          @case ('refresh-cw') { <svg lucideRefreshCw [size]="14"></svg> }
+          @case ('settings') { <svg lucideSettings [size]="14"></svg> }
+          @case ('info') { <svg lucideInfo [size]="14"></svg> }
+          @case ('door-open') { <svg lucideDoorOpen [size]="14"></svg> }
+          }
+        </span>
+      </app-menu-item>
+      } @empty {
+      <div class="px-3 py-6 text-center text-xs text-muted-foreground">No matching commands</div>
+      }
+    </div>
+  </div>
+</div>
+}

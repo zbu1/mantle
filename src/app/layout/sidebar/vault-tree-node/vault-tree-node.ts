@@ -15,6 +15,7 @@ import { VaultSelectionState } from '../../../notes/vault-selection-state';
 import { SidebarItemButton } from '../sidebar-item-button/sidebar-item-button';
 import { ExplorerRow } from '../explorer-row/explorer-row';
 import { ExplorerBody } from '../explorer-body/explorer-body';
+import { HoverTooltip } from '../../../shared/hover-tooltip/hover-tooltip';
 
 // Created once at module load (rather than per-dragstart) so it's already
 // decoded by the time a drag begins — Chromium falls back to a generic
@@ -32,6 +33,7 @@ EMPTY_DRAG_IMAGE.src =
     ExplorerRow,
     ExplorerBody,
     VaultTreeNode,
+    HoverTooltip,
     LucideChevronRight,
     LucideFileText,
     LucideFolder,
@@ -55,7 +57,11 @@ export class VaultTreeNode {
   readonly openNoteInBackground = output<VaultNoteNode>();
   readonly noteContextMenu = output<{ event: MouseEvent; note: VaultNoteNode }>();
   readonly folderContextMenu = output<{ event: MouseEvent; folder: VaultFolderNode }>();
-  /** A locked note was clicked; the sidebar prompts to unlock its profile. */
+  /**
+   * A locked note was clicked. The sidebar opens it like any other note; the
+   * content area shows a "this note is locked" screen rather than prompting
+   * for a password immediately.
+   */
   readonly lockedClicked = output<VaultNoteNode>();
   readonly notesDropped = output<{ relPaths: string[]; destRelDir: string }>();
   readonly folderDropped = output<{ relPath: string; destRelDir: string }>();
@@ -105,6 +111,12 @@ export class VaultTreeNode {
 
   protected profileName(note: VaultNoteNode): string {
     return this.credentialsState.displayNameOf(note.profile);
+  }
+
+  /** Sublabel for the note's hover tooltip: encryption state, and profile name if encrypted. */
+  protected encryptionStatus(note: VaultNoteNode): string {
+    if (!note.encrypted) return 'Not encrypted';
+    return `${this.isLocked(note) ? 'Locked' : 'Unlocked'} · ${this.profileName(note)}`;
   }
 
   protected onNoteClick(note: VaultNoteNode, event: MouseEvent): void {

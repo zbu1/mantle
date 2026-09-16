@@ -33,8 +33,8 @@ describe('CredentialProfileRow', () => {
     await fixture.whenStable();
   });
 
-  function rowButton(): HTMLButtonElement {
-    return fixture.nativeElement.querySelector('button')!;
+  function rowButton(): HTMLElement {
+    return fixture.nativeElement.querySelector('[role="button"]')!;
   }
 
   /** The trailing lock/unlock button — the only one carrying an aria-label. */
@@ -85,16 +85,42 @@ describe('CredentialProfileRow', () => {
     expect(content.style.gridTemplateRows).toBe('0fr');
   });
 
-  it('the trailing button locks an unlocked profile', async () => {
+  it('the trailing button arms a confirmation before locking an unlocked profile', async () => {
     const lock = jest.spyOn(credentials, 'lock').mockResolvedValue();
     fixture.componentRef.setInput('unlocked', true);
     fixture.detectChanges();
     await fixture.whenStable();
 
     lockButton()!.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(lock).not.toHaveBeenCalled();
+    expect(fixture.nativeElement.textContent).toContain('Lock profile?');
+
+    lockButton()!.click();
     await fixture.whenStable();
 
     expect(lock).toHaveBeenCalledWith('my-diary');
+  });
+
+  it('cancelling the lock confirmation leaves the profile unlocked', async () => {
+    const lock = jest.spyOn(credentials, 'lock').mockResolvedValue();
+    fixture.componentRef.setInput('unlocked', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    lockButton()!.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const cancelButton = fixture.nativeElement.querySelector('button[aria-label="Cancel locking"]') as HTMLButtonElement;
+    cancelButton.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(fixture.nativeElement.textContent).not.toContain('Lock profile?');
+    expect(lock).not.toHaveBeenCalled();
   });
 
   it('offers no lock button for an unknown profile', async () => {
@@ -103,6 +129,23 @@ describe('CredentialProfileRow', () => {
     await fixture.whenStable();
 
     expect(lockButton()).toBeNull();
+  });
+
+  it('the more-actions menu locks/unlocks immediately, without the confirm step', async () => {
+    const promptUnlock = jest.spyOn(credentials, 'promptUnlock').mockResolvedValue(true);
+
+    const menuTrigger = fixture.nativeElement.querySelector('button[aria-label="More actions for My Diary"]') as HTMLButtonElement;
+    menuTrigger.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const lockItem = Array.from(fixture.nativeElement.querySelectorAll('button[role="menuitem"]')).find(
+      (el) => (el as HTMLElement).textContent?.trim() === 'Unlock',
+    ) as HTMLButtonElement;
+    lockItem.click();
+    await fixture.whenStable();
+
+    expect(promptUnlock).toHaveBeenCalledWith('my-diary');
   });
 
   it('explains why an unknown profile cannot be unlocked', async () => {

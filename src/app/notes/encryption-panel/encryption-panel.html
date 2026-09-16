@@ -1,0 +1,87 @@
+@if (note()) {
+<app-menu-surface #panel [wide]="true" class="fixed z-50" [style]="style()">
+  <div class="flex items-start gap-2 px-3 py-2">
+    <span class="mt-0.5 flex size-4 shrink-0 items-center justify-center">
+      @switch (statusIcon()) {
+        @case ('locked') { <svg lucideLock [size]="14" class="text-muted-foreground"></svg> }
+        @case ('unlocked') { <svg lucideLockOpen [size]="14" class="text-primary"></svg> }
+        @case ('plain') { <svg lucideFileText [size]="14" class="text-muted-foreground"></svg> }
+      }
+    </span>
+    <div class="min-w-0 flex-1">
+      <div class="text-xs font-medium text-foreground">{{ statusTitle() }}</div>
+      <div class="truncate text-xs text-muted-foreground">{{ statusSubtitle() }}</div>
+    </div>
+  </div>
+  <app-menu-separator />
+  <div class="space-y-1 px-3 py-2">
+    <div class="flex gap-2 text-xs">
+      <span class="w-14 shrink-0 text-muted-foreground">File</span>
+      <button type="button" title="Copy file name" [disabled]="!fileName()" (click)="copy('file', fileName())"
+        class="min-w-0 flex-1 truncate text-left text-foreground/80 hover:text-foreground hover:underline disabled:cursor-not-allowed disabled:no-underline"
+      >{{ copiedField() === 'file' ? 'Copied!' : fileName() }}</button>
+    </div>
+    <div class="flex gap-2 text-xs">
+      <span class="w-14 shrink-0 text-muted-foreground">Location</span>
+      <button type="button" title="Copy location" [disabled]="!fileLocation()" (click)="copy('location', fileLocation())"
+        class="min-w-0 flex-1 truncate text-left text-foreground/80 hover:text-foreground hover:underline disabled:cursor-not-allowed disabled:no-underline"
+      >{{ copiedField() === 'location' ? 'Copied!' : fileLocation() }}</button>
+    </div>
+    <div class="flex gap-2 text-xs">
+      <span class="w-14 shrink-0 text-muted-foreground">Format</span>
+      <span class="min-w-0 flex-1 truncate text-foreground/80">{{ fileFormat() }}</span>
+    </div>
+  </div>
+  @if (canMove()) {
+  <app-menu-separator />
+  <div class="flex items-center gap-2 px-3 py-2">
+    <label for="encryption-panel-move-to" class="shrink-0 text-xs text-muted-foreground">Move to</label>
+    <select id="encryption-panel-move-to" class="min-w-0 flex-1 rounded border border-border bg-background px-2 py-1 text-xs text-foreground"
+      (change)="onMoveSelect($event)">
+      <option value="" selected>Choose a profile…</option>
+      @for (p of otherProfiles(); track p.id) {
+        <option [value]="p.id">{{ p.displayName }}</option>
+      }
+    </select>
+  </div>
+  }
+  @if (canEncrypt()) {
+  <app-menu-separator />
+  <div class="flex items-center gap-2 px-3 py-2">
+    <label for="encryption-panel-encrypt-with" class="shrink-0 text-xs text-muted-foreground">Encrypt with</label>
+    <select id="encryption-panel-encrypt-with" class="min-w-0 flex-1 rounded border border-border bg-background px-2 py-1 text-xs text-foreground"
+      (change)="onEncryptSelect($event)">
+      <option value="" selected>Choose a profile…</option>
+      @for (p of encryptProfiles(); track p.id) {
+        <option [value]="p.id">{{ p.displayName }}</option>
+      }
+      <option [value]="newProfileValue">New profile…</option>
+    </select>
+  </div>
+  }
+  @if (items().length) {
+  <app-menu-separator />
+  @for (item of items(); track $index) {
+    @if (item.kind === 'separator') {
+      <app-menu-separator />
+    } @else {
+      <app-menu-item
+        [label]="item.label"
+        [danger]="item.danger ?? false"
+        [disabled]="item.disabled ?? false"
+        [active]="$index === selectedIndex()"
+        (hovered)="selectedIndex.set($index)"
+        (selected)="select(item)"
+      >
+        <span menuItemIcon class="contents">
+          @switch (item.icon) {
+            @case ('lock') { <svg lucideLock [size]="14"></svg> }
+            @case ('unlock') { <svg lucideLockOpen [size]="14"></svg> }
+          }
+        </span>
+      </app-menu-item>
+    }
+  }
+  }
+</app-menu-surface>
+}

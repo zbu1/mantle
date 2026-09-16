@@ -1,0 +1,9 @@
+@if (confirmingLock()) {
+<span class="ml-auto shrink-0 pl-1 text-[11px] font-medium text-destructive">Lock profile?</span>
+<button type="button" (click)="onCancel($event)" title="Cancel" aria-label="Cancel locking"
+  class="shrink-0 rounded p-1 text-muted-foreground hover:bg-surface hover:text-foreground">
+  <svg lucideX [size]="12"></svg>
+</button>
+} @else {
+<span class="ml-auto shrink-0 pl-1 text-[11px] text-muted-foreground">{{ noteCount() }}</span>
+}

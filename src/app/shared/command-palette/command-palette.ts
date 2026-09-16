@@ -1,0 +1,391 @@
+import { Component, ElementRef, HostListener, computed, effect, inject, signal, viewChild } from '@angular/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import {
+  LucideArrowLeft,
+  LucideArrowRight,
+  LucideClock,
+  LucideCommand,
+  LucideDoorOpen,
+  LucideExpand,
+  LucideFilePlus,
+  LucideFileSearch2,
+  LucideFolderPlus,
+  LucideFolderX,
+  LucideFolders,
+  LucideInfo,
+  LucideLayers,
+  LucideLock,
+  LucidePanelLeft,
+  LucideRefreshCw,
+  LucideSave,
+  LucideSaveAll,
+  LucideSettings,
+  LucideShieldCheck,
+  LucideStar,
+  LucideTags,
+  LucideX,
+} from '@lucide/angular';
+import { MenuItem } from '../menu/menu-item';
+import { DialogState } from '../dialog/dialog-state';
+import { QuickSwitcherState } from '../quick-switcher/quick-switcher-state';
+import { SettingsModalState } from '../settings/settings-modal-state';
+import { CredentialsState } from '../../notes/credentials-state';
+import { NotesState } from '../../notes/notes-state';
+import { TabsState } from '../../notes/tabs-state';
+import { VaultRenameState } from '../../notes/vault-rename-state';
+import { VaultState } from '../../notes/vault-state';
+import { isTauri } from '../../core/tauri-env';
+import { SectionId, SidebarState } from '../../layout/sidebar/sidebar-state';
+import { CommandPaletteState } from './command-palette-state';
+import { CommandPaletteIcon, CommandPaletteItem, filterCommandPaletteItems } from './command-palette.model';
+
+interface SectionDef {
+  id: SectionId;
+  label: string;
+  icon: CommandPaletteIcon;
+}
+
+const SIDEBAR_SECTIONS: SectionDef[] = [
+  { id: 'favorites', label: 'Favorites', icon: 'star' },
+  { id: 'recent', label: 'Recent Files', icon: 'clock' },
+  { id: 'workspace', label: 'Vault', icon: 'folders' },
+  { id: 'tags', label: 'Tags', icon: 'tags' },
+  { id: 'credentials', label: 'Credential Profiles', icon: 'shield-check' },
+];
+
+/**
+ * App-wide Command Palette bound to Ctrl+Shift+P — rendered once at the
+ * layout root, like `Dialog`/`SettingsModal`.
+ *
+ * Only lists commands that are both real (not `MainMenu`'s Edit-menu stubs —
+ * undo/redo/cut/copy/paste have no state to run against yet) and meaningfully
+ * app-wide rather than needing a specific note/folder as its target (those
+ * stay in their existing context menus). Each command also only appears when
+ * it currently applies — e.g. "Save Note" only with a tab open — rather than
+ * showing and disabling, since there's nothing useful to explain about why a
+ * given command can't run right now.
+ */
+@Component({
+  selector: 'app-command-palette',
+  imports: [
+    MenuItem,
+    LucideCommand,
+    LucideFileSearch2,
+    LucideFilePlus,
+    LucideFolderPlus,
+    LucideSave,
+    LucideSaveAll,
+    LucideX,
+    LucideLayers,
+    LucideFolders,
+    LucideFolderX,
+    LucideLock,
+    LucidePanelLeft,
+    LucideStar,
+    LucideClock,
+    LucideTags,
+    LucideShieldCheck,
+    LucideArrowLeft,
+    LucideArrowRight,
+    LucideExpand,
+    LucideRefreshCw,
+    LucideSettings,
+    LucideInfo,
+    LucideDoorOpen,
+  ],
+  templateUrl: './command-palette.html',
+})
+export class CommandPalette {
+  protected readonly state = inject(CommandPaletteState);
+  private readonly vaultState = inject(VaultState);
+  private readonly tabsState = inject(TabsState);
+  private readonly notesState = inject(NotesState);
+  private readonly renameState = inject(VaultRenameState);
+  private readonly credentialsState = inject(CredentialsState);
+  private readonly sidebarState = inject(SidebarState);
+  private readonly settingsModalState = inject(SettingsModalState);
+  private readonly quickSwitcherState = inject(QuickSwitcherState);
+  private readonly dialogState = inject(DialogState);
+
+  protected readonly query = this.state.query;
+  protected readonly selectedIndex = signal(0);
+
+  private readonly activeTab = computed(() => {
+    const id = this.tabsState.activeId();
+    return id ? this.tabsState.tabs().find((tab) => tab.id === id) : undefined;
+  });
+
+  private readonly commands = computed<CommandPaletteItem[]>(() => {
+    const hasVault = !!this.vaultState.rootPath();
+    const activeTab = this.activeTab();
+    const hasTabs = this.tabsState.tabs().length > 0;
+    const sidebarCollapsed = this.sidebarState.collapsed();
+
+    const items: CommandPaletteItem[] = [
+      {
+        id: 'quick-switcher',
+        label: 'Go to Note…',
+        icon: 'file-search',
+        keywords: ['quick', 'switcher', 'open', 'find'],
+        run: () => this.quickSwitcherState.open(),
+      },
+    ];
+
+    if (hasVault) {
+      items.push({
+        id: 'new-note',
+        label: 'New Note',
+        icon: 'file-plus',
+        keywords: ['create', 'note'],
+        run: () => void this.vaultState.createAndOpenNote(),
+      });
+      items.push({
+        id: 'new-folder',
+        label: 'New Folder',
+        icon: 'folder-plus',
+        keywords: ['create', 'folder', 'directory'],
+        run: () => void this.newFolder(),
+      });
+    }
+
+    if (activeTab) {
+      items.push({
+        id: 'save',
+        label: 'Save Note',
+        icon: 'save',
+        keywords: ['save', 'write'],
+        run: () => void this.notesState.flushPending([activeTab.noteId]),
+      });
+      items.push({
+        id: 'close-tab',
+        label: 'Close Tab',
+        icon: 'x',
+        keywords: ['close', 'tab'],
+        run: () => this.tabsState.closeTab(activeTab.id),
+      });
+    }
+
+    if (hasTabs) {
+      items.push({
+        id: 'save-all',
+        label: 'Save All',
+        icon: 'save-all',
+        keywords: ['save', 'all'],
+        run: () => void this.notesState.flushPending(),
+      });
+      items.push({
+        id: 'close-all-tabs',
+        label: 'Close All Tabs',
+        icon: 'layers',
+        keywords: ['close', 'all', 'tabs'],
+        run: () => this.tabsState.closeAllTabs(),
+      });
+    }
+
+    items.push({
+      id: 'open-vault',
+      label: 'Open Vault…',
+      icon: 'folders',
+      keywords: ['open', 'vault', 'folder'],
+      run: () => void this.vaultState.pickVault(),
+    });
+
+    if (hasVault) {
+      items.push({
+        id: 'close-vault',
+        label: 'Close Vault',
+        icon: 'folder-x',
+        keywords: ['close', 'vault'],
+        run: () => this.vaultState.closeVault(),
+      });
+    }
+
+    items.push({
+      id: 'lock-all',
+      label: 'Lock All Profiles',
+      icon: 'lock',
+      keywords: ['lock', 'encryption', 'profiles'],
+      run: () => void this.credentialsState.lockAll(),
+    });
+
+    items.push({
+      id: 'toggle-sidebar',
+      label: sidebarCollapsed ? 'Show Sidebar' : 'Hide Sidebar',
+      icon: 'panel-left',
+      keywords: ['sidebar', 'toggle', 'panel'],
+      run: () => this.sidebarState.toggleCollapsed(),
+    });
+
+    for (const section of SIDEBAR_SECTIONS) {
+      const expanded = this.sidebarState.isSectionExpanded(section.id);
+      items.push({
+        id: `section-${section.id}`,
+        label: `${expanded ? 'Collapse' : 'Expand'} ${section.label}`,
+        icon: section.icon,
+        keywords: ['sidebar', 'section', section.label.toLowerCase()],
+        run: () => this.sidebarState.toggleSection(section.id),
+      });
+    }
+
+    if (this.tabsState.canGoBack()) {
+      items.push({
+        id: 'go-back',
+        label: 'Go Back',
+        icon: 'arrow-left',
+        keywords: ['back', 'navigate', 'history'],
+        run: () => this.tabsState.goBack(),
+      });
+    }
+    if (this.tabsState.canGoForward()) {
+      items.push({
+        id: 'go-forward',
+        label: 'Go Forward',
+        icon: 'arrow-right',
+        keywords: ['forward', 'navigate', 'history'],
+        run: () => this.tabsState.goForward(),
+      });
+    }
+
+    items.push({
+      id: 'fullscreen',
+      label: 'Toggle Fullscreen',
+      icon: 'expand',
+      keywords: ['fullscreen', 'maximize'],
+      run: () => void this.toggleFullscreen(),
+    });
+    items.push({
+      id: 'reload',
+      label: 'Reload',
+      icon: 'refresh-cw',
+      keywords: ['reload', 'refresh'],
+      run: () => location.reload(),
+    });
+    items.push({
+      id: 'settings',
+      label: 'Open Settings…',
+      icon: 'settings',
+      keywords: ['settings', 'preferences'],
+      run: () => this.settingsModalState.open(),
+    });
+    items.push({
+      id: 'about',
+      label: 'About Mantle',
+      icon: 'info',
+      keywords: ['about', 'version'],
+      run: () => void this.showAbout(),
+    });
+
+    if (isTauri()) {
+      items.push({
+        id: 'exit',
+        label: 'Exit',
+        icon: 'door-open',
+        keywords: ['exit', 'quit'],
+        run: () => getCurrentWindow().close(),
+      });
+    }
+
+    return items;
+  });
+
+  protected readonly results = computed(() => filterCommandPaletteItems(this.commands(), this.query()));
+
+  private readonly input = viewChild<ElementRef<HTMLInputElement>>('input');
+
+  constructor() {
+    effect(() => {
+      if (this.state.isOpen()) this.input()?.nativeElement.focus();
+    });
+    // Keeps the highlighted row in range whenever the result set changes shape.
+    effect(() => {
+      this.results();
+      this.selectedIndex.set(0);
+    });
+  }
+
+  @HostListener('document:keydown', ['$event'])
+  protected onKeydown(event: KeyboardEvent): void {
+    const mod = event.ctrlKey || event.metaKey;
+    if (mod && event.shiftKey && event.key.toLowerCase() === 'p') {
+      event.preventDefault();
+      this.quickSwitcherState.close();
+      this.state.toggle();
+      return;
+    }
+    if (!this.state.isOpen()) return;
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      this.state.close();
+    } else if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      this.move(1);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      this.move(-1);
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      this.confirmSelected();
+    }
+  }
+
+  @HostListener('window:blur')
+  protected onBlur(): void {
+    this.state.close();
+  }
+
+  protected onBackdropPointerDown(event: PointerEvent): void {
+    if (event.target === event.currentTarget) this.state.close();
+  }
+
+  protected onQueryInput(value: string): void {
+    this.query.set(value);
+  }
+
+  protected hover(index: number): void {
+    this.selectedIndex.set(index);
+  }
+
+  protected select(item: CommandPaletteItem): void {
+    this.run(item);
+  }
+
+  private move(delta: number): void {
+    const count = this.results().length;
+    if (count === 0) return;
+    this.selectedIndex.update((i) => (i + delta + count) % count);
+  }
+
+  private confirmSelected(): void {
+    const item = this.results()[this.selectedIndex()];
+    if (item) this.run(item);
+  }
+
+  private run(item: CommandPaletteItem): void {
+    this.state.close();
+    item.run();
+  }
+
+  private async newFolder(): Promise<void> {
+    const created = await this.vaultState.createFolderWithUniqueName();
+    this.renameState.start(created.relPath);
+  }
+
+  private async toggleFullscreen(): Promise<void> {
+    if (isTauri()) {
+      const win = getCurrentWindow();
+      const fullscreen = await win.isFullscreen();
+      await win.setFullscreen(!fullscreen);
+      return;
+    }
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else await document.documentElement.requestFullscreen();
+  }
+
+  private async showAbout(): Promise<void> {
+    await this.dialogState.alert(
+      'Mantle is a note-taking desktop app — an Obsidian-style vault of Markdown notes, with optional zero-knowledge encryption.',
+      { title: 'About Mantle', confirmLabel: 'OK' },
+    );
+  }
+}

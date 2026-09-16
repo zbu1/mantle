@@ -5,7 +5,7 @@
   @if (!state.collapsed()) {
   <app-sidebar-toolbar (newNote)="onNewNote()" (newFolder)="onNewFolder()" />
 
-  <div class="scrollbar-thin mr-1 flex flex-1 flex-col gap-0.5 overflow-y-auto p-2">
+  <div class="scrollbar-thin mr-1 flex flex-1 flex-col gap-0.5 overflow-y-auto overscroll-contain p-2">
     <app-sidebar-section id="favorites" label="Favorites">
       <svg sidebarSectionIcon lucideStar [size]="12"></svg>
       @for (note of favorites; track note.id) {
