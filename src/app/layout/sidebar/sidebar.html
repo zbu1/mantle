@@ -6,6 +6,7 @@
   <app-sidebar-toolbar (newNote)="onNewNote()" (newFolder)="onNewFolder()" />
 
   <div class="scrollbar-thin mr-1 flex flex-1 flex-col gap-0.5 overflow-y-auto overscroll-contain p-2">
+    @if (state.isSectionVisible('favorites')) {
     <app-sidebar-section id="favorites" label="Favorites">
       <svg sidebarSectionIcon lucideStar [size]="12"></svg>
       @for (note of favorites; track note.id) {
@@ -15,17 +16,37 @@
       </app-sidebar-item-button>
       }
     </app-sidebar-section>
+    }
 
+    @if (state.isSectionVisible('recent')) {
     <app-sidebar-section id="recent" label="Recent Files">
       <svg sidebarSectionIcon lucideClock [size]="12"></svg>
-      @for (note of recentFiles; track note.id) {
-      <app-sidebar-item-button [label]="note.title" (clicked)="openNote(note)"
-        (middleClicked)="openNoteInBackground(note)" (contextMenu)="openNoteContextMenu($event, note)">
+      @for (row of visibleRecents(); track row.note.relPath) {
+      <app-sidebar-item-button [label]="row.note.name" (clicked)="onOpenNote(row.note)"
+        (middleClicked)="onOpenNoteInBackground(row.note)" (contextMenu)="onRecentContextMenu($event, row)">
+        @if (row.locked) {
+        <svg sidebarItemIcon lucideLock [size]="13" class="shrink-0"></svg>
+        } @else {
         <svg sidebarItemIcon lucideFileText [size]="14" class="shrink-0"></svg>
-        <span sidebarItemTrailing class="shrink-0 text-xs text-muted-foreground">{{ note.updatedAt }}</span>
+        }
+        <span sidebarItemTrailing class="shrink-0 text-xs text-muted-foreground">{{ recentTime(row) }}</span>
       </app-sidebar-item-button>
+      } @empty {
+      <div class="py-1 pl-9 pr-2 text-xs text-muted-foreground">No recent notes yet.</div>
+      }
+      @if (hiddenRecentCount() > 0) {
+      <button type="button" (click)="showAllRecents.set(true)"
+        class="w-full rounded-md py-1 pl-9 pr-2 text-left text-xs text-muted-foreground hover:bg-surface hover:text-foreground">
+        Show {{ hiddenRecentCount() }} more
+      </button>
+      } @else if (canCollapseRecents()) {
+      <button type="button" (click)="showAllRecents.set(false)"
+        class="w-full rounded-md py-1 pl-9 pr-2 text-left text-xs text-muted-foreground hover:bg-surface hover:text-foreground">
+        Show less
+      </button>
       }
     </app-sidebar-section>
+    }
 
     <app-sidebar-section id="workspace" label="Vault">
       <svg sidebarSectionIcon lucideFolders [size]="12"></svg>
@@ -55,6 +76,7 @@
       </div>
     </app-sidebar-section>
 
+    @if (state.isSectionVisible('tags')) {
     <app-sidebar-section id="tags" label="Tags">
       <svg sidebarSectionIcon lucideTags [size]="12"></svg>
       @for (group of tagGroups; track group.name) {
@@ -62,8 +84,11 @@
         (openNoteInBackground)="openNoteInBackground($event)" (noteContextMenu)="onTagNoteContextMenu($event)" />
       }
     </app-sidebar-section>
+    }
 
+    @if (state.isSectionVisible('credentials')) {
     <app-credentials-section (openNote)="onOpenNote($event)" (noteContextMenu)="onNoteContextMenu($event)" />
+    }
   </div>
   }
 

@@ -3,7 +3,7 @@
   <div class="flex max-h-[60vh] w-[560px] flex-col overflow-hidden rounded-lg border border-border bg-surface text-surface-foreground shadow-xl">
     <div class="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2.5">
       <svg lucideFileSearch2 [size]="15" class="shrink-0 text-muted-foreground"></svg>
-      <input #input type="text" [value]="query()" (input)="onQueryInput(input.value)" placeholder="Go to note…"
+      <input #input type="text" [value]="query()" (input)="onQueryInput(input.value)" [placeholder]="recentsOnly() ? 'Open recent note…' : 'Go to note…'"
         spellcheck="false" autocomplete="off"
         class="w-full min-w-0 border-0 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground" />
     </div>
@@ -22,7 +22,7 @@
       </app-menu-item>
       } @empty {
       <div class="px-3 py-6 text-center text-xs text-muted-foreground">
-        {{ !hasVault() ? 'Open a vault to search notes' : query() ? 'No matching notes' : 'No notes in this vault' }}
+        {{ !hasVault() ? 'Open a vault to search notes' : query() ? 'No matching notes' : recentsOnly() ? 'No recent notes yet' : 'No notes in this vault' }}
       </div>
       }
     </div>

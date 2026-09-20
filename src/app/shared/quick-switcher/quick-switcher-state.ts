@@ -5,9 +5,12 @@ import { Injectable, signal } from '@angular/core';
 export class QuickSwitcherState {
   readonly isOpen = signal(false);
   readonly query = signal('');
+  /** When set, only recently opened notes are listed ("Open Recent Note…") instead of the whole vault. */
+  readonly recentsOnly = signal(false);
 
-  open(): void {
+  open(options: { recentsOnly?: boolean } = {}): void {
     this.query.set('');
+    this.recentsOnly.set(options.recentsOnly ?? false);
     this.isOpen.set(true);
   }
 

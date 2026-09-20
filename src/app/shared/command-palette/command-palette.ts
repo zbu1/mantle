@@ -32,6 +32,7 @@ import { SettingsModalState } from '../settings/settings-modal-state';
 import { CredentialsState } from '../../notes/credentials-state';
 import { NotesState } from '../../notes/notes-state';
 import { TabsState } from '../../notes/tabs-state';
+import { VaultMetaState } from '../../notes/vault-meta-state';
 import { VaultRenameState } from '../../notes/vault-rename-state';
 import { VaultState } from '../../notes/vault-state';
 import { isTauri } from '../../core/tauri-env';
@@ -106,6 +107,7 @@ export class CommandPalette {
   private readonly settingsModalState = inject(SettingsModalState);
   private readonly quickSwitcherState = inject(QuickSwitcherState);
   private readonly dialogState = inject(DialogState);
+  private readonly vaultMeta = inject(VaultMetaState);
 
   protected readonly query = this.state.query;
   protected readonly selectedIndex = signal(0);
@@ -117,6 +119,7 @@ export class CommandPalette {
 
   private readonly commands = computed<CommandPaletteItem[]>(() => {
     const hasVault = !!this.vaultState.rootPath();
+    const hasRecents = this.vaultMeta.recentNotes().length > 0;
     const activeTab = this.activeTab();
     const hasTabs = this.tabsState.tabs().length > 0;
     const sidebarCollapsed = this.sidebarState.collapsed();
@@ -146,6 +149,22 @@ export class CommandPalette {
         keywords: ['create', 'folder', 'directory'],
         run: () => void this.newFolder(),
       });
+      if (hasRecents) {
+        items.push({
+          id: 'open-recent-note',
+          label: 'Open Recent Note…',
+          icon: 'clock',
+          keywords: ['recent', 'history', 'open', 'note', 'switch'],
+          run: () => this.quickSwitcherState.open({ recentsOnly: true }),
+        });
+        items.push({
+          id: 'clear-recent-files',
+          label: 'Clear Recent Files',
+          icon: 'x',
+          keywords: ['recent', 'history', 'clear', 'reset', 'forget'],
+          run: () => this.vaultMeta.clearRecents(),
+        });
+      }
     }
 
     if (activeTab) {
@@ -217,6 +236,7 @@ export class CommandPalette {
     });
 
     for (const section of SIDEBAR_SECTIONS) {
+      if (!this.sidebarState.isSectionVisible(section.id)) continue;
       const expanded = this.sidebarState.isSectionExpanded(section.id);
       items.push({
         id: `section-${section.id}`,

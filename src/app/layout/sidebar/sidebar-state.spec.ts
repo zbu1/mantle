@@ -83,6 +83,28 @@ describe('SidebarState', () => {
     expect(COLLAPSE_THRESHOLD).toBeGreaterThan(0);
   });
 
+  it('shows every section by default and toggles visibility', () => {
+    const state = TestBed.inject(SidebarState);
+    expect(state.isSectionVisible('favorites')).toBe(true);
+    state.toggleSectionVisibility('favorites');
+    expect(state.isSectionVisible('favorites')).toBe(false);
+    state.toggleSectionVisibility('favorites');
+    expect(state.isSectionVisible('favorites')).toBe(true);
+  });
+
+  it('never hides the Vault section', () => {
+    const state = TestBed.inject(SidebarState);
+    expect(state.canHideSection('workspace')).toBe(false);
+    state.toggleSectionVisibility('workspace');
+    expect(state.isSectionVisible('workspace')).toBe(true);
+  });
+
+  it('hydrates hidden sections, ignoring the Vault and unknown ids', () => {
+    localStorage.setItem('mantle.sidebar.v1', JSON.stringify({ hidden: ['tags', 'workspace', 'bogus'] }));
+    const state = TestBed.inject(SidebarState);
+    expect(state.hiddenSections()).toEqual(['tags']);
+  });
+
   it('persists state changes back to localStorage', () => {
     const setItemSpy = jest.spyOn(Storage.prototype, 'setItem');
     const state = TestBed.inject(SidebarState);

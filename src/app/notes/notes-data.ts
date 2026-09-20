@@ -87,21 +87,7 @@ export const MOCK_NOTES: MockNote[] = [
   },
 ];
 
-const notesById = new Map(MOCK_NOTES.map((note) => [note.id, note]));
-
-function notesByIds(ids: string[]): MockNote[] {
-  return ids.map((id) => notesById.get(id)).filter((note): note is MockNote => !!note);
-}
-
 export const FAVORITE_NOTES: MockNote[] = MOCK_NOTES.filter((note) => note.favorite);
-
-export const RECENT_NOTES: MockNote[] = notesByIds([
-  'daily-standup',
-  'architecture-notes',
-  'todo',
-  'ideas',
-  'changelog',
-]);
 
 export interface TagGroup {
   name: string;

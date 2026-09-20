@@ -1,4 +1,4 @@
-import { Injectable, effect, inject, signal, untracked } from '@angular/core';
+import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { join } from '@tauri-apps/api/path';
@@ -6,6 +6,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { flattenVaultNotes, withRenamedNote, VaultFolderNode } from './vault-tree.model';
 import { TabsState } from './tabs-state';
+import { VaultMetaState } from './vault-meta-state';
 import { formatError, logError, logInfo } from '../core/logger';
 
 const STORAGE_KEY = 'mantle.vault.v1';
@@ -49,6 +50,7 @@ export interface CreatedFolder {
 @Injectable({ providedIn: 'root' })
 export class VaultState {
   private readonly tabsState = inject(TabsState);
+  private readonly vaultMeta = inject(VaultMetaState);
 
   readonly rootPath = signal<string | null>(readStoredPath());
   readonly tree = signal<VaultFolderNode | null>(null);
@@ -61,6 +63,14 @@ export class VaultState {
   /** Baseline from the last scan, used to detect externally-added/removed notes. Reset across vault switches. */
   private previousRoot: string | null = null;
   private previousNotes: Map<string, string> | null = null;
+
+  /** relPath of the note that just became active and is waiting to appear in the tree before being recorded as recent. */
+  private pendingRecent: string | null = null;
+
+  private readonly activeNoteId = computed(() => {
+    const activeId = this.tabsState.activeId();
+    return this.tabsState.tabs().find((tab) => tab.id === activeId)?.noteId ?? null;
+  });
 
   constructor() {
     effect(() => {
@@ -85,6 +95,32 @@ export class VaultState {
       } catch {
         // storage unavailable (e.g. private browsing) — ignore
       }
+    });
+
+    // Load the vault's `.mantle/state.json` (recent notes, ...) alongside the vault itself.
+    effect(() => {
+      const path = this.rootPath();
+      untracked(() => {
+        this.pendingRecent = null;
+        if (path) void this.vaultMeta.load(path);
+        else this.vaultMeta.unload();
+      });
+    });
+
+    // A note becoming the active tab counts as opening it. The tab restored at
+    // launch is already active before the metadata finishes loading, so it is
+    // (deliberately) never recorded. A note that isn't in the tree yet — e.g.
+    // one just created, before the watcher's rescan — waits for the tree.
+    effect(() => {
+      const relPath = this.activeNoteId();
+      untracked(() => {
+        this.pendingRecent = this.vaultMeta.loaded() ? relPath : null;
+        this.recordPendingRecent();
+      });
+    });
+    effect(() => {
+      this.tree();
+      untracked(() => this.recordPendingRecent());
     });
 
     // Keep a native filesystem watcher pointed at the current vault so
@@ -135,6 +171,14 @@ export class VaultState {
     this.tabsState.closeAllTabs();
   }
 
+  private recordPendingRecent(): void {
+    const relPath = this.pendingRecent;
+    const tree = this.tree();
+    if (!relPath || !tree || !flattenVaultNotes(tree).has(relPath)) return;
+    this.pendingRecent = null;
+    this.vaultMeta.recordOpened(relPath);
+  }
+
   private rememberRecentVault(path: string): void {
     const current = untracked(this.recentVaults);
     const next = [path, ...current.filter((p) => p !== path)].slice(0, MAX_RECENT_VAULTS);
@@ -180,10 +224,14 @@ export class VaultState {
       const [oldPath] = removed;
       const [newPath] = added;
       this.tabsState.renameNoteId(oldPath, newPath, after.get(newPath)!);
+      this.vaultMeta.renameRecent(oldPath, newPath);
       return;
     }
 
-    for (const relPath of removed) this.tabsState.markMissing(relPath);
+    for (const relPath of removed) {
+      this.tabsState.markMissing(relPath);
+      this.vaultMeta.removeRecent(relPath);
+    }
     for (const relPath of added) this.tabsState.clearMissing(relPath);
   }
 

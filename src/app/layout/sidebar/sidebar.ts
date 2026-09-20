@@ -1,5 +1,5 @@
-import { Component, HostListener, effect, inject, signal } from '@angular/core';
-import { LucideClock, LucideFileText, LucideFolders, LucideStar, LucideTags } from '@lucide/angular';
+import { Component, DestroyRef, HostListener, computed, effect, inject, signal } from '@angular/core';
+import { LucideClock, LucideFileText, LucideFolders, LucideLock, LucideStar, LucideTags } from '@lucide/angular';
 import { SidebarSection } from './sidebar-section/sidebar-section';
 import { SidebarItemButton } from './sidebar-item-button/sidebar-item-button';
 import { SidebarToolbar } from './sidebar-toolbar/sidebar-toolbar';
@@ -8,17 +8,21 @@ import { CredentialsSection } from './credentials-section/credentials-section';
 import { TagGroupRow } from './tag-group-row/tag-group-row';
 import { CredentialsState } from '../../notes/credentials-state';
 import { NoteEncryptionActions } from '../../notes/note-encryption-actions';
-import { FAVORITE_NOTES, MockNote, RECENT_NOTES, TAG_GROUPS } from '../../notes/notes-data';
+import { FAVORITE_NOTES, MockNote, TAG_GROUPS } from '../../notes/notes-data';
 import { COLLAPSE_THRESHOLD, SidebarState } from './sidebar-state';
 import { NotesState } from '../../notes/notes-state';
 import { TabsState } from '../../notes/tabs-state';
 import { VaultState } from '../../notes/vault-state';
+import { VaultMetaState } from '../../notes/vault-meta-state';
+import { formatRelativeTime } from '../../notes/relative-time';
 import { VaultClipboardState } from '../../notes/vault-clipboard-state';
 import { VaultDragState } from '../../notes/vault-drag-state';
 import { VaultRenameState } from '../../notes/vault-rename-state';
 import { VaultSelectionState } from '../../notes/vault-selection-state';
 import {
+  flattenAllNotes,
   flattenVaultNotes,
+  isNoteLocked,
   VAULT_FOLDER_DRAG_MIME,
   VAULT_NOTE_DRAG_MIME,
   VaultFolderNode,
@@ -28,9 +32,15 @@ import { ContextMenuState } from '../../shared/context-menu/context-menu-state';
 import { ContextMenuItem } from '../../shared/context-menu/context-menu.model';
 import { DialogState } from '../../shared/dialog/dialog-state';
 
+interface RecentRow {
+  note: VaultNoteNode;
+  openedAt: number;
+  locked: boolean;
+}
+
 @Component({
   selector: 'app-sidebar',
-  imports: [SidebarSection, SidebarItemButton, SidebarToolbar, VaultTreeNode, CredentialsSection, TagGroupRow, LucideFolders, LucideStar, LucideClock, LucideTags, LucideFileText],
+  imports: [SidebarSection, SidebarItemButton, SidebarToolbar, VaultTreeNode, CredentialsSection, TagGroupRow, LucideFolders, LucideStar, LucideClock, LucideTags, LucideFileText, LucideLock],
   templateUrl: './sidebar.html',
   host: { class: 'contents' },
 })
@@ -47,10 +57,37 @@ export class Sidebar {
   private readonly dialogState = inject(DialogState);
   protected readonly credentialsState = inject(CredentialsState);
   private readonly encryptionActions = inject(NoteEncryptionActions);
+  private readonly vaultMeta = inject(VaultMetaState);
 
   protected readonly favorites = FAVORITE_NOTES;
-  protected readonly recentFiles = RECENT_NOTES;
   protected readonly tagGroups = TAG_GROUPS;
+
+  /** Recent notes shown before the "Show more" expander is used. */
+  private static readonly COLLAPSED_RECENT_COUNT = 5;
+
+  /** Ticks once a minute so the relative "2h ago" labels stay current. */
+  private readonly now = signal(Date.now());
+  protected readonly showAllRecents = signal(false);
+
+  /** Recent notes that still exist in the vault, most recently opened first. */
+  private readonly recentRows = computed<RecentRow[]>(() => {
+    const tree = this.vaultState.tree();
+    if (!tree) return [];
+    const notesByPath = new Map(flattenAllNotes(tree).map((note) => [note.relPath, note]));
+    const unlocked = this.credentialsState.unlockedIds();
+    return this.vaultMeta.recentNotes().flatMap((recent) => {
+      const note = notesByPath.get(recent.relPath);
+      return note ? [{ note, openedAt: recent.openedAt, locked: isNoteLocked(note, unlocked) }] : [];
+    });
+  });
+
+  protected readonly visibleRecents = computed(() =>
+    this.showAllRecents() ? this.recentRows() : this.recentRows().slice(0, Sidebar.COLLAPSED_RECENT_COUNT),
+  );
+  protected readonly hiddenRecentCount = computed(() => this.recentRows().length - this.visibleRecents().length);
+  protected readonly canCollapseRecents = computed(
+    () => this.showAllRecents() && this.recentRows().length > Sidebar.COLLAPSED_RECENT_COUNT,
+  );
 
   /** Session-only favorite toggle stub — not persisted, not wired to the real Favorites section yet. */
   protected readonly favoritedPaths = signal<ReadonlySet<string>>(new Set());
@@ -59,6 +96,9 @@ export class Sidebar {
   private readonly dragStartWidth = signal<number>(0);
 
   constructor() {
+    const refreshClock = setInterval(() => this.now.set(Date.now()), 60_000);
+    inject(DestroyRef).onDestroy(() => clearInterval(refreshClock));
+
     // Drop selected notes that no longer exist once the tree changes (deleted/moved externally).
     effect(() => {
       const tree = this.vaultState.tree();
@@ -126,6 +166,23 @@ export class Sidebar {
       },
       { kind: 'separator' },
       { kind: 'item', label: 'Delete', icon: 'delete', danger: true, action: () => {} },
+    ];
+    this.contextMenuState.open(event, items);
+  }
+
+  protected recentTime(row: RecentRow): string {
+    return formatRelativeTime(row.openedAt, this.now());
+  }
+
+  protected onRecentContextMenu(event: MouseEvent, row: RecentRow): void {
+    const { note } = row;
+    const items: ContextMenuItem[] = [
+      { kind: 'item', label: 'Open', icon: 'open', action: () => this.onOpenNote(note) },
+      { kind: 'item', label: 'Open in New Tab', icon: 'open-new-tab', action: () => this.onOpenNoteInBackground(note) },
+      { kind: 'separator' },
+      { kind: 'item', label: 'Show in File Explorer', icon: 'reveal', action: () => void this.vaultState.revealInFileExplorer(note.relPath) },
+      { kind: 'separator' },
+      { kind: 'item', label: 'Remove from Recents', icon: 'close', action: () => this.vaultMeta.removeRecent(note.relPath) },
     ];
     this.contextMenuState.open(event, items);
   }
@@ -319,6 +376,7 @@ export class Sidebar {
       const moved = await this.vaultState.moveNote(relPath, destRelDir);
       this.notesState.renameNoteId(relPath, moved.relPath);
       this.tabsState.renameNoteId(relPath, moved.relPath, moved.name);
+      this.vaultMeta.renameRecent(relPath, moved.relPath);
     }
     this.selectionState.clear();
   }
@@ -338,6 +396,7 @@ export class Sidebar {
         const newNotePath = newPrefix + oldNotePath.slice(oldPrefix.length);
         this.notesState.renameNoteId(oldNotePath, newNotePath);
         this.tabsState.renameNoteId(oldNotePath, newNotePath, name);
+        this.vaultMeta.renameRecent(oldNotePath, newNotePath);
       }
     } catch (err) {
       await this.dialogState.alert(String(err), { title: 'Move Failed', tone: 'error' });
@@ -350,6 +409,7 @@ export class Sidebar {
       const renamed = await this.vaultState.renameNote(relPath, newName);
       this.notesState.renameNoteId(relPath, renamed.relPath);
       this.tabsState.renameNoteId(relPath, renamed.relPath, renamed.name);
+      this.vaultMeta.renameRecent(relPath, renamed.relPath);
     } catch (err) {
       await this.dialogState.alert(String(err), { title: 'Rename Failed', tone: 'error' });
     }
@@ -368,6 +428,7 @@ export class Sidebar {
         const newNotePath = newPrefix + oldNotePath.slice(oldPrefix.length);
         this.notesState.renameNoteId(oldNotePath, newNotePath);
         this.tabsState.renameNoteId(oldNotePath, newNotePath, name);
+        this.vaultMeta.renameRecent(oldNotePath, newNotePath);
       }
     } catch (err) {
       await this.dialogState.alert(String(err), { title: 'Rename Failed', tone: 'error' });
@@ -383,6 +444,7 @@ export class Sidebar {
     if (!confirmed) return;
     await this.vaultState.deleteNote(note.relPath);
     this.tabsState.closeByNoteId(note.relPath);
+    this.vaultMeta.removeRecent(note.relPath);
   }
 
   private async deleteFolder(folder: VaultFolderNode): Promise<void> {
@@ -394,7 +456,10 @@ export class Sidebar {
     const affectedNotePaths = [...flattenVaultNotes(folder).keys()];
     try {
       await this.vaultState.deleteFolder(folder.relPath);
-      for (const relPath of affectedNotePaths) this.tabsState.closeByNoteId(relPath);
+      for (const relPath of affectedNotePaths) {
+        this.tabsState.closeByNoteId(relPath);
+        this.vaultMeta.removeRecent(relPath);
+      }
     } catch (err) {
       await this.dialogState.alert(String(err), { title: 'Delete Failed', tone: 'error' });
     }
@@ -411,6 +476,7 @@ export class Sidebar {
     for (const relPath of relPaths) {
       await this.vaultState.deleteNote(relPath);
       this.tabsState.closeByNoteId(relPath);
+      this.vaultMeta.removeRecent(relPath);
     }
     this.selectionState.clear();
   }
@@ -424,6 +490,7 @@ export class Sidebar {
       const moved = await this.vaultState.moveNote(clip.relPath, destRelDir);
       this.notesState.renameNoteId(clip.relPath, moved.relPath);
       this.tabsState.renameNoteId(clip.relPath, moved.relPath, moved.name);
+      this.vaultMeta.renameRecent(clip.relPath, moved.relPath);
       this.clipboardState.clear();
     }
   }

@@ -51,6 +51,19 @@ pub struct VaultMeta {
     /// matching the current default in `VaultTreeNode`.
     #[serde(default)]
     pub collapsed_folders: Vec<String>,
+    /// Recently opened notes, most recent first. The frontend owns dedupe
+    /// and the size cap; this is stored as-is.
+    #[serde(default)]
+    pub recent_notes: Vec<RecentNote>,
+}
+
+/// One entry in the recently-opened list.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentNote {
+    pub rel_path: String,
+    /// When the note was opened, in milliseconds since the Unix epoch.
+    pub opened_at: u64,
 }
 
 fn current_version() -> u32 {
@@ -64,6 +77,7 @@ impl Default for VaultMeta {
             favorites: Vec::new(),
             order: HashMap::new(),
             collapsed_folders: Vec::new(),
+            recent_notes: Vec::new(),
         }
     }
 }
@@ -140,6 +154,10 @@ mod tests {
             favorites: vec!["Work/todo.mntl".to_string()],
             order: HashMap::from([("Work".to_string(), vec!["todo.mntl".to_string(), "notes.mntl".to_string()])]),
             collapsed_folders: vec!["Archive".to_string()],
+            recent_notes: vec![
+                RecentNote { rel_path: "Work/todo.mntl".to_string(), opened_at: 1_758_000_000_000 },
+                RecentNote { rel_path: "notes.mntl.enc".to_string(), opened_at: 1_757_900_000_000 },
+            ],
         };
         save_vault_meta(root_str.clone(), state.clone()).unwrap();
 
@@ -156,7 +174,28 @@ mod tests {
         fs::write(root.join(".mantle").join("state.json"), r#"{"version":1}"#).unwrap();
         let root_str = root.to_string_lossy().into_owned();
 
-        assert_eq!(load_vault_meta(root_str).unwrap(), VaultMeta::default());
+        let loaded = load_vault_meta(root_str).unwrap();
+        assert_eq!(loaded, VaultMeta::default());
+        assert!(loaded.recent_notes.is_empty());
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn recent_notes_use_camel_case_keys_on_disk() {
+        let root = temp_dir("recent-keys");
+        let root_str = root.to_string_lossy().into_owned();
+
+        let state = VaultMeta {
+            recent_notes: vec![RecentNote { rel_path: "a.mntl".to_string(), opened_at: 42 }],
+            ..VaultMeta::default()
+        };
+        save_vault_meta(root_str, state).unwrap();
+
+        let raw = fs::read_to_string(root.join(".mantle").join("state.json")).unwrap();
+        assert!(raw.contains("\"recentNotes\""));
+        assert!(raw.contains("\"relPath\""));
+        assert!(raw.contains("\"openedAt\""));
 
         let _ = fs::remove_dir_all(&root);
     }

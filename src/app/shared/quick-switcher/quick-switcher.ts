@@ -5,16 +5,18 @@ import { CommandPaletteState } from '../command-palette/command-palette-state';
 import { CredentialsState } from '../../notes/credentials-state';
 import { TabsState } from '../../notes/tabs-state';
 import { VaultState } from '../../notes/vault-state';
+import { VaultMetaState } from '../../notes/vault-meta-state';
 import { flattenAllNotes, isNoteLocked } from '../../notes/vault-tree.model';
 import { QuickSwitcherState } from './quick-switcher-state';
 import { filterQuickSwitcherItems, QuickSwitcherItem, toQuickSwitcherItems } from './quick-switcher.model';
 
 /**
  * "Go to note" overlay bound to Ctrl+P — rendered once at the layout root,
- * like `Dialog`/`SettingsModal`. Lists every note in the open vault and jumps
- * to it in a tab on selection; locked notes are shown (with a lock icon)
- * rather than hidden, since opening one still surfaces the "unlock to read
- * it" state in the content area.
+ * like `Dialog`/`SettingsModal`. Lists every note in the open vault (recently
+ * opened ones first when the query is empty) and jumps to it in a tab on
+ * selection; locked notes are shown (with a lock icon) rather than hidden,
+ * since opening one still surfaces the "unlock to read it" state in the
+ * content area. The "Open Recent Note…" command opens it limited to recents.
  */
 @Component({
   selector: 'app-quick-switcher',
@@ -27,6 +29,7 @@ export class QuickSwitcher {
   private readonly vaultState = inject(VaultState);
   private readonly tabsState = inject(TabsState);
   private readonly credentialsState = inject(CredentialsState);
+  private readonly vaultMeta = inject(VaultMetaState);
 
   protected readonly query = this.state.query;
   protected readonly selectedIndex = signal(0);
@@ -37,7 +40,16 @@ export class QuickSwitcher {
     return tree ? toQuickSwitcherItems(flattenAllNotes(tree)) : [];
   });
 
-  protected readonly results = computed(() => filterQuickSwitcherItems(this.allItems(), this.query()));
+  protected readonly recentsOnly = this.state.recentsOnly;
+
+  protected readonly results = computed(() =>
+    filterQuickSwitcherItems(
+      this.allItems(),
+      this.query(),
+      this.vaultMeta.recentNotes().map((recent) => recent.relPath),
+      this.recentsOnly(),
+    ),
+  );
 
   private readonly input = viewChild<ElementRef<HTMLInputElement>>('input');
 

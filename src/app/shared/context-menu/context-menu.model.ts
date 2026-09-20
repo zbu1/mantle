@@ -23,7 +23,10 @@ export type ContextMenuIcon =
 export interface ContextMenuAction {
   kind: 'item';
   label: string;
-  icon: ContextMenuIcon;
+  /** Leading icon. Omit for checkable rows, which show a checkmark (or nothing) in that slot instead. */
+  icon?: ContextMenuIcon;
+  /** Makes this a checkable row: `true` draws a checkmark in the icon slot, `false` leaves it blank. */
+  checked?: boolean;
   danger?: boolean;
   disabled?: boolean;
   action: () => void;

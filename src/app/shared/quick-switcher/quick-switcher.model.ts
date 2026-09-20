@@ -13,6 +13,15 @@ export function toQuickSwitcherItems(notes: VaultNoteNode[]): QuickSwitcherItem[
   });
 }
 
+/** The items for `recentPaths`, in that order, skipping paths with no matching item. */
+function recentItemsInOrder(items: QuickSwitcherItem[], recentPaths: readonly string[]): QuickSwitcherItem[] {
+  const byPath = new Map(items.map((item) => [item.note.relPath, item]));
+  return recentPaths.flatMap((relPath) => {
+    const item = byPath.get(relPath);
+    return item ? [item] : [];
+  });
+}
+
 /**
  * Ranks by where the query hit — exact name, name prefix, name substring,
  * then a path substring — rather than true fuzzy matching, matching
@@ -27,10 +36,28 @@ function matchRank(item: QuickSwitcherItem, query: string): number | null {
   return null;
 }
 
-export function filterQuickSwitcherItems(items: QuickSwitcherItem[], query: string): QuickSwitcherItem[] {
+/**
+ * Filters `items` by `query`. `recentPaths` (most recent first) shapes the
+ * empty-query view: recents come first, followed by every other note in its
+ * original order — or, with `recentsOnly`, nothing else. A typed query ranks
+ * purely by match quality, though `recentsOnly` still confines it to recents.
+ */
+export function filterQuickSwitcherItems(
+  items: QuickSwitcherItem[],
+  query: string,
+  recentPaths: readonly string[] = [],
+  recentsOnly = false,
+): QuickSwitcherItem[] {
   const q = query.trim().toLowerCase();
-  if (!q) return items;
-  return items
+  const recents = recentItemsInOrder(items, recentPaths);
+
+  if (!q) {
+    if (recentsOnly) return recents;
+    const recentSet = new Set(recentPaths);
+    return [...recents, ...items.filter((item) => !recentSet.has(item.note.relPath))];
+  }
+
+  return (recentsOnly ? recents : items)
     .map((item) => ({ item, rank: matchRank(item, q) }))
     .filter((entry): entry is { item: QuickSwitcherItem; rank: number } => entry.rank !== null)
     .sort((a, b) => a.rank - b.rank || a.item.note.name.localeCompare(b.item.note.name))
