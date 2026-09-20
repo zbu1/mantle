@@ -254,6 +254,10 @@
         <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Credential Profiles</h3>
         @for (profile of credentialsState.profiles(); track profile.id) {
         <app-settings-row [label]="profile.displayName" [description]="profile.unlocked ? 'Unlocked' : 'Locked'">
+          <button type="button" title="Profile Settings" (click)="openProfileSettings(profile.id)"
+            class="rounded-md border border-border p-1.5 text-foreground hover:bg-background">
+            <svg lucideSettings [size]="13"></svg>
+          </button>
           @if (profile.unlocked) {
           <button type="button" (click)="lockProfile(profile.id)"
             class="rounded-md border border-border px-2.5 py-1 text-xs text-foreground hover:bg-background">

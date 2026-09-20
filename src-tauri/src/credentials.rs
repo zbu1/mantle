@@ -119,6 +119,10 @@ impl ProfileRegistry {
     fn find(&self, id: &str) -> Option<&CredentialProfile> {
         self.profiles.iter().find(|p| p.id == id)
     }
+
+    fn find_mut(&mut self, id: &str) -> Option<&mut CredentialProfile> {
+        self.profiles.iter_mut().find(|p| p.id == id)
+    }
 }
 
 fn registry_path(vault_root: &str) -> Result<PathBuf, String> {
@@ -300,7 +304,8 @@ fn unique_slug(registry: &ProfileRegistry, base: &str) -> String {
 
 // --- Commands ------------------------------------------------------------
 
-/// A profile as the frontend sees it. Carries no key material.
+/// A profile as the frontend sees it. Carries no key material — `kdf` is
+/// cost parameters, not secret.
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfileInfo {
@@ -308,6 +313,7 @@ pub struct ProfileInfo {
     pub display_name: String,
     pub unlocked: bool,
     pub created_at: u64,
+    pub kdf: KdfParams,
 }
 
 fn to_info(profile: &CredentialProfile, unlocked: bool) -> ProfileInfo {
@@ -316,6 +322,7 @@ fn to_info(profile: &CredentialProfile, unlocked: bool) -> ProfileInfo {
         display_name: profile.display_name.clone(),
         unlocked,
         created_at: profile.created_at,
+        kdf: profile.kdf.clone(),
     }
 }
 
@@ -475,6 +482,125 @@ pub fn lock_credential_profile(
 #[tauri::command]
 pub fn lock_all_credential_profiles(keys: State<SessionKeys>) -> Result<(), String> {
     logged("lock_all_credential_profiles", || keys.lock_all())
+}
+
+/// Rename a profile's display name. The immutable `id` (and every note header
+/// naming it) is untouched, so this works whether or not the profile is
+/// unlocked.
+#[tauri::command]
+pub fn rename_credential_profile(
+    vault_root: String,
+    profile_id: String,
+    display_name: String,
+    keys: State<SessionKeys>,
+) -> Result<ProfileInfo, String> {
+    logged("rename_credential_profile", || {
+        rename_profile_inner(&vault_root, &profile_id, &display_name, &keys)
+    })
+}
+
+fn rename_profile_inner(
+    vault_root: &str,
+    profile_id: &str,
+    display_name: &str,
+    keys: &SessionKeys,
+) -> Result<ProfileInfo, String> {
+    let display_name = display_name.trim();
+    if display_name.is_empty() {
+        return Err("Profile name must not be empty".to_string());
+    }
+
+    let mut registry = load_registry(vault_root)?;
+    let profile = registry
+        .find_mut(profile_id)
+        .ok_or_else(|| format!("No credential profile \"{profile_id}\" in this vault"))?;
+    profile.display_name = display_name.to_string();
+    let info = to_info(profile, keys.get(vault_root, profile_id)?.is_some());
+
+    save_registry(vault_root, &registry)?;
+    Ok(info)
+}
+
+/// Change a profile's password without touching any note.
+///
+/// Requires the profile already unlocked, so the master key is available to
+/// rewrap: re-deriving a KEK from a brand new password can't unwrap the
+/// *old* wrapped key, and asking for the old password again would just be
+/// re-deriving what unlocking it already proved.
+#[tauri::command]
+pub fn change_credential_profile_password(
+    vault_root: String,
+    profile_id: String,
+    new_password: String,
+    keys: State<SessionKeys>,
+) -> Result<(), String> {
+    let new_password = Zeroizing::new(new_password);
+    logged("change_credential_profile_password", || {
+        change_password_inner(&vault_root, &profile_id, &new_password, &keys)
+    })
+}
+
+fn change_password_inner(
+    vault_root: &str,
+    profile_id: &str,
+    new_password: &str,
+    keys: &SessionKeys,
+) -> Result<(), String> {
+    if new_password.is_empty() {
+        return Err("Password must not be empty".to_string());
+    }
+
+    let master_key = keys
+        .get(vault_root, profile_id)?
+        .ok_or_else(|| format!("Unlock \"{profile_id}\" before changing its password"))?;
+
+    let mut registry = load_registry(vault_root)?;
+    let profile = registry
+        .find_mut(profile_id)
+        .ok_or_else(|| format!("No credential profile \"{profile_id}\" in this vault"))?;
+
+    let mut salt = [0u8; SALT_LEN];
+    OsRng
+        .try_fill_bytes(&mut salt)
+        .map_err(|e| format!("Failed to generate salt: {e}"))?;
+
+    let kek = derive_kek_with_params(new_password, &salt, &profile.kdf).map_err(|e| e.to_string())?;
+    let wrapped = wrap_master_key(&kek, &master_key).map_err(|e| e.to_string())?;
+
+    profile.salt = BASE64.encode(salt);
+    profile.wrapped_master_key = BASE64.encode(wrapped);
+    // `verifier` is a tag over the master key alone, which hasn't changed.
+
+    save_registry(vault_root, &registry)
+}
+
+/// Delete a profile's registry entry and forget its session key, if any.
+///
+/// Does not touch any note. The frontend is responsible for decrypting a
+/// profile's member notes to plaintext first — deleting a profile that still
+/// has encrypted notes under it leaves them as unrecoverable orphans (the
+/// same state as copying `.mntl.enc` files in from another vault).
+#[tauri::command]
+pub fn delete_credential_profile(
+    vault_root: String,
+    profile_id: String,
+    keys: State<SessionKeys>,
+) -> Result<(), String> {
+    logged("delete_credential_profile", || {
+        delete_profile_inner(&vault_root, &profile_id, &keys)
+    })
+}
+
+fn delete_profile_inner(vault_root: &str, profile_id: &str, keys: &SessionKeys) -> Result<(), String> {
+    let mut registry = load_registry(vault_root)?;
+    let before = registry.profiles.len();
+    registry.profiles.retain(|p| p.id != profile_id);
+    if registry.profiles.len() == before {
+        return Err(format!("No credential profile \"{profile_id}\" in this vault"));
+    }
+
+    save_registry(vault_root, &registry)?;
+    keys.lock_one(vault_root, profile_id)
 }
 
 #[cfg(test)]
@@ -767,5 +893,108 @@ mod tests {
 
         let _ = fs::remove_dir_all(&first);
         let _ = fs::remove_dir_all(&second);
+    }
+
+    // --- Rename / change password / delete --------------------------------
+
+    #[test]
+    fn rename_persists_the_new_display_name() {
+        let root = temp_dir("rename");
+        let root_str = root_of(&root);
+        let keys = SessionKeys::default();
+
+        create_profile_inner(&root_str, "Diary", "hunter2", &test_kdf(), &keys).unwrap();
+        let info = rename_profile_inner(&root_str, "diary", "My Diary", &keys).unwrap();
+        assert_eq!(info.display_name, "My Diary");
+        assert_eq!(info.id, "diary", "the slug must not change");
+
+        let reloaded = load_registry(&root_str).unwrap();
+        assert_eq!(reloaded.profiles[0].display_name, "My Diary");
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn rename_rejects_an_empty_name() {
+        let root = temp_dir("rename-empty");
+        let root_str = root_of(&root);
+        let keys = SessionKeys::default();
+
+        create_profile_inner(&root_str, "Diary", "hunter2", &test_kdf(), &keys).unwrap();
+        assert!(rename_profile_inner(&root_str, "diary", "   ", &keys).is_err());
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn change_password_requires_the_profile_to_be_unlocked() {
+        let root = temp_dir("change-password-locked");
+        let root_str = root_of(&root);
+        let keys = SessionKeys::default();
+
+        create_profile_inner(&root_str, "Diary", "hunter2", &test_kdf(), &keys).unwrap();
+        keys.lock_all().unwrap();
+
+        let err = change_password_inner(&root_str, "diary", "hunter3", &keys).unwrap_err();
+        assert!(err.contains("Unlock"), "got: {err}");
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn change_password_swaps_which_password_unlocks_the_profile() {
+        let root = temp_dir("change-password");
+        let root_str = root_of(&root);
+        let keys = SessionKeys::default();
+
+        let before = create_profile_inner(&root_str, "Diary", "hunter2", &test_kdf(), &keys).unwrap();
+        let key_before = keys.get(&root_str, &before.id).unwrap().unwrap();
+
+        change_password_inner(&root_str, "diary", "hunter3", &keys).unwrap();
+
+        keys.lock_all().unwrap();
+        let err = unlock_profile_inner(&root_str, "diary", "hunter2", &keys).unwrap_err();
+        assert_eq!(err, INCORRECT_PASSWORD, "the old password must no longer work");
+
+        unlock_profile_inner(&root_str, "diary", "hunter3", &keys).unwrap();
+        let key_after = keys.get(&root_str, "diary").unwrap().unwrap();
+        assert_eq!(
+            key_before.expose(),
+            key_after.expose(),
+            "the master key — and so every note wrapped under it — must survive a password change"
+        );
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn delete_removes_the_registry_entry_and_forgets_the_session_key() {
+        let root = temp_dir("delete");
+        let root_str = root_of(&root);
+        let keys = SessionKeys::default();
+
+        create_profile_inner(&root_str, "Diary", "hunter2", &test_kdf(), &keys).unwrap();
+        create_profile_inner(&root_str, "Work", "hunter3", &test_kdf(), &keys).unwrap();
+
+        delete_profile_inner(&root_str, "diary", &keys).unwrap();
+
+        let reloaded = load_registry(&root_str).unwrap();
+        assert_eq!(reloaded.profiles.len(), 1);
+        assert_eq!(reloaded.profiles[0].id, "work");
+        assert!(keys.get(&root_str, "diary").unwrap().is_none());
+        assert!(keys.get(&root_str, "work").unwrap().is_some());
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn delete_of_an_unknown_profile_fails() {
+        let root = temp_dir("delete-unknown");
+        let keys = SessionKeys::default();
+
+        let err = delete_profile_inner(&root_of(&root), "nope", &keys).unwrap_err();
+        assert!(err.contains("nope"));
+
+        let _ = fs::remove_dir_all(&root);
     }
 }

@@ -6,12 +6,20 @@ import { NotesState } from './notes-state';
 import { VaultState } from './vault-state';
 import { VaultNoteNode, flattenEncryptedNotes } from './vault-tree.model';
 
+/** Argon2id cost parameters, as reported by the backend. Not secret. */
+export interface KdfParams {
+  mCost: number;
+  tCost: number;
+  pCost: number;
+}
+
 /** A credential profile as reported by the backend. Never carries key material. */
 export interface CredentialProfile {
   id: string;
   displayName: string;
   unlocked: boolean;
   createdAt: number;
+  kdf: KdfParams;
 }
 
 /** Encrypted notes naming a profile that isn't in this vault's registry. */
@@ -281,5 +289,81 @@ export class CredentialsState {
     logInfo(`Created credential profile "${createdId}"`);
     await this.refresh();
     return createdId;
+  }
+
+  /** Rename a profile. Works whether or not it's unlocked — renaming never touches key material. */
+  async rename(profileId: string, displayName: string): Promise<boolean> {
+    const root = this.vaultState.rootPath();
+    const trimmed = displayName.trim();
+    if (!root || !trimmed) return false;
+
+    try {
+      await invoke('rename_credential_profile', { vaultRoot: root, profileId, displayName: trimmed });
+    } catch (err) {
+      logError(`Failed to rename credential profile "${profileId}": ${formatError(err)}`);
+      await this.dialogState.alert(String(err), { title: 'Rename Failed', tone: 'error' });
+      return false;
+    }
+
+    await this.refresh();
+    return true;
+  }
+
+  /**
+   * Prompt for a new password and change it. The profile must already be
+   * unlocked — re-deriving a fresh KEK from a new password can't unwrap the
+   * existing wrapped master key, so there's nothing to check the old
+   * password against that unlocking it hasn't already proven.
+   */
+  async promptChangePassword(profileId: string): Promise<boolean> {
+    const root = this.vaultState.rootPath();
+    if (!root) return false;
+
+    const profile = this.profileById(profileId);
+    if (!profile) return false;
+
+    const submitted = await this.dialogState.password(
+      `Choose a new password for "${profile.displayName}". Existing notes stay readable — only the password changes.`,
+      { title: 'Change Master Password', confirmLabel: 'Change Password', requireConfirm: true },
+      async ({ password }) => {
+        if (password.length < MIN_PASSWORD_LENGTH) {
+          return `Use at least ${MIN_PASSWORD_LENGTH} characters.`;
+        }
+        try {
+          await invoke('change_credential_profile_password', {
+            vaultRoot: root,
+            profileId,
+            newPassword: password,
+          });
+          return null;
+        } catch (err) {
+          return String(err);
+        }
+      },
+    );
+
+    if (submitted) logInfo(`Changed password for credential profile "${profileId}"`);
+    return submitted;
+  }
+
+  /**
+   * Delete a profile's registry entry. Does not touch its notes — callers
+   * that need those decrypted first (see the profile settings page's delete
+   * flow) must do that before calling this.
+   */
+  async delete(profileId: string): Promise<void> {
+    const root = this.vaultState.rootPath();
+    if (!root) return;
+
+    try {
+      await invoke('delete_credential_profile', { vaultRoot: root, profileId });
+    } catch (err) {
+      logError(`Failed to delete credential profile "${profileId}": ${formatError(err)}`);
+      await this.dialogState.alert(String(err), { title: 'Delete Failed', tone: 'error' });
+      return;
+    }
+
+    logInfo(`Deleted credential profile "${profileId}"`);
+    await this.refresh();
   }
 }

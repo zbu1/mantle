@@ -6,6 +6,7 @@ import {
   LucidePalette,
   LucidePanelLeft,
   LucideSearch,
+  LucideSettings,
   LucideSettings2,
   LucideShieldCheck,
   LucideType,
@@ -19,6 +20,7 @@ import { SettingsCategoryId, SettingsModalState } from './settings-modal-state';
 import { CredentialsState } from '../../notes/credentials-state';
 import { VaultState, vaultNameFromPath } from '../../notes/vault-state';
 import { SectionId, SidebarState } from '../../layout/sidebar/sidebar-state';
+import { ProfileSettingsPageState } from '../../layout/profile-settings-page/profile-settings-page-state';
 
 interface CategoryDef {
   id: SettingsCategoryId;
@@ -77,7 +79,7 @@ const SHORTCUTS: ShortcutEntry[] = [
  */
 @Component({
   selector: 'app-settings-modal',
-  imports: [SettingsRow, Toggle, LucideX, LucideSettings2, LucidePalette, LucideType, LucidePanelLeft, LucideFolderOpen, LucideShieldCheck, LucideKeyboard, LucideWrench, LucideInfo, LucideSearch],
+  imports: [SettingsRow, Toggle, LucideX, LucideSettings, LucideSettings2, LucidePalette, LucideType, LucidePanelLeft, LucideFolderOpen, LucideShieldCheck, LucideKeyboard, LucideWrench, LucideInfo, LucideSearch],
   templateUrl: './settings-modal.html',
 })
 export class SettingsModal {
@@ -86,6 +88,7 @@ export class SettingsModal {
   protected readonly vaultState = inject(VaultState);
   protected readonly credentialsState = inject(CredentialsState);
   private readonly dialogState = inject(DialogState);
+  private readonly profileSettingsPageState = inject(ProfileSettingsPageState);
 
   protected readonly categories = CATEGORIES;
   protected readonly shortcuts = SHORTCUTS;
@@ -224,6 +227,11 @@ export class SettingsModal {
 
   protected async lockAllProfiles(): Promise<void> {
     await this.credentialsState.lockAll();
+  }
+
+  protected openProfileSettings(profileId: string): void {
+    this.state.close();
+    this.profileSettingsPageState.open(profileId);
   }
 
   protected stepEditorFontSize(delta: number): void {

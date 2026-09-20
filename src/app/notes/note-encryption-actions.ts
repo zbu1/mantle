@@ -135,18 +135,26 @@ export class NoteEncryptionActions {
     }
   }
 
-  /** Convert an unlocked encrypted note back to a plaintext `.mntl` file. */
-  async decrypt(note: VaultNoteNode): Promise<void> {
+  /**
+   * Convert an unlocked encrypted note back to a plaintext `.mntl` file.
+   *
+   * `skipConfirm` is for bulk flows (e.g. deleting a profile) that already
+   * confirmed once for every note involved, rather than per note. Resolves
+   * whether the note ended up decrypted.
+   */
+  async decrypt(note: VaultNoteNode, opts?: { skipConfirm?: boolean }): Promise<boolean> {
     const root = this.vaultState.rootPath();
-    if (!root) return;
-    if (!(await this.ensureUnlocked(note))) return;
+    if (!root) return false;
+    if (!(await this.ensureUnlocked(note))) return false;
 
-    const confirmed = await this.dialogState.confirm(
-      `"${note.name}" will be stored as readable text on disk, no longer protected by ` +
-        `"${this.credentialsState.displayNameOf(note.profile)}".`,
-      { title: 'Decrypt note?', tone: 'warning', confirmLabel: 'Decrypt' },
-    );
-    if (!confirmed) return;
+    if (!opts?.skipConfirm) {
+      const confirmed = await this.dialogState.confirm(
+        `"${note.name}" will be stored as readable text on disk, no longer protected by ` +
+          `"${this.credentialsState.displayNameOf(note.profile)}".`,
+        { title: 'Decrypt note?', tone: 'warning', confirmLabel: 'Decrypt' },
+      );
+      if (!confirmed) return false;
+    }
 
     await this.notesState.flushPending([note.relPath]);
 
@@ -158,9 +166,11 @@ export class NoteEncryptionActions {
       this.retarget(note.relPath, created);
       logInfo(`Decrypted "${note.relPath}" to plaintext`);
       await this.vaultState.refresh();
+      return true;
     } catch (err) {
       logError(`Failed to decrypt "${note.relPath}": ${formatError(err)}`);
       await this.dialogState.alert(String(err), { title: 'Decryption Failed', tone: 'error' });
+      return false;
     }
   }
 
