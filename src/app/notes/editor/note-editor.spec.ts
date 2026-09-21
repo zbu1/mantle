@@ -3,6 +3,7 @@ import { provideZonelessChangeDetection } from '@angular/core';
 import type { EditorView } from 'prosemirror-view';
 import { NoteEditor } from './note-editor';
 import { NotesState } from '../notes-state';
+import { EditorFocusState } from './editor-focus-state';
 import { VaultState } from '../vault-state';
 import { flushAsync, installMockVaultInvoke } from '../../../testing/mock-vault';
 import { parseMarkdown } from './prosemirror/markdown-converter';
@@ -80,5 +81,41 @@ describe('NoteEditor', () => {
     const viewAfter = getEditorView(fixture.componentInstance);
     expect(viewAfter).toBe(viewBefore);
     expect(fixture.nativeElement.textContent).toContain(otherNote.content);
+  });
+
+  /** Mounts the editor on `daily-standup` inside the document (focus needs a connected element) and lets it load. */
+  async function mountEditor() {
+    const fixture = TestBed.createComponent(NoteEditor);
+    document.body.appendChild(fixture.nativeElement);
+    fixture.componentRef.setInput('noteId', 'daily-standup');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    await flushAsync();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    return fixture;
+  }
+
+  it('takes focus once its content is in, when asked to for that note', async () => {
+    TestBed.inject(EditorFocusState).request('daily-standup');
+    const fixture = await mountEditor();
+
+    expect(fixture.nativeElement.querySelector('.ProseMirror')).toBe(document.activeElement);
+    fixture.nativeElement.remove();
+  });
+
+  it('leaves focus alone when it was not asked to take it', async () => {
+    const fixture = await mountEditor();
+
+    expect(fixture.nativeElement.querySelector('.ProseMirror')).not.toBe(document.activeElement);
+    fixture.nativeElement.remove();
+  });
+
+  it('does not steal focus for a note other than the one it was asked about', async () => {
+    TestBed.inject(EditorFocusState).request('architecture-notes');
+    const fixture = await mountEditor();
+
+    expect(fixture.nativeElement.querySelector('.ProseMirror')).not.toBe(document.activeElement);
+    fixture.nativeElement.remove();
   });
 });

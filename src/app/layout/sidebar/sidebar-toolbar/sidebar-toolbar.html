@@ -14,29 +14,10 @@
         <svg menuItemIcon lucideFilePlus [size]="14"></svg>
       </app-menu-item>
 
-      @if (credentialsState.profiles().length === 0) {
-      <app-menu-item label="New Encrypted Note…" [active]="hoveredItem() === 'newEncrypted'"
-        (hovered)="hoveredItem.set('newEncrypted')" (selected)="newEncryptedNote()">
-        <svg menuItemIcon lucideLockKeyhole [size]="14"></svg>
-      </app-menu-item>
-      } @else if (credentialsState.profiles().length === 1) {
       <app-menu-item label="New Encrypted Note" [active]="hoveredItem() === 'newEncrypted'"
-        (hovered)="hoveredItem.set('newEncrypted')" (selected)="newEncryptedNote(credentialsState.profiles()[0].id)">
+        (hovered)="hoveredItem.set('newEncrypted')" (selected)="onNewEncryptedNote()">
         <svg menuItemIcon lucideLockKeyhole [size]="14"></svg>
       </app-menu-item>
-      } @else {
-      @for (profile of credentialsState.profiles(); track profile.id) {
-      <app-menu-item [label]="'New Encrypted Note — ' + profile.displayName"
-        [active]="hoveredItem() === 'newEncrypted:' + profile.id"
-        (hovered)="hoveredItem.set('newEncrypted:' + profile.id)" (selected)="newEncryptedNote(profile.id)">
-        <svg menuItemIcon lucideLockKeyhole [size]="14"></svg>
-      </app-menu-item>
-      }
-      <app-menu-item label="New Profile & Encrypted Note…" [active]="hoveredItem() === 'newEncryptedProfile'"
-        (hovered)="hoveredItem.set('newEncryptedProfile')" (selected)="newEncryptedNote()">
-        <svg menuItemIcon lucideLockKeyhole [size]="14"></svg>
-      </app-menu-item>
-      }
 
       <app-menu-separator />
       <app-menu-item label="New Folder" [active]="hoveredItem() === 'newFolder'"

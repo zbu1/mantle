@@ -19,9 +19,6 @@
 <app-settings-row label="Profile ID" description="Immutable — used inside every note's encrypted header.">
   <span class="font-mono text-[11px] text-muted-foreground">{{ p.id }}</span>
 </app-settings-row>
-<app-settings-row label="Created">
-  <span class="text-xs text-muted-foreground">{{ formattedCreatedAt(p.createdAt) }}</span>
-</app-settings-row>
 
 <h3 class="mb-1 mt-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Security</h3>
 <app-settings-row label="Status" [description]="unlocked() ? 'Unlocked' : 'Locked'">

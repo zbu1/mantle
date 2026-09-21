@@ -2,6 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideZonelessChangeDetection } from '@angular/core';
 import { installTauriMock } from '../../../testing/tauri-mock';
 import { TabsState } from '../../notes/tabs-state';
+import { NewEncryptedNoteState } from '../../notes/new-encrypted-note/new-encrypted-note-state';
 import { VaultMetaState } from '../../notes/vault-meta-state';
 import { VaultState } from '../../notes/vault-state';
 import { VaultFolderNode, VaultNoteNode } from '../../notes/vault-tree.model';
@@ -253,6 +254,50 @@ describe('Sidebar', () => {
 
       expect(TestBed.inject(VaultMetaState).recentNotes().map((entry) => entry.relPath)).toEqual(['a.mntl']);
       expect(rows(fixture)).toHaveLength(1);
+    });
+  });
+
+  describe('folder context menu', () => {
+    async function openFolderMenu() {
+      const mock = installTauriMock();
+      const root: VaultFolderNode = {
+        type: 'folder',
+        name: 'vault',
+        relPath: '',
+        children: [{ type: 'folder', name: 'Work', relPath: 'Work', children: [] }],
+      };
+      mock.respondWith('scan_vault', root);
+      mock.respondWith('list_credential_profiles', []);
+      mock.respondWith('load_vault_meta', { version: 1, favorites: [], order: {}, collapsedFolders: [], recentNotes: [] });
+
+      const fixture = TestBed.createComponent(Sidebar);
+      const vaultState = TestBed.inject(VaultState);
+      vaultState.rootPath.set('/vault');
+      TestBed.tick();
+      await vaultState.refresh();
+      fixture.detectChanges();
+
+      const folderRow = [...fixture.nativeElement.querySelectorAll('app-vault-tree-node [role="button"]')].find((b) =>
+        (b as HTMLElement).textContent?.includes('Work'),
+      ) as HTMLElement;
+      folderRow.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+      return TestBed.inject(ContextMenuState).menu()!.items;
+    }
+
+    it('offers New Note, New Encrypted Note and New Folder together', async () => {
+      const items = await openFolderMenu();
+
+      const labels = items.flatMap((item) => (item.kind === 'item' ? [item.label] : []));
+      expect(labels.slice(0, 3)).toEqual(['New Note', 'New Encrypted Note', 'New Folder']);
+    });
+
+    it('opens the New Encrypted Note modal for that folder', async () => {
+      const items = await openFolderMenu();
+      const item = items.find((i) => i.kind === 'item' && i.label === 'New Encrypted Note');
+
+      if (item?.kind === 'item') item.action();
+
+      expect(TestBed.inject(NewEncryptedNoteState).request()).toEqual({ relDir: 'Work', profileId: null });
     });
   });
 });

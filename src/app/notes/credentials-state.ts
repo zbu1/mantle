@@ -18,7 +18,6 @@ export interface CredentialProfile {
   id: string;
   displayName: string;
   unlocked: boolean;
-  createdAt: number;
   kdf: KdfParams;
 }
 
@@ -223,22 +222,29 @@ export class CredentialsState {
       return false;
     }
 
-    const submitted = await this.dialogState.password(
+    // Returning a message from `submit` keeps the dialog open with the typed
+    // value intact, so a mistyped password can just be corrected.
+    return this.dialogState.password(
       `Enter the password for "${profile.displayName}".`,
       { title: 'Unlock profile', confirmLabel: 'Unlock' },
-      async ({ password }) => {
-        try {
-          await invoke('unlock_credential_profile', { vaultRoot: root, profileId, password });
-          return null;
-        } catch (err) {
-          // Returning a message keeps the dialog open with the typed value
-          // intact, so a mistyped password can just be corrected.
-          return String(err);
-        }
-      },
+      ({ password }) => this.unlockWithPassword(profileId, password),
     );
+  }
 
-    if (!submitted) return false;
+  /**
+   * Unlock `profileId` with `password`. Resolves null once it's unlocked, or the
+   * message to show inline if it couldn't be — the shared core of `promptUnlock`
+   * and any UI that hosts its own password field.
+   */
+  async unlockWithPassword(profileId: string, password: string): Promise<string | null> {
+    const root = this.vaultState.rootPath();
+    if (!root) return 'No vault is open.';
+
+    try {
+      await invoke('unlock_credential_profile', { vaultRoot: root, profileId, password });
+    } catch (err) {
+      return String(err);
+    }
 
     logInfo(`Unlocked credential profile "${profileId}"`);
     // Re-read every note that was showing as locked.
@@ -246,13 +252,12 @@ export class CredentialsState {
       this.notesState.reload(path);
     }
     await this.refresh();
-    return true;
+    return null;
   }
 
   /** Prompt for a name and password, create the profile, and unlock it. Resolves the new profile's id. */
   async promptCreate(): Promise<string | null> {
-    const root = this.vaultState.rootPath();
-    if (!root) return null;
+    if (!this.vaultState.rootPath()) return null;
 
     let createdId: string | null = null;
 
@@ -266,29 +271,43 @@ export class CredentialsState {
         requireConfirm: true,
       },
       async ({ name, password }) => {
-        if (!name.trim()) return 'Give the profile a name.';
-        if (password.length < MIN_PASSWORD_LENGTH) {
-          return `Use at least ${MIN_PASSWORD_LENGTH} characters.`;
-        }
-        try {
-          const profile = await invoke<CredentialProfile>('create_credential_profile', {
-            vaultRoot: root,
-            displayName: name.trim(),
-            password,
-          });
-          createdId = profile.id;
-          return null;
-        } catch (err) {
-          return String(err);
-        }
+        const result = await this.createProfile(name, password);
+        if ('error' in result) return result.error;
+        createdId = result.id;
+        return null;
       },
     );
 
-    if (!submitted || createdId === null) return null;
+    return submitted ? createdId : null;
+  }
 
-    logInfo(`Created credential profile "${createdId}"`);
+  /**
+   * Create a profile and leave it unlocked. Resolves its id, or the message to
+   * show inline if it couldn't be created — the shared core of `promptCreate`
+   * and any UI that hosts its own name and password fields.
+   */
+  async createProfile(name: string, password: string): Promise<{ id: string } | { error: string }> {
+    const root = this.vaultState.rootPath();
+    if (!root) return { error: 'No vault is open.' };
+    if (!name.trim()) return { error: 'Give the profile a name.' };
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      return { error: `Use at least ${MIN_PASSWORD_LENGTH} characters.` };
+    }
+
+    let profile: CredentialProfile;
+    try {
+      profile = await invoke<CredentialProfile>('create_credential_profile', {
+        vaultRoot: root,
+        displayName: name.trim(),
+        password,
+      });
+    } catch (err) {
+      return { error: String(err) };
+    }
+
+    logInfo(`Created credential profile "${profile.id}"`);
     await this.refresh();
-    return createdId;
+    return { id: profile.id };
   }
 
   /** Rename a profile. Works whether or not it's unlocked — renaming never touches key material. */

@@ -7,6 +7,7 @@ import { VaultTreeNode } from './vault-tree-node/vault-tree-node';
 import { CredentialsSection } from './credentials-section/credentials-section';
 import { TagGroupRow } from './tag-group-row/tag-group-row';
 import { CredentialsState } from '../../notes/credentials-state';
+import { NewEncryptedNoteState } from '../../notes/new-encrypted-note/new-encrypted-note-state';
 import { NoteEncryptionActions } from '../../notes/note-encryption-actions';
 import { FAVORITE_NOTES, MockNote, TAG_GROUPS } from '../../notes/notes-data';
 import { COLLAPSE_THRESHOLD, SidebarState } from './sidebar-state';
@@ -57,6 +58,7 @@ export class Sidebar {
   private readonly dialogState = inject(DialogState);
   protected readonly credentialsState = inject(CredentialsState);
   private readonly encryptionActions = inject(NoteEncryptionActions);
+  private readonly newEncryptedNoteState = inject(NewEncryptedNoteState);
   private readonly vaultMeta = inject(VaultMetaState);
 
   protected readonly favorites = FAVORITE_NOTES;
@@ -271,6 +273,12 @@ export class Sidebar {
     const { event, folder } = payload;
     const items: ContextMenuItem[] = [
       { kind: 'item', label: 'New Note', icon: 'new-note', action: () => void this.onNewNote(folder.relPath) },
+      {
+        kind: 'item',
+        label: 'New Encrypted Note',
+        icon: 'new-encrypted-note',
+        action: () => this.newEncryptedNoteState.open({ relDir: folder.relPath }),
+      },
       { kind: 'item', label: 'New Folder', icon: 'new-folder', action: () => void this.onNewFolder(folder.relPath) },
       { kind: 'separator' },
       {
@@ -291,22 +299,6 @@ export class Sidebar {
       },
       { kind: 'separator' },
       { kind: 'item', label: 'Delete', icon: 'delete', danger: true, action: () => void this.deleteFolder(folder) },
-    ];
-    this.contextMenuState.open(event, items);
-  }
-
-  protected onVaultBackgroundContextMenu(event: MouseEvent): void {
-    const items: ContextMenuItem[] = [
-      { kind: 'item', label: 'New Note', icon: 'new-note', action: () => void this.onNewNote() },
-      { kind: 'item', label: 'New Folder', icon: 'new-folder', action: () => void this.onNewFolder() },
-      { kind: 'separator' },
-      {
-        kind: 'item',
-        label: 'Paste',
-        icon: 'paste',
-        disabled: !this.clipboardState.entry(),
-        action: () => void this.pasteInto(''),
-      },
     ];
     this.contextMenuState.open(event, items);
   }

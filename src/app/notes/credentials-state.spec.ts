@@ -25,7 +25,7 @@ function tree(children: VaultNode[]): VaultFolderNode {
 }
 
 function profile(id: string, unlocked = false): CredentialProfile {
-  return { id, displayName: id.replace(/-/g, ' '), unlocked, createdAt: 0 };
+  return { id, displayName: id.replace(/-/g, ' '), unlocked };
 }
 
 /** Waits for pending promise chains (the invoke mock resolves asynchronously). */
@@ -210,6 +210,92 @@ describe('CredentialsState', () => {
       expect(flushPending).toHaveBeenCalledWith();
       expect(invokeArgs(mock, 'lock_all_credential_profiles')).toBeDefined();
       expect(markLocked).toHaveBeenCalledWith(['dream.mntl.enc'], 'my-diary');
+    });
+  });
+
+  describe('unlockWithPassword', () => {
+    it('sends the password to the backend and refreshes once unlocked', async () => {
+      vaultState.rootPath.set('/vault');
+      mock.respondWith('list_credential_profiles', [profile('my-diary', true)]);
+
+      const error = await credentials.unlockWithPassword('my-diary', 'hunter22');
+
+      expect(error).toBeNull();
+      expect(invokeArgs(mock, 'unlock_credential_profile')).toMatchObject({
+        vaultRoot: '/vault',
+        profileId: 'my-diary',
+        password: 'hunter22',
+      });
+      expect(credentials.isUnlocked('my-diary')).toBe(true);
+    });
+
+    it('reloads the notes that were showing as locked', async () => {
+      vaultState.rootPath.set('/vault');
+      vaultState.tree.set(tree([note('dream.mntl.enc', 'my-diary')]));
+      mock.respondWith('list_credential_profiles', [profile('my-diary')]);
+      await credentials.refresh();
+      const reload = jest.spyOn(notesState, 'reload');
+
+      await credentials.unlockWithPassword('my-diary', 'hunter22');
+
+      expect(reload).toHaveBeenCalledWith('dream.mntl.enc');
+    });
+
+    it('resolves the backend message instead of throwing when the password is wrong', async () => {
+      vaultState.rootPath.set('/vault');
+      const original = mock.invoke.getMockImplementation()!;
+      mock.invoke.mockImplementation((command: string, ...rest: unknown[]) =>
+        command === 'unlock_credential_profile'
+          ? Promise.reject('Incorrect password.')
+          : (original as (...args: unknown[]) => Promise<unknown>)(command, ...rest),
+      );
+      const reload = jest.spyOn(notesState, 'reload');
+
+      expect(await credentials.unlockWithPassword('my-diary', 'nope')).toBe('Incorrect password.');
+      expect(reload).not.toHaveBeenCalled();
+    });
+
+    it('reports a closed vault rather than calling the backend', async () => {
+      expect(await credentials.unlockWithPassword('my-diary', 'hunter22')).toMatch(/no vault/i);
+      expect(invokeArgs(mock, 'unlock_credential_profile')).toBeUndefined();
+    });
+  });
+
+  describe('createProfile', () => {
+    beforeEach(() => vaultState.rootPath.set('/vault'));
+
+    it('creates the profile with a trimmed name and resolves its id', async () => {
+      mock.respondWith('create_credential_profile', profile('work', true));
+      mock.respondWith('list_credential_profiles', [profile('work', true)]);
+
+      const result = await credentials.createProfile('  Work ', 'correct horse');
+
+      expect(result).toEqual({ id: 'work' });
+      expect(invokeArgs(mock, 'create_credential_profile')).toMatchObject({
+        vaultRoot: '/vault',
+        displayName: 'Work',
+        password: 'correct horse',
+      });
+      expect(credentials.profiles().map((p) => p.id)).toEqual(['work']);
+    });
+
+    it('rejects a blank name or a short password without calling the backend', async () => {
+      expect(await credentials.createProfile('  ', 'correct horse')).toEqual({ error: 'Give the profile a name.' });
+      expect(await credentials.createProfile('Work', 'short')).toEqual({ error: 'Use at least 8 characters.' });
+      expect(invokeArgs(mock, 'create_credential_profile')).toBeUndefined();
+    });
+
+    it('resolves the backend message when creation fails', async () => {
+      const original = mock.invoke.getMockImplementation()!;
+      mock.invoke.mockImplementation((command: string, ...rest: unknown[]) =>
+        command === 'create_credential_profile'
+          ? Promise.reject('A profile named "Work" already exists.')
+          : (original as (...args: unknown[]) => Promise<unknown>)(command, ...rest),
+      );
+
+      expect(await credentials.createProfile('Work', 'correct horse')).toEqual({
+        error: 'A profile named "Work" already exists.',
+      });
     });
   });
 

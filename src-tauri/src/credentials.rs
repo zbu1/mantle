@@ -42,7 +42,6 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::State;
 use zeroize::Zeroizing;
 
@@ -88,8 +87,6 @@ pub struct CredentialProfile {
     /// Base64 tag over the master key. Not the password check (AES-KW already
     /// is); this distinguishes a wrong password from a corrupt record.
     pub verifier: String,
-    /// Creation time in epoch milliseconds.
-    pub created_at: u64,
 }
 
 /// The contents of `.mantle/profiles.json`.
@@ -312,7 +309,6 @@ pub struct ProfileInfo {
     pub id: String,
     pub display_name: String,
     pub unlocked: bool,
-    pub created_at: u64,
     pub kdf: KdfParams,
 }
 
@@ -321,16 +317,8 @@ fn to_info(profile: &CredentialProfile, unlocked: bool) -> ProfileInfo {
         id: profile.id.clone(),
         display_name: profile.display_name.clone(),
         unlocked,
-        created_at: profile.created_at,
         kdf: profile.kdf.clone(),
     }
-}
-
-fn now_millis() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0)
 }
 
 #[tauri::command]
@@ -407,7 +395,6 @@ fn create_profile_inner(
         kdf: kdf.clone(),
         wrapped_master_key: BASE64.encode(wrapped),
         verifier: compute_verifier(&master_key),
-        created_at: now_millis(),
     };
 
     registry.profiles.push(profile.clone());
@@ -675,7 +662,6 @@ mod tests {
             kdf: test_kdf(),
             wrapped_master_key: BASE64.encode([0u8; 40]),
             verifier: String::new(),
-            created_at: 0,
         }
     }
 
@@ -737,6 +723,39 @@ mod tests {
         let registry = load_registry(&root_of(&root)).unwrap();
         assert_eq!(registry.version, CURRENT_VERSION);
         assert!(registry.profiles.is_empty());
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_registry_written_with_a_creation_time_still_loads_and_drops_it_on_save() {
+        // Profiles used to record when they were created. That field is gone,
+        // but the registry holds the only copy of each wrapped master key, so a
+        // file that still carries it must parse rather than strand the vault.
+        let root = temp_dir("registry-legacy-created-at");
+        let dir = root.join(STATE_DIR);
+        fs::create_dir_all(&dir).unwrap();
+        let legacy = r#"{
+            "version": 1,
+            "profiles": [{
+                "id": "diary",
+                "displayName": "Diary",
+                "salt": "AAAA",
+                "wrappedMasterKey": "BBBB",
+                "verifier": "CCCC",
+                "createdAt": 1700000000000
+            }]
+        }"#;
+        fs::write(dir.join(PROFILES_FILE), legacy).unwrap();
+
+        let registry = load_registry(&root_of(&root)).unwrap();
+        assert_eq!(registry.profiles.len(), 1);
+        assert_eq!(registry.profiles[0].id, "diary");
+        assert_eq!(registry.profiles[0].wrapped_master_key, "BBBB");
+
+        save_registry(&root_of(&root), &registry).unwrap();
+        let rewritten = fs::read_to_string(dir.join(PROFILES_FILE)).unwrap();
+        assert!(!rewritten.contains("createdAt"));
 
         let _ = fs::remove_dir_all(&root);
     }

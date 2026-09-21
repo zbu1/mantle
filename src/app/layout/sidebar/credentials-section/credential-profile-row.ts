@@ -1,7 +1,7 @@
 import { Component, OnDestroy, computed, inject, input, output, signal } from '@angular/core';
 import { LucidePlus } from '@lucide/angular';
 import { CredentialsState } from '../../../notes/credentials-state';
-import { NoteEncryptionActions } from '../../../notes/note-encryption-actions';
+import { NewEncryptedNoteState } from '../../../notes/new-encrypted-note/new-encrypted-note-state';
 import { VaultNoteNode } from '../../../notes/vault-tree.model';
 import { VaultSelectionState } from '../../../notes/vault-selection-state';
 import { SidebarItemButton } from '../sidebar-item-button/sidebar-item-button';
@@ -48,7 +48,7 @@ export class CredentialProfileRow implements OnDestroy {
   readonly noteContextMenu = output<{ event: MouseEvent; note: VaultNoteNode }>();
 
   private readonly credentialsState = inject(CredentialsState);
-  private readonly encryptionActions = inject(NoteEncryptionActions);
+  private readonly newEncryptedNoteState = inject(NewEncryptedNoteState);
   private readonly selectionState = inject(VaultSelectionState);
   private readonly contextMenuState = inject(ContextMenuState);
   private readonly settingsModalState = inject(SettingsModalState);
@@ -159,7 +159,7 @@ export class CredentialProfileRow implements OnDestroy {
     const items: ContextMenuItem[] = [];
 
     if (!this.unknown()) {
-      items.push({ kind: 'item', label: 'New Note', icon: 'new-note', action: () => void this.onNewNote() });
+      items.push({ kind: 'item', label: 'New Note', icon: 'new-note', action: () => this.onNewNote() });
       items.push({ kind: 'separator' });
       items.push({
         kind: 'item',
@@ -181,9 +181,9 @@ export class CredentialProfileRow implements OnDestroy {
   }
 
   /** Create a note that is encrypted from the moment it exists. */
-  protected async onNewNote(): Promise<void> {
+  protected onNewNote(): void {
     const id = this.profileId();
     if (id === null || this.unknown()) return;
-    await this.encryptionActions.createEncryptedNote(id);
+    this.newEncryptedNoteState.open({ profileId: id });
   }
 }

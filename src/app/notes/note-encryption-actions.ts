@@ -5,16 +5,10 @@ import { ContextMenuItem } from '../shared/context-menu/context-menu.model';
 import { DialogState } from '../shared/dialog/dialog-state';
 import { CredentialsState } from './credentials-state';
 import { CreatedNote, VaultState } from './vault-state';
+import { NoteEncryptionModalState } from './note-encryption-modal/note-encryption-modal-state';
 import { NotesState } from './notes-state';
 import { TabsState } from './tabs-state';
 import { VaultNoteNode } from './vault-tree.model';
-
-/**
- * Most profiles a context menu will list inline before collapsing to a single
- * entry. Beyond a handful the menu stops being a shortcut and starts being a
- * wall of near-identical rows.
- */
-const MAX_INLINE_PROFILES = 6;
 
 /**
  * Encrypting, decrypting and re-homing individual notes, plus the context-menu
@@ -23,11 +17,10 @@ const MAX_INLINE_PROFILES = 6;
  * Shared by the sidebar's note menu and the editor toolbar's encryption
  * button, which offer the same actions.
  *
- * The profiles are listed as flat top-level items (`Encrypt with "Work"`)
- * rather than a submenu: `ContextMenu` has a single positioned surface with a
- * flat keyboard model, so nesting would mean hover-intent, arrow-key nesting
- * and two-panel hit testing — a sizeable feature orthogonal to encryption. For
- * the realistic handful of profiles, flat is also one click instead of two.
+ * The menu offers a single entry — "Encrypt…" or "Change Encryption…" — that
+ * opens `NoteEncryptionModal`, where the profile (or removing encryption) is
+ * chosen. That keeps the menu the same size however many profiles the vault
+ * has, and gives unlocking or creating a profile somewhere to happen.
  */
 @Injectable({ providedIn: 'root' })
 export class NoteEncryptionActions {
@@ -36,10 +29,10 @@ export class NoteEncryptionActions {
   private readonly notesState = inject(NotesState);
   private readonly tabsState = inject(TabsState);
   private readonly dialogState = inject(DialogState);
+  private readonly modalState = inject(NoteEncryptionModalState);
 
   /** Menu entries for a note, reflecting whether it's encrypted and unlocked. */
   menuItems(note: VaultNoteNode): ContextMenuItem[] {
-    const profiles = this.credentialsState.profiles();
     const locked = note.encrypted && !this.credentialsState.isUnlocked(note.profile);
 
     if (note.encrypted && locked) {
@@ -58,52 +51,12 @@ export class NoteEncryptionActions {
       ];
     }
 
-    if (note.encrypted) {
-      const others = profiles.filter((p) => p.id !== note.profile).slice(0, MAX_INLINE_PROFILES);
-      return [
-        ...others.map(
-          (p): ContextMenuItem => ({
-            kind: 'item',
-            label: `Move to "${p.displayName}"`,
-            icon: 'lock',
-            action: () => void this.moveToProfile(note, p.id),
-          }),
-        ),
-        { kind: 'separator' },
-        {
-          kind: 'item',
-          label: 'Decrypt (make plaintext)',
-          icon: 'unlock',
-          action: () => void this.decrypt(note),
-        },
-      ];
-    }
-
-    if (profiles.length === 0) {
-      return [
-        {
-          kind: 'item',
-          label: 'Encrypt…',
-          icon: 'lock',
-          action: () => void this.createProfileThenEncrypt(note),
-        },
-      ];
-    }
-
     return [
-      ...profiles.slice(0, MAX_INLINE_PROFILES).map(
-        (p): ContextMenuItem => ({
-          kind: 'item',
-          label: `Encrypt with "${p.displayName}"`,
-          icon: 'lock',
-          action: () => void this.encrypt(note, p.id),
-        }),
-      ),
       {
         kind: 'item',
-        label: 'Encrypt with a new profile…',
+        label: note.encrypted ? 'Change Encryption…' : 'Encrypt…',
         icon: 'lock',
-        action: () => void this.createProfileThenEncrypt(note),
+        action: () => this.modalState.open(note),
       },
     ];
   }
@@ -200,50 +153,31 @@ export class NoteEncryptionActions {
   }
 
   /**
-   * Create a new note born encrypted in `profileId`, so its contents never
-   * touch the disk as plaintext, and open it.
+   * Create a note named `name` that is encrypted from the moment it exists, so
+   * its contents never touch the disk as plaintext.
    *
-   * Names it like the sidebar's New Note does: `Untitled`, then `Untitled 2`,
-   * … until one doesn't collide.
+   * `profileId` must already be unlocked. Rejects with the backend's message
+   * rather than showing a dialog: the caller is the New Encrypted Note modal,
+   * which surfaces it inline next to the field that caused it.
    */
-  async createEncryptedNote(profileId: string, relDir = ''): Promise<CreatedNote | null> {
+  async createEncryptedNote(profileId: string, relDir: string, name: string): Promise<CreatedNote> {
     const root = this.vaultState.rootPath();
-    if (!root) return null;
-    if (!this.credentialsState.isUnlocked(profileId)) {
-      if (!(await this.credentialsState.promptUnlock(profileId))) return null;
+    if (!root) throw new Error('No vault is open.');
+
+    try {
+      const created = await invoke<CreatedNote>('create_encrypted_note', {
+        vaultRoot: root,
+        relDir,
+        name,
+        profileId,
+      });
+      logInfo(`Created encrypted note "${created.relPath}" in profile "${profileId}"`);
+      await this.vaultState.refresh();
+      return created;
+    } catch (err) {
+      logError(`Failed to create an encrypted note: ${formatError(err)}`);
+      throw err;
     }
-
-    const base = 'Untitled';
-    let lastError: unknown = null;
-
-    for (let i = 0; i < 50; i++) {
-      const name = i === 0 ? base : `${base} ${i + 1}`;
-      try {
-        const created = await invoke<CreatedNote>('create_encrypted_note', {
-          vaultRoot: root,
-          relDir,
-          name,
-          profileId,
-        });
-        await this.vaultState.refresh();
-        this.tabsState.openNote({ id: created.relPath, title: created.name });
-        return created;
-      } catch (err) {
-        // Only a name collision is worth retrying; anything else (locked
-        // profile, unwritable vault) would fail identically 50 more times.
-        if (!String(err).includes('already exists')) {
-          lastError = err;
-          break;
-        }
-      }
-    }
-
-    logError(`Failed to create an encrypted note: ${formatError(lastError ?? 'no free name')}`);
-    await this.dialogState.alert(
-      lastError ? String(lastError) : 'Could not find an unused name for the new note.',
-      { title: "Couldn't Create Note", tone: 'error' },
-    );
-    return null;
   }
 
   /** Prompt for a new profile and encrypt `note` into it. Public: also used by the editor toolbar's "New profile…" picker option. */

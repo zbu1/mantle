@@ -6,7 +6,7 @@ import { CredentialProfile, CredentialsState } from '../../notes/credentials-sta
 import { installMockVaultInvoke } from '../../../testing/mock-vault';
 
 function profile(id: string, displayName: string, unlocked = false): CredentialProfile {
-  return { id, displayName, unlocked, createdAt: 0, kdf: { mCost: 8, tCost: 1, pCost: 1 } };
+  return { id, displayName, unlocked, kdf: { mCost: 8, tCost: 1, pCost: 1 } };
 }
 
 describe('SettingsModal sidebar', () => {

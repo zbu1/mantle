@@ -33,6 +33,20 @@ export function isNoteLocked(note: VaultNoteNode, unlockedProfiles: ReadonlySet<
   return note.profile === null || !unlockedProfiles.has(note.profile);
 }
 
+/** The folder at `relPath` (empty string is the vault root), or null if the tree has no such folder. */
+export function findFolder(root: VaultFolderNode, relPath: string): VaultFolderNode | null {
+  if (relPath === '') return root;
+  const visit = (folder: VaultFolderNode): VaultFolderNode | null => {
+    for (const child of folder.children) {
+      if (child.type !== 'folder') continue;
+      if (child.relPath === relPath) return child;
+      if (relPath.startsWith(`${child.relPath}/`)) return visit(child);
+    }
+    return null;
+  };
+  return visit(root);
+}
+
 /** Returns a copy of `root` with the note at `relPath` renamed in place (name + relPath updated). No-op (same reference) if not found. */
 export function withRenamedNote(root: VaultFolderNode, relPath: string, newRelPath: string, newName: string): VaultFolderNode {
   const rename = (node: VaultNode): VaultNode => {

@@ -75,10 +75,6 @@ export class ProfileSettingsPanel {
     });
   }
 
-  protected formattedCreatedAt(createdAt: number): string {
-    return new Date(createdAt).toLocaleString();
-  }
-
   protected startEditName(): void {
     const p = this.profile();
     if (!p) return;

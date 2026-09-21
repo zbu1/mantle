@@ -52,9 +52,8 @@
     <app-sidebar-section id="workspace" label="Vault">
       <svg sidebarSectionIcon lucideFolders [size]="12"></svg>
       <div class="flex flex-col rounded-md" data-vault-tree [class.bg-primary/10]="dragState.hoveredDir() === ''"
-        (contextmenu)="onVaultBackgroundContextMenu($event)" (dragenter)="onVaultBackgroundDragOver($event)"
-        (dragover)="onVaultBackgroundDragOver($event)" (dragleave)="onVaultBackgroundDragLeave($event)"
-        (drop)="onVaultBackgroundDrop($event)">
+        (dragenter)="onVaultBackgroundDragOver($event)" (dragover)="onVaultBackgroundDragOver($event)"
+        (dragleave)="onVaultBackgroundDragLeave($event)" (drop)="onVaultBackgroundDrop($event)">
         @if (vaultState.loading()) {
         <div class="px-2 py-1 text-xs text-muted-foreground">Loading vault…</div>
         } @else if (vaultState.error(); as err) {

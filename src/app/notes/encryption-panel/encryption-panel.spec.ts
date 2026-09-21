@@ -155,8 +155,8 @@ describe('EncryptionPanel', () => {
     expect(fixture.nativeElement.querySelector('select')).toBeNull();
 
     TestBed.inject(CredentialsState).profiles.set([
-      { id: 'personal', displayName: 'Personal', unlocked: true, createdAt: 0 },
-      { id: 'work', displayName: 'Work', unlocked: true, createdAt: 0 },
+      { id: 'personal', displayName: 'Personal', unlocked: true },
+      { id: 'work', displayName: 'Work', unlocked: true },
     ]);
     fixture.detectChanges();
 
@@ -176,8 +176,8 @@ describe('EncryptionPanel', () => {
     // used by the assertion have to be set after that first flush, not before.
     fixture.detectChanges();
     TestBed.inject(CredentialsState).profiles.set([
-      { id: 'personal', displayName: 'Personal', unlocked: true, createdAt: 0 },
-      { id: 'work', displayName: 'Work', unlocked: true, createdAt: 0 },
+      { id: 'personal', displayName: 'Personal', unlocked: true },
+      { id: 'work', displayName: 'Work', unlocked: true },
     ]);
     fixture.detectChanges();
 
@@ -194,8 +194,8 @@ describe('EncryptionPanel', () => {
     state.toggle(anchor, plainNote());
     fixture.detectChanges();
     TestBed.inject(CredentialsState).profiles.set([
-      { id: 'personal', displayName: 'Personal', unlocked: true, createdAt: 0 },
-      { id: 'work', displayName: 'Work', unlocked: false, createdAt: 0 },
+      { id: 'personal', displayName: 'Personal', unlocked: true },
+      { id: 'work', displayName: 'Work', unlocked: false },
     ]);
     fixture.detectChanges();
 
@@ -216,7 +216,7 @@ describe('EncryptionPanel', () => {
     state.toggle(anchor, plainNote());
     fixture.detectChanges();
     TestBed.inject(CredentialsState).profiles.set([
-      { id: 'personal', displayName: 'Personal', unlocked: true, createdAt: 0 },
+      { id: 'personal', displayName: 'Personal', unlocked: true },
     ]);
     fixture.detectChanges();
 

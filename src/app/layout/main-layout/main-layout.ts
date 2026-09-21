@@ -12,6 +12,8 @@ import { VaultDragPreview } from '../../shared/vault-drag-preview/vault-drag-pre
 import { HoverTooltipHost } from '../../shared/hover-tooltip/hover-tooltip-host';
 import { HoverTooltipState } from '../../shared/hover-tooltip/hover-tooltip-state';
 import { EncryptionPanel } from '../../notes/encryption-panel/encryption-panel';
+import { NewEncryptedNote } from '../../notes/new-encrypted-note/new-encrypted-note';
+import { NoteEncryptionModal } from '../../notes/note-encryption-modal/note-encryption-modal';
 
 @Component({
   selector: 'app-main-layout',
@@ -22,6 +24,8 @@ import { EncryptionPanel } from '../../notes/encryption-panel/encryption-panel';
     ContentArea,
     ContextMenu,
     Dialog,
+    NewEncryptedNote,
+    NoteEncryptionModal,
     SettingsModal,
     VaultDragPreview,
     QuickSwitcher,

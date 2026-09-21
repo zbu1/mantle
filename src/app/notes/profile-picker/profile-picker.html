@@ -1,0 +1,104 @@
+<div [id]="labelId" class="text-[11px] font-medium text-muted-foreground">{{ label() }}</div>
+<div role="radiogroup" [attr.aria-labelledby]="labelId" class="mt-1 flex flex-col gap-1">
+  @for (row of rows(); track row.profile.id) {
+  @let profile = row.profile;
+  @let selected = selectedProfileId() === profile.id;
+  @let current = profile.id === currentProfileId();
+  <button type="button" role="radio" [attr.aria-checked]="selected" [disabled]="current" (click)="selectProfile(profile.id)"
+    [class]="selected ? 'border-ring bg-accent' : 'border-border hover:bg-background'"
+    class="flex items-center gap-2.5 rounded-md border px-2.5 py-2 text-left disabled:opacity-60 disabled:hover:bg-transparent">
+    <span class="grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full border"
+      [class]="selected ? 'border-primary' : 'border-border'">
+      @if (selected) {
+      <span class="h-1.5 w-1.5 rounded-full bg-primary"></span>
+      }
+    </span>
+    <span class="min-w-0 flex-1">
+      <span class="block truncate text-xs font-medium">{{ profile.displayName }}</span>
+      <span class="block text-[11px] text-muted-foreground">
+        {{ row.noteCount }} {{ row.noteCount === 1 ? 'note' : 'notes' }}
+      </span>
+    </span>
+    <span class="flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">
+      @if (current) {
+      <span class="font-medium text-foreground/80">Current</span>
+      <span aria-hidden="true">·</span>
+      }
+      @if (profile.unlocked) {
+      <svg lucideLockOpen [size]="12"></svg>
+      Unlocked
+      } @else {
+      <svg lucideLock [size]="12"></svg>
+      Locked
+      }
+    </span>
+  </button>
+
+  @if (selected && !profile.unlocked) {
+  <div class="mb-1 ml-6 flex items-center gap-2">
+    <input #unlockInput type="password" spellcheck="false" autocomplete="off" placeholder="Password"
+      [attr.aria-label]="'Password for ' + profile.displayName" (keydown.enter)="unlock()"
+      class="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none focus:border-ring" />
+    <button type="button" [disabled]="busy()" (click)="unlock()"
+      class="shrink-0 rounded-md border border-border px-3 py-1.5 text-xs text-foreground hover:bg-background disabled:opacity-50">
+      {{ busy() ? 'Working…' : 'Unlock' }}
+    </button>
+  </div>
+  }
+  }
+
+  <button type="button" role="radio" [attr.aria-checked]="creatingProfile()" (click)="startNewProfile()"
+    [class]="creatingProfile() ? 'border-ring bg-accent' : 'border-border hover:bg-background'"
+    class="flex items-center gap-2.5 rounded-md border px-2.5 py-2 text-left text-xs font-medium">
+    <span class="grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full border"
+      [class]="creatingProfile() ? 'border-primary' : 'border-border'">
+      @if (creatingProfile()) {
+      <span class="h-1.5 w-1.5 rounded-full bg-primary"></span>
+      }
+    </span>
+    <svg lucidePlus [size]="12" class="shrink-0 text-muted-foreground"></svg>
+    New profile
+  </button>
+
+  @if (creatingProfile()) {
+  <div class="mb-1 ml-6 flex flex-col gap-2">
+    <input #newNameInput type="text" spellcheck="false" autocomplete="off" placeholder="Profile name"
+      aria-label="Profile name" (keydown.enter)="createProfile()"
+      class="rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none focus:border-ring" />
+    <input #newPasswordInput type="password" spellcheck="false" autocomplete="new-password" placeholder="Password"
+      aria-label="New profile password" (keydown.enter)="createProfile()"
+      class="rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none focus:border-ring" />
+    <input #newConfirmInput type="password" spellcheck="false" autocomplete="new-password" placeholder="Confirm password"
+      aria-label="Confirm new profile password" (keydown.enter)="createProfile()"
+      class="rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none focus:border-ring" />
+    <p class="text-[11px] text-muted-foreground">
+      Notes in this profile can only be opened with this password. There is no way to recover it.
+    </p>
+    <button type="button" [disabled]="busy()" (click)="createProfile()"
+      class="self-end rounded-md border border-border px-3 py-1.5 text-xs text-foreground hover:bg-background disabled:opacity-50">
+      {{ busy() ? 'Working…' : 'Create profile' }}
+    </button>
+  </div>
+  }
+
+  @if (allowPlaintext()) {
+  <button type="button" role="radio" [attr.aria-checked]="plaintextSelected()" (click)="selectPlaintext()"
+    [class]="plaintextSelected() ? 'border-ring bg-accent' : 'border-border hover:bg-background'"
+    class="flex items-center gap-2.5 rounded-md border px-2.5 py-2 text-left">
+    <span class="grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full border"
+      [class]="plaintextSelected() ? 'border-primary' : 'border-border'">
+      @if (plaintextSelected()) {
+      <span class="h-1.5 w-1.5 rounded-full bg-primary"></span>
+      }
+    </span>
+    <span class="min-w-0 flex-1">
+      <span class="block truncate text-xs font-medium">No encryption</span>
+      <span class="block text-[11px] text-muted-foreground">Store as readable text on disk</span>
+    </span>
+    <svg lucideLockOpen [size]="12" class="shrink-0 text-muted-foreground"></svg>
+  </button>
+  }
+</div>
+@if (error(); as message) {
+<p class="mt-2 text-xs text-destructive" role="alert">{{ message }}</p>
+}

@@ -25,7 +25,7 @@ import { MenuItem } from '../../../shared/menu/menu-item';
 import { MenuSeparator } from '../../../shared/menu/menu-separator';
 import { MenuSurface } from '../../../shared/menu/menu-surface';
 import { CredentialsState } from '../../../notes/credentials-state';
-import { NoteEncryptionActions } from '../../../notes/note-encryption-actions';
+import { NewEncryptedNoteState } from '../../../notes/new-encrypted-note/new-encrypted-note-state';
 import { VaultState } from '../../../notes/vault-state';
 import { SettingsModalState } from '../../../shared/settings/settings-modal-state';
 import { SectionId, SidebarState } from '../sidebar-state';
@@ -78,7 +78,7 @@ export class SidebarToolbar {
   protected readonly vaultState = inject(VaultState);
   protected readonly credentialsState = inject(CredentialsState);
   protected readonly sidebarState = inject(SidebarState);
-  private readonly encryptionActions = inject(NoteEncryptionActions);
+  private readonly newEncryptedNoteState = inject(NewEncryptedNoteState);
   private readonly settingsModalState = inject(SettingsModalState);
 
   /** Sidebar owns note/folder creation (shared with the right-click menus); this just asks for it. */
@@ -152,11 +152,9 @@ export class SidebarToolbar {
     this.newFolder.emit();
   }
 
-  protected async newEncryptedNote(profileId?: string): Promise<void> {
+  protected onNewEncryptedNote(): void {
     this.closeMenu();
-    const id = profileId ?? (await this.credentialsState.promptCreate());
-    if (!id) return;
-    await this.encryptionActions.createEncryptedNote(id);
+    this.newEncryptedNoteState.open();
   }
 
   // ---- Sort ----

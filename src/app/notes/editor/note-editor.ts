@@ -20,6 +20,7 @@ import { undoInputRule } from 'prosemirror-inputrules';
 import { gapCursor } from 'prosemirror-gapcursor';
 
 import { NotesState } from '../notes-state';
+import { EditorFocusState } from './editor-focus-state';
 import { schema } from './prosemirror/schema';
 import { parseMarkdown, serializeMarkdown } from './prosemirror/markdown-converter';
 import { createSlashMenuPlugin } from './prosemirror/plugins/slash-menu-plugin';
@@ -84,6 +85,7 @@ function buildEditorKeymap() {
 })
 export class NoteEditor {
   private readonly notesState = inject(NotesState);
+  private readonly editorFocus = inject(EditorFocusState);
   private readonly slashMenuState = inject(SlashMenuState);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -162,5 +164,6 @@ export class NoteEditor {
     const tr = view.state.tr.replaceWith(0, view.state.doc.content.size, newDoc);
     view.dispatch(tr);
     this.lastAppliedNoteId = id;
+    if (this.editorFocus.consume(id)) view.focus();
   }
 }
