@@ -29,14 +29,14 @@ describe('SidebarSection', () => {
 
     const state = TestBed.inject(SidebarState);
     expect(state.isSectionExpanded('tags')).toBe(true);
-    expect(fixture.nativeElement.querySelector('.p-0\\.5')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('.px-0\\.5')).toBeTruthy();
 
     const button: HTMLButtonElement = fixture.nativeElement.querySelector('button');
     button.click();
     fixture.detectChanges();
 
     expect(state.isSectionExpanded('tags')).toBe(false);
-    expect(fixture.nativeElement.querySelector('.p-0\\.5')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.px-0\\.5')).toBeNull();
   });
 
   it('right-clicking the header opens a checklist of sections, with the Vault locked on', () => {

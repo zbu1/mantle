@@ -83,6 +83,7 @@ Package manager is **pnpm** (see `pnpm-lock.yaml`), not npm.
 
 - Angular components are standalone (no NgModules); component prefix is `app`. State lives in `Injectable({ providedIn: 'root' })` services named `*-state.ts` (e.g. `VaultState`, `NotesState`, `TabsState`) built on signals/effects, not in components.
 - Styling uses Tailwind CSS (`@tailwindcss/postcss`, `.postcssrc.json`) — prefer utility classes over new CSS. Theme colors are CSS custom properties in `src/styles/theme.css` (light/dark via `prefers-color-scheme`) — use those tokens (`bg-[var(--surface)]`, etc.) instead of hardcoded colors.
+- The palette is "ember & basalt" — warm neutrals plus one ember `--primary`, defined in both themes in `theme.css`. `--accent` is a soft tint (hover/selection), not the brand color; use `primary` for emphasis and `ring` for focus borders. Type: Inter only — no second face; get hierarchy from size, weight and tracking. Use the `.frame` (grained backdrop), `shadow-card`, `.kbd` and `animate-pop-in` helpers in `styles.css` rather than re-creating them.
 - Component style files are omitted (`"style": "none"` in `angular.json` schematics) — keep styling in Tailwind classes or `styles/theme.css`.
 - Reusable menu UI (slash menu, context menu) is built from the shared `MenuSurface`/`MenuItem`/`MenuSeparator` components in `src/app/shared/menu/` — extend those rather than duplicating menu markup.
 - Icons come from `@lucide/angular`; import only the specific `Lucide*` icons used by a component.

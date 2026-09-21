@@ -1,30 +1,30 @@
 @if (request(); as req) {
 <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" (pointerdown)="onBackdropPointerDown($event)">
-  <div class="w-80 rounded-lg border border-border bg-surface p-4 text-surface-foreground shadow-xl">
+  <div class="w-80 rounded-lg border border-border bg-surface p-4 text-surface-foreground shadow-xl animate-pop-in">
     <h2 class="text-sm font-semibold">{{ req.title }}</h2>
     <p class="mt-2 text-xs text-muted-foreground">{{ req.message }}</p>
 
     @if (req.kind === 'prompt') {
     <input #promptInput type="text" [value]="req.initialValue" [placeholder]="req.placeholder" spellcheck="false"
       (keydown.enter)="submitPrompt()"
-      class="mt-3 w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none focus:border-accent" />
+      class="mt-3 w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none focus:border-ring" />
     }
 
     @if (req.kind === 'password') {
     @if (req.nameLabel; as nameLabel) {
     <label class="mt-3 block text-[11px] font-medium text-muted-foreground">{{ nameLabel }}</label>
     <input #nameInput type="text" spellcheck="false" autocomplete="off" (keydown.enter)="submitPassword()"
-      class="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none focus:border-accent" />
+      class="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none focus:border-ring" />
     }
     <label class="mt-3 block text-[11px] font-medium text-muted-foreground">Password</label>
     <input #passwordInput type="password" spellcheck="false" autocomplete="new-password"
       (keydown.enter)="submitPassword()"
-      class="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none focus:border-accent" />
+      class="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none focus:border-ring" />
     @if (req.requireConfirm) {
     <label class="mt-3 block text-[11px] font-medium text-muted-foreground">Confirm password</label>
     <input #confirmInput type="password" spellcheck="false" autocomplete="new-password"
       (keydown.enter)="submitPassword()"
-      class="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none focus:border-accent" />
+      class="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none focus:border-ring" />
     }
     }
 

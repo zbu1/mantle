@@ -1,4 +1,4 @@
-<header class="relative grid h-10 shrink-0 select-none bg-surface text-surface-foreground"
+<header class="relative grid h-10 shrink-0 select-none text-surface-foreground"
   [style.grid-template-columns]="gridTemplateColumns()" [style.transition]="layoutTransition()">
   <div class="flex min-w-0 items-center gap-1 pl-2 pr-1">
     <app-main-menu />
@@ -17,6 +17,7 @@
       [title]="tab.missing ? tab.title + ' — file not found (moved or deleted outside Mantle)' : tab.title"
       class="group my-1 flex min-w-0 max-w-48 shrink-0 items-center gap-2 rounded-md border border-border px-3 text-xs"
       [class.bg-background]="tab.id === tabsState.activeId()" [class.text-foreground]="tab.id === tabsState.activeId()"
+      [class.tab-active-rule]="tab.id === tabsState.activeId()"
       [class.text-muted-foreground]="tab.id !== tabsState.activeId()"
       [class.hover:bg-background/60]="tab.id !== tabsState.activeId()" [class.opacity-60]="tab.missing">
       <span class="min-w-0 flex-1 truncate text-left" [class.line-through]="tab.missing">{{ tab.title }}</span>
@@ -27,7 +28,7 @@
     </button>
     }
     } @else {
-    <div class="flex items-center pl-2 text-sm font-semibold text-foreground">Mantle</div>
+    <div class="flex items-center pl-2 text-sm font-semibold tracking-tight text-foreground">Mantle<span class="text-primary">.</span></div>
     }
     <button type="button" title="New note" (click)="onNewNote()"
       class="my-1 inline-flex h-7 w-7 shrink-0 items-center justify-center self-center rounded-md text-muted-foreground hover:bg-background/60 hover:text-foreground">

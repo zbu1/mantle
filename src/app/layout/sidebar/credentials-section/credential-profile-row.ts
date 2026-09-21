@@ -12,7 +12,7 @@ import { ProfileLockIcon, ProfileLockIconState } from './profile-lock-icon';
 import { ProfileLockStatus } from './profile-lock-status';
 import { ContextMenuState } from '../../../shared/context-menu/context-menu-state';
 import { ContextMenuItem } from '../../../shared/context-menu/context-menu.model';
-import { ProfileSettingsPageState } from '../../profile-settings-page/profile-settings-page-state';
+import { SettingsModalState } from '../../../shared/settings/settings-modal-state';
 
 /** How long an armed "lock?" confirmation stays up before reverting on its own. */
 const LOCK_CONFIRM_TIMEOUT_MS = 4000;
@@ -51,7 +51,7 @@ export class CredentialProfileRow implements OnDestroy {
   private readonly encryptionActions = inject(NoteEncryptionActions);
   private readonly selectionState = inject(VaultSelectionState);
   private readonly contextMenuState = inject(ContextMenuState);
-  private readonly profileSettingsPageState = inject(ProfileSettingsPageState);
+  private readonly settingsModalState = inject(SettingsModalState);
 
   protected readonly expanded = signal(false);
   protected readonly noteCount = computed(() => this.notes().length);
@@ -132,7 +132,7 @@ export class CredentialProfileRow implements OnDestroy {
 
   protected onMenuSettings(): void {
     const id = this.profileId();
-    if (id !== null) this.profileSettingsPageState.open(id);
+    if (id !== null) this.settingsModalState.openProfile(id);
   }
 
   protected onMenuChangePassword(): void {

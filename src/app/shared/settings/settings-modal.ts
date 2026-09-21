@@ -1,8 +1,10 @@
-import { Component, ElementRef, HostListener, computed, effect, inject, signal, viewChild } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import {
   LucideFolderOpen,
   LucideInfo,
   LucideKeyboard,
+  LucideLock,
+  LucideLockOpen,
   LucidePalette,
   LucidePanelLeft,
   LucideSearch,
@@ -11,16 +13,16 @@ import {
   LucideShieldCheck,
   LucideType,
   LucideWrench,
-  LucideX,
 } from '@lucide/angular';
 import { DialogState } from '../dialog/dialog-state';
 import { Toggle } from '../toggle/toggle';
+import { Window } from '../window/window';
+import { ProfileSettingsPanel } from './profile-settings-panel';
 import { SettingsRow } from './settings-row';
 import { SettingsCategoryId, SettingsModalState } from './settings-modal-state';
 import { CredentialsState } from '../../notes/credentials-state';
 import { VaultState, vaultNameFromPath } from '../../notes/vault-state';
 import { SectionId, SidebarState } from '../../layout/sidebar/sidebar-state';
-import { ProfileSettingsPageState } from '../../layout/profile-settings-page/profile-settings-page-state';
 
 interface CategoryDef {
   id: SettingsCategoryId;
@@ -66,9 +68,9 @@ const SHORTCUTS: ShortcutEntry[] = [
 ];
 
 /**
- * The Settings modal: a rounded, centered panel with a category list on the
- * left and that category's rows on the right. Rendered once at the layout
- * root, like `Dialog`/`ContextMenu`.
+ * The Settings window: a draggable, minimizable `Window` with a category list
+ * on the left and that category's rows on the right. Rendered once at the
+ * layout root, like `Dialog`/`ContextMenu`.
  *
  * Most rows here are cosmetic — bound to plain local signals with a comment
  * explaining what's missing to wire them up for real — because most of the
@@ -79,7 +81,7 @@ const SHORTCUTS: ShortcutEntry[] = [
  */
 @Component({
   selector: 'app-settings-modal',
-  imports: [SettingsRow, Toggle, LucideX, LucideSettings, LucideSettings2, LucidePalette, LucideType, LucidePanelLeft, LucideFolderOpen, LucideShieldCheck, LucideKeyboard, LucideWrench, LucideInfo, LucideSearch],
+  imports: [Window, ProfileSettingsPanel, SettingsRow, Toggle, LucideLock, LucideLockOpen, LucideSettings, LucideSettings2, LucidePalette, LucideType, LucidePanelLeft, LucideFolderOpen, LucideShieldCheck, LucideKeyboard, LucideWrench, LucideInfo, LucideSearch],
   templateUrl: './settings-modal.html',
 })
 export class SettingsModal {
@@ -88,9 +90,10 @@ export class SettingsModal {
   protected readonly vaultState = inject(VaultState);
   protected readonly credentialsState = inject(CredentialsState);
   private readonly dialogState = inject(DialogState);
-  private readonly profileSettingsPageState = inject(ProfileSettingsPageState);
 
   protected readonly categories = CATEGORIES;
+  /** The profile selected in the sidebar, if it still exists. */
+  protected readonly selectedProfile = computed(() => this.credentialsState.profileById(this.state.profileId()));
   protected readonly shortcuts = SHORTCUTS;
   protected readonly accentSwatches = ACCENT_SWATCHES;
 
@@ -172,21 +175,15 @@ export class SettingsModal {
   protected readonly hardwareAcceleration = signal(true);
   protected readonly zoomLevel = signal(100);
 
-  private readonly panel = viewChild<ElementRef<HTMLElement>>('panel');
-
   constructor() {
+    // A selected profile can vanish under the window: deleted from its own
+    // panel, or the vault switched. Land on the profile list rather than an
+    // empty pane.
     effect(() => {
-      if (this.state.isOpen()) this.panel()?.nativeElement.focus();
+      if (!this.state.isOpen()) return;
+      const id = this.state.profileId();
+      if (id !== null && !this.credentialsState.profileById(id)) this.state.selectCategory('encryption');
     });
-  }
-
-  @HostListener('document:keydown.escape')
-  protected onEscape(): void {
-    if (this.state.isOpen()) this.state.close();
-  }
-
-  protected onBackdropPointerDown(event: PointerEvent): void {
-    if (event.target === event.currentTarget) this.state.close();
   }
 
   protected toggleSidebarSection(id: SectionId): void {
@@ -230,8 +227,7 @@ export class SettingsModal {
   }
 
   protected openProfileSettings(profileId: string): void {
-    this.state.close();
-    this.profileSettingsPageState.open(profileId);
+    this.state.selectProfile(profileId);
   }
 
   protected stepEditorFontSize(delta: number): void {

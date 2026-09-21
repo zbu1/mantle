@@ -1,20 +1,14 @@
-@if (state.isOpen()) {
-<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" (pointerdown)="onBackdropPointerDown($event)">
-  <div #panel tabindex="-1" class="flex h-[560px] w-[720px] max-h-[85vh] flex-col overflow-hidden rounded-lg border border-border bg-surface text-surface-foreground shadow-xl outline-none">
-    <div class="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
-      <h2 class="text-sm font-semibold">Settings</h2>
-      <button type="button" title="Close" (click)="state.close()"
-        class="rounded-md p-1 text-muted-foreground hover:bg-background hover:text-foreground">
-        <svg lucideX [size]="14"></svg>
-      </button>
-    </div>
-
+<app-window windowId="settings" title="Settings" [state]="state" [width]="720" [height]="560" [minimizable]="false" [dimBackground]="true">
+  <svg windowIcon lucideSettings2 [size]="14"></svg>
+  @if (state.isOpen()) {
     <div class="flex flex-1 overflow-hidden">
-      <nav class="w-44 shrink-0 overflow-y-auto border-r border-border p-2">
+      <nav class="scrollbar-thin w-44 shrink-0 overflow-y-auto border-r border-border p-2">
+        <h3 id="settings-nav-options" class="px-2.5 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Options</h3>
+        <div role="group" aria-labelledby="settings-nav-options">
         @for (cat of categories; track cat.id) {
         <button type="button" (click)="state.selectCategory(cat.id)"
           class="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs"
-          [class]="state.category() === cat.id ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-background hover:text-foreground'">
+          [class]="state.activeCategory() === cat.id ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-background hover:text-foreground'">
           <span class="flex size-3.5 shrink-0 items-center justify-center">
             @switch (cat.id) {
             @case ('general') { <svg lucideSettings2 [size]="14"></svg> }
@@ -31,9 +25,31 @@
           <span class="truncate">{{ cat.label }}</span>
         </button>
         }
+        </div>
+
+        <h3 id="settings-nav-profiles" class="mt-3 px-2.5 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Credential Profiles</h3>
+        <div role="group" aria-labelledby="settings-nav-profiles">
+        @for (profile of credentialsState.profiles(); track profile.id) {
+        <button type="button" (click)="state.selectProfile(profile.id)"
+          class="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs"
+          [class]="state.profileId() === profile.id ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-background hover:text-foreground'">
+          <span class="flex size-3.5 shrink-0 items-center justify-center" [title]="profile.unlocked ? 'Unlocked' : 'Locked'">
+            @if (profile.unlocked) {
+            <svg lucideLockOpen [size]="14" class="text-success"></svg>
+            } @else {
+            <svg lucideLock [size]="14" class="text-warning"></svg>
+            }
+          </span>
+          <span class="truncate">{{ profile.displayName }}</span>
+        </button>
+        }
+        </div>
       </nav>
 
-      <div class="flex-1 overflow-y-auto px-6 py-4">
+      <div class="scrollbar-thin flex-1 overflow-y-auto px-6 py-4">
+        @if (selectedProfile(); as profile) {
+        <app-profile-settings-panel [profileId]="profile.id" />
+        } @else {
         @switch (state.category()) {
 
         @case ('general') {
@@ -43,7 +59,7 @@
         </app-settings-row>
         <app-settings-row label="New Notes Go In" description="Where a new note is created from the New Note action.">
           <select [value]="defaultNoteLocation()" (change)="defaultNoteLocation.set($any($event.target).value)"
-            class="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-accent">
+            class="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-ring">
             <option value="root">Vault root</option>
             <option value="current">Current folder</option>
           </select>
@@ -51,7 +67,7 @@
         <app-settings-row label="Default Note Title" description="Used as the filename when a new note isn't given one.">
           <input type="text" [value]="defaultNoteTitle()" (input)="defaultNoteTitle.set($any($event.target).value)"
             spellcheck="false"
-            class="w-36 rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-accent" />
+            class="w-36 rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-ring" />
         </app-settings-row>
         <app-settings-row label="Confirm Before Deleting" description="Ask before permanently removing a note or folder.">
           <app-toggle [checked]="confirmBeforeDelete()" (changed)="confirmBeforeDelete.set($event)" />
@@ -89,7 +105,7 @@
         </app-settings-row>
         <app-settings-row label="Interface Text Size">
           <select [value]="interfaceTextSize()" (change)="interfaceTextSize.set($any($event.target).value)"
-            class="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-accent">
+            class="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-ring">
             <option value="sm">Small</option>
             <option value="md">Medium</option>
             <option value="lg">Large</option>
@@ -97,7 +113,7 @@
         </app-settings-row>
         <app-settings-row label="Editor Font">
           <select [value]="editorFont()" (change)="editorFont.set($any($event.target).value)"
-            class="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-accent">
+            class="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-ring">
             <option value="default">Default</option>
             <option value="serif">Serif</option>
             <option value="mono">Monospace</option>
@@ -124,7 +140,7 @@
         <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Editor</h3>
         <app-settings-row label="Autosave Delay" description="How long to wait after you stop typing before saving.">
           <select [value]="autosaveDelay()" (change)="autosaveDelay.set($any($event.target).value)"
-            class="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-accent">
+            class="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-ring">
             <option value="immediate">Immediate</option>
             <option value="1s">1 second</option>
             <option value="3s">3 seconds</option>
@@ -148,7 +164,7 @@
         </app-settings-row>
         <app-settings-row label="Tab Key" description="What pressing Tab does inside the editor.">
           <select [value]="tabBehavior()" (change)="tabBehavior.set($any($event.target).value)"
-            class="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-accent">
+            class="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-ring">
             <option value="spaces">Insert spaces</option>
             <option value="indent">Indent list item</option>
           </select>
@@ -182,7 +198,7 @@
         </app-settings-row>
         <app-settings-row label="Default Sort Order">
           <select [value]="sidebarSortMode()" (change)="sidebarSortMode.set($any($event.target).value)"
-            class="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-accent">
+            class="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-ring">
             <option value="name-asc">Name (A → Z)</option>
             <option value="name-desc">Name (Z → A)</option>
             <option value="modified">Date modified</option>
@@ -212,14 +228,14 @@
         <app-settings-row label="Default Attachment Folder">
           <input type="text" [value]="defaultAttachmentFolder()" (input)="defaultAttachmentFolder.set($any($event.target).value)"
             spellcheck="false"
-            class="w-36 rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-accent" />
+            class="w-36 rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-ring" />
         </app-settings-row>
         <app-settings-row label="Watch for External Changes" description="Refresh the vault tree when files change outside Mantle.">
           <app-toggle [checked]="watchExternalChanges()" (changed)="watchExternalChanges.set($event)" />
         </app-settings-row>
         <app-settings-row label="Deleted Files">
           <select [value]="deletedFileHandling()" (change)="deletedFileHandling.set($any($event.target).value)"
-            class="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-accent">
+            class="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-ring">
             <option value="trash">Move to system trash</option>
             <option value="local-trash">Move to .trash/</option>
             <option value="permanent">Delete permanently</option>
@@ -290,7 +306,7 @@
         <h3 class="mb-1 mt-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Privacy</h3>
         <app-settings-row label="Auto-Lock After Inactivity">
           <select [value]="autoLockTimeout()" (change)="autoLockTimeout.set($any($event.target).value)"
-            class="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-accent">
+            class="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-ring">
             <option value="never">Never</option>
             <option value="5m">5 minutes</option>
             <option value="15m">15 minutes</option>
@@ -311,7 +327,7 @@
           <svg lucideSearch [size]="13" class="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground"></svg>
           <input type="text" placeholder="Search shortcuts…" [value]="shortcutSearch()"
             (input)="shortcutSearch.set($any($event.target).value)" spellcheck="false"
-            class="w-full rounded-md border border-border bg-background py-1.5 pl-7 pr-2 text-xs text-foreground outline-none focus:border-accent" />
+            class="w-full rounded-md border border-border bg-background py-1.5 pl-7 pr-2 text-xs text-foreground outline-none focus:border-ring" />
         </div>
         @for (shortcut of filteredShortcuts(); track shortcut.action) {
         <app-settings-row [label]="shortcut.action">
@@ -382,8 +398,8 @@
         }
 
         }
+        }
       </div>
     </div>
-  </div>
-</div>
-}
+  }
+</app-window>

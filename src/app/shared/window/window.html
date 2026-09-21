@@ -1,0 +1,63 @@
+@if (state().isOpen()) {
+@if (dimBackground() && !minimized()) {
+<!-- Same z-index as the shell but earlier in the DOM, so it paints just beneath it. -->
+<div aria-hidden="true" data-scrim class="pointer-events-none fixed inset-0 bg-black/50" [style.z-index]="scrimZIndex()"></div>
+}
+<div #shell role="dialog" aria-modal="false" [attr.aria-label]="title()" [class]="frameClass()" [style]="frameStyle()"
+  class="animate-pop-in fixed flex flex-col overflow-hidden bg-surface text-surface-foreground"
+  (pointerdown)="raise()" (keydown.escape)="state().close()">
+  <span #focusSink tabindex="-1" class="sr-only"></span>
+
+  <div class="frame flex h-10 shrink-0 touch-none items-stretch select-none" [class.border-b]="!minimized()"
+    [class.border-border]="!minimized()"
+    (pointerdown)="onTitlebarPointerDown($event)" (pointermove)="onTitlebarPointerMove($event)"
+    (pointerup)="onTitlebarPointerEnd($event)" (pointercancel)="onTitlebarPointerEnd($event)"
+    (lostpointercapture)="onTitlebarPointerEnd($event)" (dblclick)="onTitlebarDoubleClick($event)">
+    <div class="flex min-w-0 flex-1 items-center gap-2 pl-3" [class.cursor-pointer]="minimized()" (click)="onTitleClick()">
+      <span class="flex shrink-0 items-center text-primary empty:hidden"><ng-content select="[windowIcon]" /></span>
+      <h2 class="min-w-0 truncate text-xs font-semibold tracking-tight">{{ title() }}</h2>
+    </div>
+    <div class="flex">
+      @if (minimized()) {
+      <button type="button" title="Restore" aria-label="Restore" (click)="state().restore()"
+        class="inline-flex w-11 items-center justify-center text-foreground hover:bg-background">
+        <svg lucideMaximize [size]="13"></svg>
+      </button>
+      } @else {
+      @if (minimizable()) {
+      <button type="button" title="Minimize" aria-label="Minimize" (click)="state().minimize()"
+        class="inline-flex w-11 items-center justify-center text-foreground hover:bg-background">
+        <svg lucideMinus [size]="14"></svg>
+      </button>
+      }
+      <button type="button" [title]="maximized() ? 'Restore Down' : 'Maximize'"
+        [attr.aria-label]="maximized() ? 'Restore Down' : 'Maximize'" (click)="state().toggleMaximized()"
+        class="inline-flex w-11 items-center justify-center text-foreground hover:bg-background">
+        @if (maximized()) {
+        <svg lucideMinimize [size]="13"></svg>
+        } @else {
+        <svg lucideMaximize [size]="13"></svg>
+        }
+      </button>
+      }
+      <button type="button" title="Close" aria-label="Close" (click)="state().close()"
+        class="inline-flex w-11 items-center justify-center text-foreground hover:bg-destructive hover:text-destructive-foreground">
+        <svg lucideX [size]="16"></svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="flex min-h-0 flex-1 flex-col" [style.display]="minimized() ? 'none' : null">
+    <ng-content />
+  </div>
+
+  @if (!minimized() && !maximized()) {
+  @for (handle of resizeHandles; track handle.edge) {
+  <div aria-hidden="true" [attr.data-edge]="handle.edge" class="absolute z-10 touch-none" [class]="handle.class"
+    (pointerdown)="onResizePointerDown($event, handle.edge)" (pointermove)="onResizePointerMove($event)"
+    (pointerup)="onResizePointerEnd($event)" (pointercancel)="onResizePointerEnd($event)"
+    (lostpointercapture)="onResizePointerEnd($event)"></div>
+  }
+  }
+</div>
+}

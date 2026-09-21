@@ -1,0 +1,93 @@
+@if (profile(); as p) {
+<h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Identity</h3>
+<app-settings-row label="Display Name">
+  @if (editingName()) {
+  <input #nameInput type="text" [value]="nameDraft()" (input)="nameDraft.set($any($event.target).value)"
+    (keydown.enter)="commitEditName()" (keydown.escape)="cancelEditName(); $event.stopPropagation()" (blur)="commitEditName()"
+    spellcheck="false"
+    class="w-44 rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-ring" />
+  } @else {
+  <div class="flex items-center gap-1.5">
+    <span class="text-xs text-foreground">{{ p.displayName }}</span>
+    <button type="button" title="Rename" (click)="startEditName()"
+      class="rounded-md p-1 text-muted-foreground hover:bg-background hover:text-foreground">
+      <svg lucidePencil [size]="12"></svg>
+    </button>
+  </div>
+  }
+</app-settings-row>
+<app-settings-row label="Profile ID" description="Immutable — used inside every note's encrypted header.">
+  <span class="font-mono text-[11px] text-muted-foreground">{{ p.id }}</span>
+</app-settings-row>
+<app-settings-row label="Created">
+  <span class="text-xs text-muted-foreground">{{ formattedCreatedAt(p.createdAt) }}</span>
+</app-settings-row>
+
+<h3 class="mb-1 mt-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Security</h3>
+<app-settings-row label="Status" [description]="unlocked() ? 'Unlocked' : 'Locked'">
+  <button type="button" (click)="toggleLock()"
+    class="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs text-foreground hover:bg-background">
+    @if (unlocked()) {
+    <svg lucideLock [size]="12"></svg> Lock
+    } @else {
+    <svg lucideLockOpen [size]="12"></svg> Unlock
+    }
+  </button>
+</app-settings-row>
+<app-settings-row label="Master Password" description="Notes stay readable — only the password changes.">
+  <button type="button" (click)="changePassword()" [disabled]="!unlocked()"
+    class="rounded-md border border-border px-2.5 py-1 text-xs text-foreground hover:bg-background disabled:pointer-events-none disabled:opacity-40">
+    Change Master Password…
+  </button>
+</app-settings-row>
+
+<button type="button" (click)="advancedOpen.set(!advancedOpen())"
+  class="mt-2 flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
+  <svg lucideChevronDown [size]="12" [class.rotate-180]="advancedOpen()" class="transition-transform"></svg>
+  Advanced
+</button>
+@if (advancedOpen()) {
+<div class="mt-1 space-y-0.5 rounded-md border border-border bg-background px-3 py-2 text-[11px] text-muted-foreground">
+  <p>Key derivation: Argon2id</p>
+  <p>Memory cost: {{ p.kdf.mCost }} KiB</p>
+  <p>Time cost: {{ p.kdf.tCost }} iteration(s)</p>
+  <p>Parallelism: {{ p.kdf.pCost }} lane(s)</p>
+</div>
+}
+
+<h3 class="mb-1 mt-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Privacy</h3>
+<app-settings-row label="Encrypt Filenames" description="Coming soon — not yet implemented.">
+  <app-toggle [checked]="false" [disabled]="true" />
+</app-settings-row>
+<app-settings-row label="Encrypt Filepaths" description="Coming soon — not yet implemented.">
+  <app-toggle [checked]="false" [disabled]="true" />
+</app-settings-row>
+
+<h3 class="mb-1 mt-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+  Notes Using This Profile ({{ notes().length }})
+</h3>
+@if (notes().length === 0) {
+<p class="py-2 text-xs text-muted-foreground">No notes use this profile yet.</p>
+}
+@for (note of notes(); track note.relPath) {
+<div class="flex items-center justify-between gap-2 border-b border-border py-2 last:border-b-0"
+  [class.opacity-40]="!unlocked()">
+  <button type="button" [disabled]="!unlocked()" (click)="openNote(note)"
+    class="min-w-0 flex-1 truncate text-left text-xs text-foreground disabled:cursor-not-allowed">
+    {{ note.name }}
+  </button>
+  <button type="button" title="Note actions" [disabled]="!unlocked()" (click)="onNoteMenu($event, note)"
+    class="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-background hover:text-foreground disabled:pointer-events-none">
+    <svg lucideEllipsis [size]="12"></svg>
+  </button>
+</div>
+}
+
+<h3 class="mb-1 mt-4 text-xs font-semibold uppercase tracking-wide text-destructive">Danger Zone</h3>
+<app-settings-row label="Delete This Profile" description="Decrypts its notes to plaintext, then removes the profile.">
+  <button type="button" (click)="deleteProfile()" [disabled]="!canDelete()"
+    class="flex items-center gap-1.5 rounded-md border border-destructive/40 px-2.5 py-1 text-xs text-destructive hover:bg-destructive/10 disabled:pointer-events-none disabled:opacity-40">
+    <svg lucideTrash2 [size]="12"></svg> Delete
+  </button>
+</app-settings-row>
+}

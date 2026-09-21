@@ -1,11 +1,14 @@
-<div class="flex w-12 shrink-0 flex-col items-center gap-1 bg-surface py-2">
+<div class="flex w-12 shrink-0 flex-col items-center gap-1 py-2">
   <button type="button" aria-label="Vault" (click)="toggleVault()" [attr.aria-pressed]="!sidebarState.collapsed()"
     class="group relative inline-flex h-9 w-9 items-center justify-center rounded-md text-foreground/80 hover:bg-background hover:text-foreground"
-    [class.bg-background]="!sidebarState.collapsed()" [class.text-foreground]="!sidebarState.collapsed()">
+    [class.bg-background]="!sidebarState.collapsed()" [class.text-primary]="!sidebarState.collapsed()">
+    @if (!sidebarState.collapsed()) {
+    <span class="absolute -left-1.5 top-2 h-5 w-[3px] rounded-r-full bg-primary"></span>
+    }
     <svg lucideFolders [size]="18"></svg>
     <span class="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-      <span class="absolute top-1/2 -left-1 h-2 w-2 -translate-y-1/2 rotate-45 rounded-[1px] bg-foreground"></span>
-      <span class="relative whitespace-nowrap rounded-md bg-foreground px-2 py-1 text-xs font-medium text-background shadow-lg">Vault</span>
+      <span class="absolute top-1/2 -left-1 h-2 w-2 -translate-y-1/2 rotate-45 rounded-[1px] bg-tooltip"></span>
+      <span class="relative whitespace-nowrap rounded-md bg-tooltip px-2 py-1 text-xs font-medium text-tooltip-foreground shadow-lg">Vault</span>
     </span>
   </button>
 
@@ -15,10 +18,10 @@
     class="group relative inline-flex h-9 w-9 items-center justify-center rounded-md text-foreground/80 hover:bg-background hover:text-foreground">
     <svg lucideFileSearch2 [size]="18"></svg>
     <span class="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-      <span class="absolute top-1/2 -left-1 h-2 w-2 -translate-y-1/2 rotate-45 rounded-[1px] bg-foreground"></span>
-      <span class="relative flex items-center gap-1.5 whitespace-nowrap rounded-md bg-foreground px-2 py-1 text-xs font-medium text-background shadow-lg">
+      <span class="absolute top-1/2 -left-1 h-2 w-2 -translate-y-1/2 rotate-45 rounded-[1px] bg-tooltip"></span>
+      <span class="relative flex items-center gap-1.5 whitespace-nowrap rounded-md bg-tooltip px-2 py-1 text-xs font-medium text-tooltip-foreground shadow-lg">
         Quick Switcher
-        <span class="rounded border border-background/30 px-1 text-[10px] opacity-70">Ctrl+P</span>
+        <span class="kbd">Ctrl+P</span>
       </span>
     </span>
   </button>
@@ -27,32 +30,32 @@
     class="group relative inline-flex h-9 w-9 cursor-default items-center justify-center rounded-md text-muted-foreground/60">
     <svg lucideSearch [size]="18"></svg>
     <span class="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-      <span class="absolute top-1/2 -left-1 h-2 w-2 -translate-y-1/2 rotate-45 rounded-[1px] bg-foreground"></span>
-      <span class="relative whitespace-nowrap rounded-md bg-foreground px-2 py-1 text-xs font-medium text-background shadow-lg">Search</span>
+      <span class="absolute top-1/2 -left-1 h-2 w-2 -translate-y-1/2 rotate-45 rounded-[1px] bg-tooltip"></span>
+      <span class="relative whitespace-nowrap rounded-md bg-tooltip px-2 py-1 text-xs font-medium text-tooltip-foreground shadow-lg">Search</span>
     </span>
   </button>
   <button type="button" aria-label="Graph View" aria-disabled="true"
     class="group relative inline-flex h-9 w-9 cursor-default items-center justify-center rounded-md text-muted-foreground/60">
     <svg lucideNetwork [size]="18"></svg>
     <span class="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-      <span class="absolute top-1/2 -left-1 h-2 w-2 -translate-y-1/2 rotate-45 rounded-[1px] bg-foreground"></span>
-      <span class="relative whitespace-nowrap rounded-md bg-foreground px-2 py-1 text-xs font-medium text-background shadow-lg">Graph View</span>
+      <span class="absolute top-1/2 -left-1 h-2 w-2 -translate-y-1/2 rotate-45 rounded-[1px] bg-tooltip"></span>
+      <span class="relative whitespace-nowrap rounded-md bg-tooltip px-2 py-1 text-xs font-medium text-tooltip-foreground shadow-lg">Graph View</span>
     </span>
   </button>
   <button type="button" aria-label="Calendar" aria-disabled="true"
     class="group relative inline-flex h-9 w-9 cursor-default items-center justify-center rounded-md text-muted-foreground/60">
     <svg lucideCalendar [size]="18"></svg>
     <span class="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-      <span class="absolute top-1/2 -left-1 h-2 w-2 -translate-y-1/2 rotate-45 rounded-[1px] bg-foreground"></span>
-      <span class="relative whitespace-nowrap rounded-md bg-foreground px-2 py-1 text-xs font-medium text-background shadow-lg">Calendar</span>
+      <span class="absolute top-1/2 -left-1 h-2 w-2 -translate-y-1/2 rotate-45 rounded-[1px] bg-tooltip"></span>
+      <span class="relative whitespace-nowrap rounded-md bg-tooltip px-2 py-1 text-xs font-medium text-tooltip-foreground shadow-lg">Calendar</span>
     </span>
   </button>
   <button type="button" aria-label="Settings" (click)="openSettings()"
-    class="group relative inline-flex h-9 w-9 items-center justify-center rounded-md text-foreground/80 hover:bg-background hover:text-foreground">
+    class="group relative mt-auto inline-flex h-9 w-9 items-center justify-center rounded-md text-foreground/80 hover:bg-background hover:text-foreground">
     <svg lucideSettings [size]="18"></svg>
     <span class="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-      <span class="absolute top-1/2 -left-1 h-2 w-2 -translate-y-1/2 rotate-45 rounded-[1px] bg-foreground"></span>
-      <span class="relative whitespace-nowrap rounded-md bg-foreground px-2 py-1 text-xs font-medium text-background shadow-lg">Settings</span>
+      <span class="absolute top-1/2 -left-1 h-2 w-2 -translate-y-1/2 rotate-45 rounded-[1px] bg-tooltip"></span>
+      <span class="relative whitespace-nowrap rounded-md bg-tooltip px-2 py-1 text-xs font-medium text-tooltip-foreground shadow-lg">Settings</span>
     </span>
   </button>
 </div>

@@ -8,7 +8,6 @@ import { ContextMenu } from '../../shared/context-menu/context-menu';
 import { Dialog } from '../../shared/dialog/dialog';
 import { QuickSwitcher } from '../../shared/quick-switcher/quick-switcher';
 import { SettingsModal } from '../../shared/settings/settings-modal';
-import { ProfileSettingsPage } from '../profile-settings-page/profile-settings-page';
 import { VaultDragPreview } from '../../shared/vault-drag-preview/vault-drag-preview';
 import { HoverTooltipHost } from '../../shared/hover-tooltip/hover-tooltip-host';
 import { HoverTooltipState } from '../../shared/hover-tooltip/hover-tooltip-state';
@@ -24,7 +23,6 @@ import { EncryptionPanel } from '../../notes/encryption-panel/encryption-panel';
     ContextMenu,
     Dialog,
     SettingsModal,
-    ProfileSettingsPage,
     VaultDragPreview,
     QuickSwitcher,
     CommandPalette,

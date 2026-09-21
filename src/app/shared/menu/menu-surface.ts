@@ -13,7 +13,7 @@ import { Component, input } from '@angular/core';
   template: '<ng-content />',
   host: {
     role: 'menu',
-    class: 'block rounded-md border border-border bg-surface py-1 text-surface-foreground shadow-lg',
+    class: 'animate-pop-in block rounded-md border border-border bg-surface py-1 text-surface-foreground shadow-lg',
     '[class.w-56]': '!wide()',
     '[class.w-72]': 'wide()',
     '[class.overflow-hidden]': '!scrollable()',
