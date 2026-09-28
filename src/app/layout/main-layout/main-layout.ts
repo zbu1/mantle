@@ -1,8 +1,9 @@
-import { AfterViewInit, Component, ElementRef, inject, viewChild } from '@angular/core';
+import { Component, ElementRef, effect, inject, viewChild } from '@angular/core';
 import { Header } from '../header/header';
 import { IconRail } from '../icon-rail/icon-rail';
 import { Sidebar } from '../sidebar/sidebar';
 import { ContentArea } from '../content/content-area/content-area';
+import { Welcome } from '../welcome/welcome';
 import { CommandPalette } from '../../shared/command-palette/command-palette';
 import { ContextMenu } from '../../shared/context-menu/context-menu';
 import { Dialog } from '../../shared/dialog/dialog';
@@ -14,6 +15,7 @@ import { HoverTooltipState } from '../../shared/hover-tooltip/hover-tooltip-stat
 import { EncryptionPanel } from '../../notes/encryption-panel/encryption-panel';
 import { NewEncryptedNote } from '../../notes/new-encrypted-note/new-encrypted-note';
 import { NoteEncryptionModal } from '../../notes/note-encryption-modal/note-encryption-modal';
+import { VaultRootState } from '../../notes/vault-root-state';
 
 @Component({
   selector: 'app-main-layout',
@@ -22,6 +24,7 @@ import { NoteEncryptionModal } from '../../notes/note-encryption-modal/note-encr
     IconRail,
     Sidebar,
     ContentArea,
+    Welcome,
     ContextMenu,
     Dialog,
     NewEncryptedNote,
@@ -35,11 +38,16 @@ import { NoteEncryptionModal } from '../../notes/note-encryption-modal/note-encr
   ],
   templateUrl: './main-layout.html',
 })
-export class MainLayout implements AfterViewInit {
+export class MainLayout {
+  protected readonly vaultRoot = inject(VaultRootState);
   private readonly hoverTooltipState = inject(HoverTooltipState);
-  private readonly editorBoundary = viewChild.required<ElementRef<HTMLElement>>('editorBoundary');
+  // Only rendered while a vault is open — the welcome screen replaces it otherwise.
+  private readonly editorBoundary = viewChild<ElementRef<HTMLElement>>('editorBoundary');
 
-  ngAfterViewInit(): void {
-    this.hoverTooltipState.registerEditorBoundary(this.editorBoundary().nativeElement);
+  constructor() {
+    effect(() => {
+      const boundary = this.editorBoundary();
+      if (boundary) this.hoverTooltipState.registerEditorBoundary(boundary.nativeElement);
+    });
   }
 }

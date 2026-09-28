@@ -1,5 +1,6 @@
-import { Injectable, computed, effect, signal } from '@angular/core';
+import { Injectable, computed, effect, inject, signal } from '@angular/core';
 import { NoteRef } from './note.model';
+import { VaultRootState } from './vault-root-state';
 
 export interface NoteTab {
   id: string;
@@ -51,7 +52,9 @@ function readFromStorage(): PersistedTabsState {
 
 @Injectable({ providedIn: 'root' })
 export class TabsState {
-  private readonly initial = readFromStorage();
+  private readonly vaultRoot = inject(VaultRootState);
+  // Tabs left over from a session whose vault is no longer open can't be shown.
+  private readonly initial = this.vaultRoot.isOpen() ? readFromStorage() : DEFAULT_STATE;
 
   readonly tabs = signal<NoteTab[]>(this.initial.tabs);
   readonly activeId = signal<string | null>(this.initial.activeId);
@@ -82,6 +85,7 @@ export class TabsState {
   }
 
   openNote(note: NoteRef): void {
+    if (!this.vaultRoot.isOpen()) return;
     const tabs = this.tabs();
     const existing = tabs.find((tab) => tab.noteId === note.id);
     if (existing) {
@@ -105,12 +109,14 @@ export class TabsState {
   }
 
   openNoteInBackground(note: NoteRef): void {
+    if (!this.vaultRoot.isOpen()) return;
     const tab: NoteTab = { id: createTabId(), noteId: note.id, title: note.title };
     this.tabs.update((tabs) => [...tabs, tab]);
   }
 
   /** Always opens `note` in a brand-new tab (rather than reusing/replacing the active tab). */
   openInNewTab(note: NoteRef): void {
+    if (!this.vaultRoot.isOpen()) return;
     const existing = this.tabs().find((tab) => tab.noteId === note.id);
     if (existing) {
       this.setActive(existing.id);
@@ -184,6 +190,7 @@ export class TabsState {
   }
 
   goBack(): void {
+    if (!this.vaultRoot.isOpen()) return;
     const tabId = this.activeId();
     if (!tabId) return;
     const hist = this.historyByTabId()[tabId];
@@ -205,6 +212,7 @@ export class TabsState {
   }
 
   goForward(): void {
+    if (!this.vaultRoot.isOpen()) return;
     const tabId = this.activeId();
     if (!tabId) return;
     const hist = this.historyByTabId()[tabId];

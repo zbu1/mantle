@@ -381,6 +381,21 @@ pub fn decode_unencrypted_note(note: &str) -> Result<String, MntlError> {
     Ok(body.to_string())
 }
 
+/// Split a plain Markdown (`.md`) file into its YAML frontmatter block and
+/// body, returning the block **verbatim** — delimiters, line endings and all —
+/// so it can be written back byte-for-byte in front of an edited body.
+///
+/// Unlike [`decode_unencrypted_note`], nothing here is parsed or validated:
+/// the frontmatter belongs to whatever other tool wrote the file, not to this
+/// crate. A file without a well-formed `---` block has an empty prefix and is
+/// all body.
+pub fn split_markdown_frontmatter(markdown: &str) -> (&str, &str) {
+    match split_frontmatter(markdown) {
+        Ok((_, body)) => markdown.split_at(markdown.len() - body.len()),
+        Err(_) => ("", markdown),
+    }
+}
+
 /// Extract just the frontmatter header of a `.mntl` text file, without
 /// allocating or returning the (potentially large) note body.
 ///

@@ -42,7 +42,7 @@
       class="w-full min-w-0 flex-1 rounded-sm border border-primary/50 bg-background px-1 py-0 text-xs text-foreground outline-none" />
   </div>
   } @else {
-  <app-sidebar-item-button [label]="note.name" [selected]="selectionState.isSelected(note.relPath)"
+  <app-sidebar-item-button [label]="note.name" [labelSuffix]="markdownExt(note)" [selected]="selectionState.isSelected(note.relPath)"
     [indent]="depth() * 16 + 8" [suppressNativeTitle]="true" [appHoverTooltip]="note.name"
     [appHoverTooltipSublabel]="encryptionStatus(note)" (clicked)="onNoteClick(note, $event)"
     (middleClicked)="openNoteInBackground.emit(note)" (contextMenu)="onNoteContextMenu(note, $event)">

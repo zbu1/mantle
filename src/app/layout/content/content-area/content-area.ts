@@ -5,12 +5,14 @@ import {
   LucideChevronDown,
   LucideEllipsis,
   LucideExpand,
+  LucideFileInput,
   LucideFileText,
   LucideFolderOpen,
   LucideLock,
   LucideLockOpen,
   LucideRefreshCw,
   LucideTriangleAlert,
+  LucideX,
 } from '@lucide/angular';
 import { TabsState, NoteTab } from '../../../notes/tabs-state';
 import { NotesState, titleFromRelPath } from '../../../notes/notes-state';
@@ -21,7 +23,9 @@ import { NoteEditor } from '../../../notes/editor/note-editor';
 import { ContextMenuState } from '../../../shared/context-menu/context-menu-state';
 import { ContextMenuItem } from '../../../shared/context-menu/context-menu.model';
 import { DialogState } from '../../../shared/dialog/dialog-state';
-import { VaultNoteNode, flattenEncryptedNotes } from '../../../notes/vault-tree.model';
+import { VaultNoteNode, flattenEncryptedNotes, markdownExtensionOf } from '../../../notes/vault-tree.model';
+import { MarkdownNoticeState } from '../../../notes/markdown-notice-state';
+import { NoteEncryptionActions } from '../../../notes/note-encryption-actions';
 
 const RENAME_DEBOUNCE_MS = 1000;
 
@@ -36,6 +40,8 @@ const RENAME_DEBOUNCE_MS = 1000;
     LucideLock,
     LucideLockOpen,
     LucideFileText,
+    LucideFileInput,
+    LucideX,
     LucideChevronDown,
     LucideTriangleAlert,
     LucideRefreshCw,
@@ -51,6 +57,8 @@ export class ContentArea {
   private readonly encryptionPanelState = inject(EncryptionPanelState);
   private readonly contextMenuState = inject(ContextMenuState);
   private readonly dialogState = inject(DialogState);
+  private readonly encryptionActions = inject(NoteEncryptionActions);
+  protected readonly markdownNotice = inject(MarkdownNoticeState);
 
   private readonly contentRoot = viewChild<ElementRef<HTMLElement>>('contentRoot');
   private readonly encryptionButton = viewChild<ElementRef<HTMLButtonElement>>('encryptionButton');
@@ -94,6 +102,17 @@ export class ContentArea {
     const id = this.lockedProfileId();
     return id !== null && !this.credentialsState.profileById(id);
   });
+
+  /** The active note's extension (e.g. `.md`) when it's a plain Markdown file, or null. */
+  protected readonly activeMarkdownExt = computed(() => {
+    const tab = this.activeTab();
+    return tab ? markdownExtensionOf(tab.noteId) : null;
+  });
+
+  protected convertActiveNote(): void {
+    const note = this.plaintextNodeForActiveTab();
+    if (note) void this.encryptionActions.convertToNote(note);
+  }
 
   constructor() {
     // `NoteEditor` normally triggers the load itself, but the locked panel

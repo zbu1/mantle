@@ -30,6 +30,7 @@ pub fn run() {
         .manage(credentials::SessionKeys::default())
         .invoke_handler(tauri::generate_handler![
             vault::scan_vault,
+            vault::create_vault,
             vault::read_note,
             vault::write_note,
             vault::create_note,
@@ -56,6 +57,7 @@ pub fn run() {
             notes_crypto::decrypt_note_to_plaintext,
             notes_crypto::move_note_to_profile,
             notes_crypto::create_encrypted_note,
+            notes_crypto::convert_markdown_to_note,
             watcher::start_vault_watch,
             watcher::stop_vault_watch,
         ])

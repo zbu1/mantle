@@ -6,7 +6,7 @@
     <ng-content select="[sidebarItemIcon]" />
   </span>
   @if (!collapsed()) {
-  <span class="min-w-0 flex-1 truncate">{{ label() }}</span>
+  <span class="min-w-0 flex-1 truncate">{{ label() }}@if (labelSuffix(); as suffix) {<span class="text-muted-foreground/70">{{ suffix }}</span>}</span>
   <ng-content select="[sidebarItemTrailing]" />
   }
 </button>

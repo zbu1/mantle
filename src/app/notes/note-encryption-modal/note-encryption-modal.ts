@@ -5,7 +5,7 @@ import { NoteEncryptionActions } from '../note-encryption-actions';
 import { ProfilePicker } from '../profile-picker/profile-picker';
 import { ProfileChoice, chosenProfileId } from '../profile-picker/profile-picker.model';
 import { VaultState } from '../vault-state';
-import { VaultNoteNode, findFolder } from '../vault-tree.model';
+import { VaultNoteNode, findFolder, markdownExtensionOf } from '../vault-tree.model';
 import { NoteEncryptionModalState } from './note-encryption-modal-state';
 import { EncryptionOutcome, dirOf, fileNameOf, relPathAfter } from './note-encryption-modal.model';
 
@@ -69,6 +69,9 @@ export class NoteEncryptionModal {
     return note ? relPathAfter(note.relPath, this.outcome()) : '';
   });
   protected readonly fileName = computed(() => fileNameOf(this.relPath()));
+
+  /** The Markdown extension of the note being encrypted (e.g. `.md`), or null for a Mantle note. */
+  protected readonly markdownExt = computed(() => markdownExtensionOf(this.note()?.relPath ?? ''));
 
   /** The profile the note is in now, by name — for the "no longer protected by" warning. */
   protected readonly currentProfileName = computed(() => this.credentialsState.displayNameOf(this.note()?.profile ?? null));

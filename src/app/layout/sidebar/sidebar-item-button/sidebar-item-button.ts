@@ -7,6 +7,8 @@ import { Component, ElementRef, input, output, signal, viewChild } from '@angula
 })
 export class SidebarItemButton {
   readonly label = input.required<string>();
+  /** Dimmed text right after the label, e.g. the `.md` of a plain Markdown file. */
+  readonly labelSuffix = input<string | null>(null);
   readonly collapsed = input(false);
   readonly selected = input(false);
   readonly indent = input(0);

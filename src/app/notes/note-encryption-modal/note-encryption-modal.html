@@ -26,6 +26,11 @@
     <p class="mt-2 border-t border-border pt-2 text-[11px] text-destructive">
       The note will be stored as readable text on disk, no longer protected by "{{ currentProfileName() }}".
     </p>
+    } @else if (markdownExt(); as ext) {
+    <p class="mt-2 border-t border-border pt-2 text-[11px] text-destructive">
+      This is a plain Markdown ({{ ext }}) file. Encrypting converts it to a Mantle note: other Markdown apps won't
+      open it any more, and any YAML frontmatter at the top of the file will be removed.
+    </p>
     } @else {
     <p class="mt-2 border-t border-border pt-2 text-[11px] text-muted-foreground">
       The note's contents are encrypted. Its filename and folder are visible on disk.

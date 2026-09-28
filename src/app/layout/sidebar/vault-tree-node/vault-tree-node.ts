@@ -7,6 +7,7 @@ import {
   VaultNode,
   VaultNoteNode,
   isNoteLocked,
+  markdownExtensionOf,
 } from '../../../notes/vault-tree.model';
 import { CredentialsState } from '../../../notes/credentials-state';
 import { VaultDragState } from '../../../notes/vault-drag-state';
@@ -114,8 +115,13 @@ export class VaultTreeNode {
   }
 
   /** Sublabel for the note's hover tooltip: encryption state, and profile name if encrypted. */
+  /** The `.md` / `.markdown` shown after a plain Markdown file's name, or null for a Mantle note. */
+  protected markdownExt(note: VaultNoteNode): string | null {
+    return markdownExtensionOf(note.relPath);
+  }
+
   protected encryptionStatus(note: VaultNoteNode): string {
-    if (!note.encrypted) return 'Not encrypted';
+    if (!note.encrypted) return this.markdownExt(note) ? 'Plain Markdown file' : 'Not encrypted';
     return `${this.isLocked(note) ? 'Locked' : 'Unlocked'} · ${this.profileName(note)}`;
   }
 

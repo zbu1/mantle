@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideZonelessChangeDetection } from '@angular/core';
 import { TabsState } from './tabs-state';
 import { NoteRef } from './note.model';
+import { VaultRootState } from './vault-root-state';
 
 const noteA: NoteRef = { id: 'daily-standup', title: 'daily-standup' };
 const noteB: NoteRef = { id: 'architecture-notes', title: 'architecture-notes' };
@@ -12,6 +13,30 @@ describe('TabsState', () => {
     localStorage.clear();
     TestBed.configureTestingModule({
       providers: [provideZonelessChangeDetection()],
+    });
+    TestBed.inject(VaultRootState).path.set('/vault');
+  });
+
+  describe('without an open vault', () => {
+    beforeEach(() => TestBed.inject(VaultRootState).path.set(null));
+
+    it('does not open notes', () => {
+      const state = TestBed.inject(TabsState);
+      state.openNote(noteA);
+      state.openNoteInBackground(noteB);
+      state.openInNewTab(noteC);
+      expect(state.tabs()).toEqual([]);
+      expect(state.activeId()).toBeNull();
+    });
+
+    it('drops tabs persisted by an earlier session', () => {
+      localStorage.setItem(
+        'mantle.tabs.v2',
+        JSON.stringify({ tabs: [{ id: 'tab-1', noteId: noteA.id, title: noteA.title }], activeId: 'tab-1' }),
+      );
+      const state = TestBed.inject(TabsState);
+      expect(state.tabs()).toEqual([]);
+      expect(state.activeId()).toBeNull();
     });
   });
 

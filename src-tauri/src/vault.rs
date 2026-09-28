@@ -1,5 +1,11 @@
 //! Tauri commands for browsing and persisting a vault: a directory tree of
-//! `.mntl` (plaintext) and `.mntl.enc` (encrypted) note files.
+//! `.mntl` (plaintext) and `.mntl.enc` (encrypted) note files, plus plain
+//! Markdown (`.md` / `.markdown`) files written by other tools.
+//!
+//! Markdown files are opened and saved in place as-is. Their own YAML
+//! frontmatter, if any, is hidden from the editor and written back verbatim,
+//! and they are never converted to `.mntl` behind the user's back — that only
+//! happens through [`crate::notes_crypto`].
 //!
 //! Reading and writing an encrypted note requires its credential profile to be
 //! unlocked in [`crate::credentials::SessionKeys`]. Everything structural —
@@ -22,6 +28,21 @@ pub(crate) const EXT_PLAIN: &str = ".mntl";
 /// but *starts* a `.mntl` suffix match only by accident of ordering.
 pub(crate) const EXT_ENCRYPTED: &str = ".mntl.enc";
 
+/// Extensions of plain Markdown files, which open as notes but keep their
+/// own format on disk. Matched case-sensitively, like the `.mntl` extensions.
+const EXT_MARKDOWN: [&str; 2] = [".md", ".markdown"];
+
+/// The Markdown extension `file_name` ends with, if any.
+fn markdown_ext(file_name: &str) -> Option<&'static str> {
+    EXT_MARKDOWN.into_iter().find(|ext| file_name.ends_with(ext))
+}
+
+/// Whether the note at `rel_path` is a plain Markdown file rather than a
+/// `.mntl` / `.mntl.enc` note.
+pub(crate) fn is_markdown_note(rel_path: &str) -> bool {
+    markdown_ext(rel_path).is_some()
+}
+
 /// Classify a filename as a note file this app understands, returning its
 /// display title (filename stem) and whether it's the encrypted format.
 ///
@@ -32,6 +53,9 @@ fn classify_note_file(filename: &str) -> Option<(String, bool)> {
     }
     if let Some(stem) = filename.strip_suffix(EXT_PLAIN) {
         return Some((stem.to_string(), false));
+    }
+    if let Some(ext) = markdown_ext(filename) {
+        return Some((filename[..filename.len() - ext.len()].to_string(), false));
     }
     None
 }
@@ -218,6 +242,38 @@ pub(crate) fn resolve_rel_path(vault_root: &str, rel_path: &str) -> Result<PathB
     Ok(candidate)
 }
 
+/// Creates a new, empty vault directory at `path` and seeds its
+/// `.mantle/state.json`, returning `path` for the frontend to open.
+///
+/// The directory itself must not exist yet — creating a vault never adopts or
+/// overwrites an existing folder (use "Open Vault" for that) — but its parent
+/// must, so a typo in the location fails instead of silently creating a chain
+/// of directories. `path` is returned as given rather than canonicalized, so
+/// Windows callers don't get a `\\?\` verbatim prefix back.
+#[tauri::command]
+pub fn create_vault(path: String) -> Result<String, String> {
+    logged("create_vault", || {
+        let dir = PathBuf::from(&path);
+        let name = dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or("Invalid vault name")?;
+        if name.is_empty() || name.contains(':') || name.starts_with('.') {
+            return Err("Invalid vault name".to_string());
+        }
+        let parent = dir.parent().filter(|p| !p.as_os_str().is_empty()).ok_or("Invalid vault location")?;
+        if !parent.is_dir() {
+            return Err("The folder to create the vault in does not exist".to_string());
+        }
+        if dir.exists() {
+            return Err(format!("A file or folder named \"{name}\" already exists in this location"));
+        }
+        fs::create_dir(&dir).map_err(|e| format!("Failed to create vault folder: {e}"))?;
+        crate::vault_meta::write_vault_meta(&path, &crate::vault_meta::VaultMeta::default())?;
+        Ok(path)
+    })
+}
+
 #[tauri::command]
 pub fn scan_vault(vault_root: String) -> Result<VaultNode, String> {
     logged("scan_vault", || {
@@ -282,6 +338,11 @@ pub(crate) fn read_note_inner(
     }
 
     let raw = fs::read_to_string(&path).map_err(|e| format!("Failed to read note: {e}"))?;
+    if is_markdown_note(rel_path) {
+        // The frontmatter is another tool's; `write_note_inner` puts it back.
+        let (_, body) = mntl_core::split_markdown_frontmatter(&raw);
+        return Ok(body.to_string());
+    }
     mntl_core::decode_unencrypted_note(&raw).map_err(|e| e.to_string())
 }
 
@@ -304,6 +365,17 @@ pub(crate) fn write_note_inner(
     keys: &SessionKeys,
 ) -> Result<(), String> {
     let path = resolve_rel_path(vault_root, rel_path)?;
+
+    if is_markdown_note(rel_path) {
+        // Keep whatever frontmatter is on disk *now*, byte for byte, rather
+        // than a copy from when the note was read: another tool may have
+        // changed it since, and the editor never shows it.
+        let existing = fs::read_to_string(&path).unwrap_or_default();
+        let (frontmatter, _) = mntl_core::split_markdown_frontmatter(&existing);
+        return fs::write(&path, format!("{frontmatter}{content}"))
+            .map_err(|e| format!("Failed to write note: {e}"));
+    }
+
     let encoded = mntl_core::encode_unencrypted_note(content).map_err(|e| e.to_string())?;
 
     if rel_path.ends_with(EXT_ENCRYPTED) {
@@ -477,8 +549,9 @@ pub(crate) fn resolve_rel_dir(vault_root: &str, rel_dir: &str) -> Result<PathBuf
 /// `secret.mntl.enc` as `secret.mntl` and rebuild it as `secret.mntl.mntl`, or
 /// on the rename path hand a ciphertext file a plaintext extension.
 ///
-/// A path with neither extension is treated as plaintext, matching the
-/// previous `unwrap_or` behavior.
+/// A Markdown file keeps its own `.md` / `.markdown` extension. A path with
+/// none of these extensions is treated as plaintext, matching the previous
+/// `unwrap_or` behavior.
 pub(crate) fn split_rel_note_path(rel_path: &str) -> (String, String, &'static str) {
     let (dir_rel, file_name) = match rel_path.rsplit_once('/') {
         Some((dir, file)) => (dir.to_string(), file.to_string()),
@@ -487,6 +560,10 @@ pub(crate) fn split_rel_note_path(rel_path: &str) -> (String, String, &'static s
 
     if let Some(stem) = file_name.strip_suffix(EXT_ENCRYPTED) {
         return (dir_rel, stem.to_string(), EXT_ENCRYPTED);
+    }
+    if let Some(ext) = markdown_ext(&file_name) {
+        let stem = file_name[..file_name.len() - ext.len()].to_string();
+        return (dir_rel, stem, ext);
     }
     let stem = file_name.strip_suffix(EXT_PLAIN).unwrap_or(&file_name);
     (dir_rel, stem.to_string(), EXT_PLAIN)
@@ -698,7 +775,15 @@ mod tests {
             classify_note_file("secret.mntl.enc"),
             Some(("secret".to_string(), true))
         );
-        assert_eq!(classify_note_file("readme.md"), None);
+        assert_eq!(
+            classify_note_file("readme.md"),
+            Some(("readme".to_string(), false))
+        );
+        assert_eq!(
+            classify_note_file("guide.markdown"),
+            Some(("guide".to_string(), false))
+        );
+        assert_eq!(classify_note_file("image.png"), None);
     }
 
     fn temp_dir(name: &str) -> PathBuf {
@@ -706,6 +791,24 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn create_vault_creates_the_folder_and_its_state_file() {
+        let parent = temp_dir("create-vault");
+        let path = parent.join("My Vault").to_string_lossy().into_owned();
+        assert_eq!(create_vault(path.clone()).unwrap(), path);
+        assert!(parent.join("My Vault").join(".mantle").join("state.json").is_file());
+        assert!(matches!(scan_vault(path).unwrap(), VaultNode::Folder { children, .. } if children.is_empty()));
+    }
+
+    #[test]
+    fn create_vault_rejects_existing_paths_and_missing_parents() {
+        let parent = temp_dir("create-vault-reject");
+        fs::create_dir(parent.join("taken")).unwrap();
+        assert!(create_vault(parent.join("taken").to_string_lossy().into_owned()).is_err());
+        assert!(create_vault(parent.join("missing").join("vault").to_string_lossy().into_owned()).is_err());
+        assert!(create_vault(parent.join(".hidden").to_string_lossy().into_owned()).is_err());
     }
 
     #[test]
@@ -840,6 +943,59 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
     }
 
+    #[test]
+    fn markdown_notes_hide_and_preserve_their_frontmatter() {
+        let root = temp_dir("markdown");
+        let root_str = root.to_string_lossy().into_owned();
+        let keys = SessionKeys::default();
+        fs::write(root.join("readme.md"), "---
+tags: [x]
+---
+# Old
+").unwrap();
+
+        assert_eq!(read_note_inner(&root_str, "readme.md", &keys).unwrap(), "# Old
+");
+
+        write_note_inner(&root_str, "readme.md", "# New
+", &keys).unwrap();
+        assert_eq!(
+            fs::read_to_string(root.join("readme.md")).unwrap(),
+            "---
+tags: [x]
+---
+# New
+"
+        );
+    }
+
+    #[test]
+    fn markdown_notes_without_frontmatter_stay_plain_markdown() {
+        let root = temp_dir("markdown-plain");
+        let root_str = root.to_string_lossy().into_owned();
+        let keys = SessionKeys::default();
+        fs::write(root.join("todo.markdown"), "- [ ] one
+").unwrap();
+
+        assert_eq!(read_note_inner(&root_str, "todo.markdown", &keys).unwrap(), "- [ ] one
+");
+        write_note_inner(&root_str, "todo.markdown", "- [x] one
+", &keys).unwrap();
+        assert_eq!(fs::read_to_string(root.join("todo.markdown")).unwrap(), "- [x] one
+");
+    }
+
+    #[test]
+    fn renaming_a_markdown_note_keeps_its_extension() {
+        let root = temp_dir("markdown-rename");
+        let root_str = root.to_string_lossy().into_owned();
+        fs::write(root.join("readme.md"), "hi").unwrap();
+
+        let renamed = rename_note(root_str, "readme.md".to_string(), "intro".to_string()).unwrap();
+        assert_eq!(renamed.rel_path, "intro.md");
+        assert!(root.join("intro.md").is_file());
+    }
+
     // --- Compound `.mntl.enc` extension handling -------------------------
 
     #[test]
@@ -851,6 +1007,14 @@ mod tests {
         assert_eq!(
             split_rel_note_path("Work/todo.mntl"),
             ("Work".to_string(), "todo".to_string(), ".mntl")
+        );
+        assert_eq!(
+            split_rel_note_path("Docs/readme.md"),
+            ("Docs".to_string(), "readme".to_string(), ".md")
+        );
+        assert_eq!(
+            split_rel_note_path("guide.markdown"),
+            (String::new(), "guide".to_string(), ".markdown")
         );
         assert_eq!(
             split_rel_note_path("root.mntl.enc"),

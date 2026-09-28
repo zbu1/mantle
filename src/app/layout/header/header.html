@@ -35,22 +35,5 @@
       <svg lucidePlus [size]="14"></svg>
     </button>
   </div>
-  <div class="flex">
-    <button type="button" title="Minimize" (click)="minimize()"
-      class="inline-flex w-11 items-center justify-center text-foreground hover:bg-background">
-      <svg lucideMinus [size]="14"></svg>
-    </button>
-    <button type="button" [title]="isMaximized() ? 'Restore Down' : 'Maximize'" (click)="toggleMaximize()"
-      class="inline-flex w-11 items-center justify-center text-foreground hover:bg-background">
-      @if (isMaximized()) {
-      <svg lucideCopy [size]="12" class="-scale-x-100"></svg>
-      } @else {
-      <svg lucideSquare [size]="12"></svg>
-      }
-    </button>
-    <button type="button" title="Close" (click)="close()"
-      class="inline-flex w-11 items-center justify-center text-foreground hover:bg-destructive hover:text-destructive-foreground">
-      <svg lucideX [size]="16"></svg>
-    </button>
-  </div>
+  <app-window-controls />
 </header>

@@ -1,12 +1,11 @@
-import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
-import { getCurrentWindow } from '@tauri-apps/api/window';
-import { LucideCopy, LucideMinus, LucidePanelLeft, LucidePlus, LucideSquare, LucideX } from '@lucide/angular';
-import { isTauri } from '../../core/tauri-env';
+import { Component, computed, inject } from '@angular/core';
+import { LucidePanelLeft, LucidePlus, LucideX } from '@lucide/angular';
 import { ICON_RAIL_WIDTH } from '../icon-rail/icon-rail';
 import { SidebarState } from '../sidebar/sidebar-state';
 import { TabsState } from '../../notes/tabs-state';
 import { VaultState } from '../../notes/vault-state';
 import { MainMenu } from './main-menu/main-menu';
+import { WindowControls } from '../window-controls/window-controls';
 
 /** Size of the sidebar-toggle button (w-8 in header.html) — used to compute its animated position. */
 const TOGGLE_BUTTON_WIDTH = 32;
@@ -15,16 +14,13 @@ const TOGGLE_BUTTON_GAP = 8;
 
 @Component({
   selector: 'app-header',
-  imports: [LucidePanelLeft, LucideMinus, LucideSquare, LucideCopy, LucideX, LucidePlus, MainMenu],
+  imports: [LucidePanelLeft, LucideX, LucidePlus, MainMenu, WindowControls],
   templateUrl: './header.html',
 })
 export class Header {
   protected readonly sidebarState = inject(SidebarState);
   protected readonly tabsState = inject(TabsState);
   private readonly vaultState = inject(VaultState);
-  private readonly destroyRef = inject(DestroyRef);
-
-  protected readonly isMaximized = signal(false);
   protected readonly gridTemplateColumns = computed(
     () => `${ICON_RAIL_WIDTH + this.sidebarState.effectiveWidth()}px 1fr auto`,
   );
@@ -52,16 +48,6 @@ export class Header {
     this.sidebarState.resizing() ? 'none' : 'padding-left 200ms ease-out',
   );
 
-  constructor() {
-    if (!isTauri()) return;
-
-    const win = getCurrentWindow();
-    win.isMaximized().then((maximized) => this.isMaximized.set(maximized));
-    win.onResized(async () => this.isMaximized.set(await win.isMaximized())).then((unlisten) => {
-      this.destroyRef.onDestroy(unlisten);
-    });
-  }
-
   toggleSidebar(): void {
     this.sidebarState.toggleCollapsed();
   }
@@ -77,17 +63,5 @@ export class Header {
 
   protected async onNewNote(): Promise<void> {
     await this.vaultState.createAndOpenNote();
-  }
-
-  minimize(): void {
-    if (isTauri()) getCurrentWindow().minimize();
-  }
-
-  toggleMaximize(): void {
-    if (isTauri()) getCurrentWindow().toggleMaximize();
-  }
-
-  close(): void {
-    if (isTauri()) getCurrentWindow().close();
   }
 }

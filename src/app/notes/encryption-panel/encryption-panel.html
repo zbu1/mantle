@@ -45,20 +45,6 @@
     </select>
   </div>
   }
-  @if (canEncrypt()) {
-  <app-menu-separator />
-  <div class="flex items-center gap-2 px-3 py-2">
-    <label for="encryption-panel-encrypt-with" class="shrink-0 text-xs text-muted-foreground">Encrypt with</label>
-    <select id="encryption-panel-encrypt-with" class="min-w-0 flex-1 rounded border border-border bg-background px-2 py-1 text-xs text-foreground"
-      (change)="onEncryptSelect($event)">
-      <option value="" selected>Choose a profile…</option>
-      @for (p of encryptProfiles(); track p.id) {
-        <option [value]="p.id">{{ p.displayName }}</option>
-      }
-      <option [value]="newProfileValue">New profile…</option>
-    </select>
-  </div>
-  }
   @if (items().length) {
   <app-menu-separator />
   @for (item of items(); track $index) {
@@ -77,6 +63,7 @@
           @switch (item.icon) {
             @case ('lock') { <svg lucideLock [size]="14"></svg> }
             @case ('unlock') { <svg lucideLockOpen [size]="14"></svg> }
+            @case ('convert') { <svg lucideFileInput [size]="14"></svg> }
           }
         </span>
       </app-menu-item>

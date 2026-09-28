@@ -1,5 +1,5 @@
 import { Component, ElementRef, HostListener, computed, effect, inject, signal, viewChild } from '@angular/core';
-import { LucideCheck, LucideChevronsUpDown, LucideFolderPlus, LucideFolders, LucideSettings } from '@lucide/angular';
+import { LucideCheck, LucideChevronsUpDown, LucideFolderOpen, LucideFolderPlus, LucideFolders, LucideSettings } from '@lucide/angular';
 import { MenuItem } from '../../shared/menu/menu-item';
 import { MenuSeparator } from '../../shared/menu/menu-separator';
 import { MenuSurface } from '../../shared/menu/menu-surface';
@@ -20,7 +20,7 @@ interface RecentVault {
  */
 @Component({
   selector: 'app-vault-menu',
-  imports: [MenuSurface, MenuItem, MenuSeparator, LucideFolders, LucideChevronsUpDown, LucideCheck, LucideFolderPlus, LucideSettings],
+  imports: [MenuSurface, MenuItem, MenuSeparator, LucideFolders, LucideChevronsUpDown, LucideCheck, LucideFolderOpen, LucideFolderPlus, LucideSettings],
   templateUrl: './vault-menu.html',
   host: { class: 'relative inline-flex min-w-0 shrink-0' },
 })
@@ -70,6 +70,11 @@ export class VaultMenu {
   protected async openAnotherVault(): Promise<void> {
     this.close();
     await this.vaultState.pickVault();
+  }
+
+  protected async createVault(): Promise<void> {
+    this.close();
+    await this.vaultState.createVault();
   }
 
   protected openSettings(): void {

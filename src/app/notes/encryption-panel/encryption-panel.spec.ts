@@ -3,6 +3,7 @@ import { provideZonelessChangeDetection } from '@angular/core';
 import { EncryptionPanel } from './encryption-panel';
 import { EncryptionPanelState } from './encryption-panel-state';
 import { CredentialsState } from '../credentials-state';
+import { NoteEncryptionModalState } from '../note-encryption-modal/note-encryption-modal-state';
 import { VaultNoteNode } from '../vault-tree.model';
 import { VaultState } from '../vault-state';
 import { installMockVaultInvoke, flushAsync } from '../../../testing/mock-vault';
@@ -189,7 +190,7 @@ describe('EncryptionPanel', () => {
     expect(state.target()).toBeNull();
   });
 
-  it('offers a profile picker for a plaintext note once profiles exist, replacing the flat "Encrypt with X" rows', () => {
+  it('offers a single "Encrypt…" row rather than a profile picker for a plaintext note, even once profiles exist', () => {
     const fixture = TestBed.createComponent(EncryptionPanel);
     state.toggle(anchor, plainNote());
     fixture.detectChanges();
@@ -199,32 +200,21 @@ describe('EncryptionPanel', () => {
     ]);
     fixture.detectChanges();
 
-    const select: HTMLSelectElement = fixture.nativeElement.querySelector('select');
-    expect(select).toBeTruthy();
-    expect(Array.from(select.options).map((o) => o.textContent?.trim())).toEqual([
-      'Choose a profile…',
-      'Personal',
-      'Work',
-      'New profile…',
-    ]);
-    // No flat "Encrypt with X" / "Encrypt with a new profile…" rows once the picker covers it.
-    expect(fixture.nativeElement.querySelector('app-menu-item')).toBeNull();
+    expect(fixture.nativeElement.querySelector('select')).toBeNull();
+    const rows = Array.from(fixture.nativeElement.querySelectorAll('app-menu-item'));
+    expect(rows.map((r: Element) => r.textContent?.trim())).toEqual(['Encrypt…']);
   });
 
-  it('encrypts into the picked profile and closes the panel', () => {
+  it('opens the encryption modal for the note and closes the panel when "Encrypt…" is picked', () => {
+    const note = plainNote();
     const fixture = TestBed.createComponent(EncryptionPanel);
-    state.toggle(anchor, plainNote());
-    fixture.detectChanges();
-    TestBed.inject(CredentialsState).profiles.set([
-      { id: 'personal', displayName: 'Personal', unlocked: true },
-    ]);
+    state.toggle(anchor, note);
     fixture.detectChanges();
 
-    const select: HTMLSelectElement = fixture.nativeElement.querySelector('select');
-    select.value = 'personal';
-    select.dispatchEvent(new Event('change'));
+    fixture.nativeElement.querySelector('app-menu-item button').click();
     fixture.detectChanges();
 
+    expect(TestBed.inject(NoteEncryptionModalState).note()).toEqual(note);
     expect(state.target()).toBeNull();
   });
 

@@ -27,6 +27,22 @@ export interface VaultNoteNode {
 
 export type VaultNode = VaultFolderNode | VaultNoteNode;
 
+/**
+ * Extensions of plain Markdown files, which open as notes but stay Markdown on
+ * disk. Mirrors `EXT_MARKDOWN` in `src-tauri/src/vault.rs`.
+ */
+export const MARKDOWN_EXTENSIONS = ['.md', '.markdown'] as const;
+
+/** The Markdown extension `relPath` ends with (e.g. `.md`), or null for a `.mntl` / `.mntl.enc` note. */
+export function markdownExtensionOf(relPath: string): string | null {
+  return MARKDOWN_EXTENSIONS.find((ext) => relPath.endsWith(ext)) ?? null;
+}
+
+/** True when the note at `relPath` is a plain Markdown file rather than a Mantle note. */
+export function isMarkdownNote(relPath: string): boolean {
+  return markdownExtensionOf(relPath) !== null;
+}
+
 /** True when `note` is encrypted and its credential profile is not currently unlocked. */
 export function isNoteLocked(note: VaultNoteNode, unlockedProfiles: ReadonlySet<string>): boolean {
   if (!note.encrypted) return false;

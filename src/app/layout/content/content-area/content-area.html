@@ -86,6 +86,26 @@
       }
     </div>
     } @else {
+    @if (activeMarkdownExt() && !markdownNotice.dismissed()) {
+    <div role="note"
+      class="mb-4 flex items-start gap-2 rounded-md border border-border bg-surface px-3 py-2 text-xs text-muted-foreground">
+      <svg lucideFileText [size]="14" class="mt-px shrink-0"></svg>
+      <p class="min-w-0 flex-1">
+        <span class="font-medium text-foreground">Plain Markdown file ({{ activeMarkdownExt() }}).</span>
+        Edits are saved as plain Markdown, which Mantle may reformat. Some features, like encryption, convert it
+        to a Mantle note first.
+      </p>
+      <button type="button" (click)="convertActiveNote()"
+        class="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-foreground/80 hover:bg-background hover:text-foreground">
+        <svg lucideFileInput [size]="12"></svg>
+        Convert
+      </button>
+      <button type="button" title="Don't show again" aria-label="Don't show again" (click)="markdownNotice.dismiss()"
+        class="inline-flex size-5 shrink-0 items-center justify-center rounded hover:bg-background hover:text-foreground">
+        <svg lucideX [size]="12"></svg>
+      </button>
+    </div>
+    }
     <app-note-editor [noteId]="tab.noteId" class="block h-full" />
     }
   </div>

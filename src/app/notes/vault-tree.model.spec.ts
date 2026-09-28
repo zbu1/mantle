@@ -1,4 +1,5 @@
-import { VaultFolderNode, findFolder } from './vault-tree.model';
+import { VaultFolderNode, findFolder, markdownExtensionOf } from './vault-tree.model';
+import { relPathAfter } from './note-encryption-modal/note-encryption-modal.model';
 
 const tree: VaultFolderNode = {
   type: 'folder',
@@ -34,5 +35,20 @@ describe('findFolder', () => {
     expect(findFolder(tree, 'Nope')).toBeNull();
     expect(findFolder(tree, 'Work/Nope')).toBeNull();
     expect(findFolder(tree, 'a.mntl')).toBeNull();
+  });
+});
+
+describe('markdownExtensionOf', () => {
+  it('recognizes plain Markdown files and nothing else', () => {
+    expect(markdownExtensionOf('Docs/readme.md')).toBe('.md');
+    expect(markdownExtensionOf('guide.markdown')).toBe('.markdown');
+    expect(markdownExtensionOf('todo.mntl')).toBeNull();
+    expect(markdownExtensionOf('secret.mntl.enc')).toBeNull();
+  });
+
+  it('names the encrypted file a Markdown file becomes', () => {
+    expect(relPathAfter('Docs/readme.md', 'encrypt')).toBe('Docs/readme.mntl.enc');
+    expect(relPathAfter('guide.markdown', 'encrypt')).toBe('guide.mntl.enc');
+    expect(relPathAfter('todo.mntl', 'encrypt')).toBe('todo.mntl.enc');
   });
 });

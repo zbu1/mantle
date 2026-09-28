@@ -1,13 +1,13 @@
 import { Component, ElementRef, HostListener, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { join } from '@tauri-apps/api/path';
-import { LucideFileText, LucideLock, LucideLockOpen } from '@lucide/angular';
+import { LucideFileInput, LucideFileText, LucideLock, LucideLockOpen } from '@lucide/angular';
 import { MenuItem } from '../../shared/menu/menu-item';
 import { MenuSeparator } from '../../shared/menu/menu-separator';
 import { MenuSurface } from '../../shared/menu/menu-surface';
 import { ContextMenuAction, ContextMenuItem } from '../../shared/context-menu/context-menu.model';
 import { CredentialProfile, CredentialsState } from '../credentials-state';
 import { NoteEncryptionActions } from '../note-encryption-actions';
-import { VaultNoteNode } from '../vault-tree.model';
+import { VaultNoteNode, markdownExtensionOf } from '../vault-tree.model';
 import { VaultState } from '../vault-state';
 import { EncryptionPanelState } from './encryption-panel-state';
 
@@ -27,7 +27,7 @@ const VIEWPORT_MARGIN = 8;
  */
 @Component({
   selector: 'app-encryption-panel',
-  imports: [MenuSurface, MenuItem, MenuSeparator, LucideFileText, LucideLock, LucideLockOpen],
+  imports: [MenuSurface, MenuItem, MenuSeparator, LucideFileInput, LucideFileText, LucideLock, LucideLockOpen],
   templateUrl: './encryption-panel.html',
 })
 export class EncryptionPanel {
@@ -58,7 +58,9 @@ export class EncryptionPanel {
   protected readonly statusSubtitle = computed(() => {
     const note = this.note();
     if (!note) return '';
-    if (!note.encrypted) return 'Stored as plaintext on disk';
+    if (!note.encrypted) {
+      return markdownExtensionOf(note.relPath) ? 'Plain Markdown file on disk' : 'Stored as plaintext on disk';
+    }
 
     const name = this.credentialsState.displayNameOf(note.profile);
     if (this.statusIcon() === 'unlocked') return `Unlocked with "${name}"`;
@@ -89,9 +91,12 @@ export class EncryptionPanel {
     void join(root, ...segments).then((path) => this.fileLocation.set(path));
   });
 
-  protected readonly fileFormat = computed(() =>
-    this.note()?.encrypted ? 'Encrypted (.mntl.enc)' : 'Plaintext (.mntl)',
-  );
+  protected readonly fileFormat = computed(() => {
+    const note = this.note();
+    const markdownExt = note ? markdownExtensionOf(note.relPath) : null;
+    if (markdownExt) return `Markdown (${markdownExt})`;
+    return note?.encrypted ? 'Encrypted (.mntl.enc)' : 'Plaintext (.mntl)';
+  });
 
   /** Which of the file-info rows most recently showed "Copied!", or null once that's worn off. */
   protected readonly copiedField = signal<'file' | 'location' | null>(null);
@@ -124,23 +129,10 @@ export class EncryptionPanel {
 
   protected readonly canMove = computed(() => this.otherProfiles().length > 0);
 
-  /** Sentinel `<option>` value for "create a new profile and encrypt into it", alongside the registered profiles in `encryptProfiles`. */
-  protected readonly newProfileValue = '__new__';
-
-  /** Every registered profile, offered as encryption targets for a plaintext note. */
-  protected readonly encryptProfiles = computed<CredentialProfile[]>(() => {
-    const note = this.note();
-    if (!note || note.encrypted) return [];
-    return this.credentialsState.profiles();
-  });
-
-  /** False when there isn't a profile to offer yet — the sidebar menu's "Encrypt…" item covers that, prompting to create one. */
-  protected readonly canEncrypt = computed(() => this.encryptProfiles().length > 0);
-
   /**
-   * The same actions as the sidebar's note menu, minus the flat "Move to X" /
-   * "Encrypt with X" rows (replaced by the `otherProfiles` and
-   * `encryptProfiles` pickers) and plus a "Lock" entry the toolbar button
+   * The same actions as the sidebar's note menu — including "Encrypt…", which
+   * opens the encryption modal — minus the flat "Move to X" rows (replaced by
+   * the `otherProfiles` picker) and plus a "Lock" entry the toolbar button
    * alone offers.
    */
   protected readonly items = computed<ContextMenuItem[]>(() => {
@@ -161,8 +153,6 @@ export class EncryptionPanel {
       ];
     }
 
-    if (this.canEncrypt()) return [];
-
     return this.encryptionActions.menuItems(note);
   });
 
@@ -175,22 +165,6 @@ export class EncryptionPanel {
     const note = this.note();
     if (!note) return;
     void this.encryptionActions.moveToProfile(note, profileId);
-    this.state.close();
-  }
-
-  protected onEncryptSelect(event: Event): void {
-    const select = event.target as HTMLSelectElement;
-    const value = select.value;
-    select.value = '';
-    if (!value) return;
-
-    const note = this.note();
-    if (!note) return;
-    if (value === this.newProfileValue) {
-      void this.encryptionActions.createProfileThenEncrypt(note);
-    } else {
-      void this.encryptionActions.encrypt(note, value);
-    }
     this.state.close();
   }
 
@@ -251,8 +225,8 @@ export class EncryptionPanel {
   @HostListener('document:keydown', ['$event'])
   protected onKeydown(event: KeyboardEvent): void {
     if (!this.state.target()) return;
-    // Let the native <select> (the move-to/encrypt-with pickers) handle its
-    // own arrow/Enter keys instead of hijacking them for the action list.
+    // Let the native <select> (the move-to picker) handle its own
+    // arrow/Enter keys instead of hijacking them for the action list.
     if (event.target instanceof HTMLSelectElement) return;
 
     if (event.key === 'ArrowDown') {

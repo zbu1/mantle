@@ -111,16 +111,18 @@ pub fn load_vault_meta(vault_root: String) -> Result<VaultMeta, String> {
 /// `state.json` truncated or corrupt.
 #[tauri::command]
 pub fn save_vault_meta(vault_root: String, state: VaultMeta) -> Result<(), String> {
-    logged("save_vault_meta", || {
-        let path = state_path(&vault_root)?;
-        let dir = path.parent().ok_or("Invalid vault state path")?;
-        fs::create_dir_all(dir).map_err(|e| format!("Failed to create {STATE_DIR}: {e}"))?;
+    logged("save_vault_meta", || write_vault_meta(&vault_root, &state))
+}
 
-        let json = serde_json::to_string_pretty(&state).map_err(|e| e.to_string())?;
-        let tmp_path = dir.join(format!("{STATE_FILE}.tmp"));
-        fs::write(&tmp_path, json).map_err(|e| format!("Failed to write vault state: {e}"))?;
-        fs::rename(&tmp_path, &path).map_err(|e| format!("Failed to save vault state: {e}"))
-    })
+pub(crate) fn write_vault_meta(vault_root: &str, state: &VaultMeta) -> Result<(), String> {
+    let path = state_path(vault_root)?;
+    let dir = path.parent().ok_or("Invalid vault state path")?;
+    fs::create_dir_all(dir).map_err(|e| format!("Failed to create {STATE_DIR}: {e}"))?;
+
+    let json = serde_json::to_string_pretty(state).map_err(|e| e.to_string())?;
+    let tmp_path = dir.join(format!("{STATE_FILE}.tmp"));
+    fs::write(&tmp_path, json).map_err(|e| format!("Failed to write vault state: {e}"))?;
+    fs::rename(&tmp_path, &path).map_err(|e| format!("Failed to save vault state: {e}"))
 }
 
 #[cfg(test)]

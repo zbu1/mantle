@@ -1,8 +1,8 @@
 use mntl_core::{
     compute_verifier, decode_unencrypted_note, decrypt_note, derive_kek, derive_kek_with_params,
     encode_unencrypted_note, encrypt_note, extract_encrypted_header, extract_unencrypted_header,
-    generate_master_key, unwrap_master_key, verify_master_key, wrap_master_key, KdfParams,
-    MasterKey, MntlError, ENVELOPE_VERSION, MAGIC_MENC, NOTE_VERSION,
+    generate_master_key, split_markdown_frontmatter, unwrap_master_key, verify_master_key,
+    wrap_master_key, KdfParams, MasterKey, MntlError, ENVELOPE_VERSION, MAGIC_MENC, NOTE_VERSION,
 };
 
 /// Argon2id parameters cheap enough to run many times in a test suite. The
@@ -405,6 +405,32 @@ fn test_extract_headers() {
 fn test_missing_frontmatter_fails() {
     let result = decode_unencrypted_note("Just plain text, no frontmatter at all.");
     assert!(matches!(result, Err(MntlError::MissingFrontmatter)));
+}
+
+#[test]
+fn test_markdown_frontmatter_is_split_off_verbatim() {
+    let file = "---
+tags: [a, b]
+---
+# Title
+";
+    let (frontmatter, body) = split_markdown_frontmatter(file);
+    assert_eq!(frontmatter, "---
+tags: [a, b]
+---
+");
+    assert_eq!(body, "# Title
+");
+}
+
+#[test]
+fn test_markdown_without_frontmatter_is_all_body() {
+    for file in ["# Title
+", "---
+an unclosed rule
+", ""] {
+        assert_eq!(split_markdown_frontmatter(file), ("", file));
+    }
 }
 
 // --- Golden fixture ------------------------------------------------------

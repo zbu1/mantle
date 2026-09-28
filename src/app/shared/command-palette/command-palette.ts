@@ -202,6 +202,14 @@ export class CommandPalette {
     }
 
     items.push({
+      id: 'new-vault',
+      label: 'New Vault…',
+      icon: 'folder-plus',
+      keywords: ['new', 'create', 'vault', 'folder'],
+      run: () => void this.vaultState.createVault(),
+    });
+
+    items.push({
       id: 'open-vault',
       label: 'Open Vault…',
       icon: 'folders',

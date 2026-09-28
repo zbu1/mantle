@@ -1,5 +1,6 @@
 //! Converting notes between the plaintext `.mntl` and encrypted `.mntl.enc`
-//! formats, and moving an encrypted note between credential profiles.
+//! formats, converting plain Markdown (`.md`) files into either, and moving an
+//! encrypted note between credential profiles.
 //!
 //! These are the only commands that destroy a file the user still wants, so
 //! each one writes and *verifies* the replacement before removing the
@@ -12,8 +13,8 @@
 use crate::credentials::SessionKeys;
 use crate::logging::logged;
 use crate::vault::{
-    join_rel_note_path, master_key_for, note_display_name, resolve_rel_dir, resolve_rel_path,
-    split_rel_note_path, write_atomic, CreatedNote, EXT_ENCRYPTED, EXT_PLAIN,
+    is_markdown_note, join_rel_note_path, master_key_for, note_display_name, resolve_rel_dir,
+    resolve_rel_path, split_rel_note_path, write_atomic, CreatedNote, EXT_ENCRYPTED, EXT_PLAIN,
 };
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -61,11 +62,33 @@ fn shred(path: &Path) -> Result<(), String> {
     fs::remove_file(path).map_err(|e| format!("Failed to remove the original note: {e}"))
 }
 
-/// Encrypt an existing plaintext note into its credential profile.
+/// Read a plaintext source note as a `.mntl` document, ready to encrypt or to
+/// write out as a `.mntl` file.
+///
+/// A `.md` file is re-encoded as one: its body is kept and its own YAML
+/// frontmatter dropped, since none of it means anything to a `.mntl` note.
+fn read_plaintext_document(source: &Path, rel_path: &str) -> Result<Zeroizing<String>, String> {
+    let raw = Zeroizing::new(
+        fs::read_to_string(source).map_err(|e| format!("Failed to read note: {e}"))?,
+    );
+    if is_markdown_note(rel_path) {
+        let (_, body) = mntl_core::split_markdown_frontmatter(&raw);
+        return mntl_core::encode_unencrypted_note(body)
+            .map(Zeroizing::new)
+            .map_err(|e| e.to_string());
+    }
+    mntl_core::extract_unencrypted_header(&raw)
+        .map_err(|e| format!("Not a valid note, refusing to encrypt it: {e}"))?;
+    Ok(raw)
+}
+
+/// Encrypt an existing plaintext note — a `.mntl`, or a plain Markdown file —
+/// into its credential profile.
 ///
 /// The order matters, because this deletes the user's plaintext:
 ///
-/// 1. Validate the source really is a `.mntl` document.
+/// 1. Validate the source really is a `.mntl` document (or re-encode a
+///    Markdown file as one).
 /// 2. Write the ciphertext atomically and fsync it.
 /// 3. **Read it back and decrypt it**, checking it matches. One extra read,
 ///    and the difference between "we deleted your note and hope the ciphertext
@@ -90,7 +113,8 @@ fn encrypt_note_inner(
     keys: &SessionKeys,
 ) -> Result<CreatedNote, String> {
     {
-        if !rel_path.ends_with(EXT_PLAIN) || rel_path.ends_with(EXT_ENCRYPTED) {
+        let plaintext = rel_path.ends_with(EXT_PLAIN) || is_markdown_note(rel_path);
+        if !plaintext || rel_path.ends_with(EXT_ENCRYPTED) {
             return Err("Only a plaintext note can be encrypted".to_string());
         }
 
@@ -109,11 +133,7 @@ fn encrypt_note_inner(
             ));
         }
 
-        let document = Zeroizing::new(
-            fs::read_to_string(&source).map_err(|e| format!("Failed to read note: {e}"))?,
-        );
-        mntl_core::extract_unencrypted_header(&document)
-            .map_err(|e| format!("Not a valid note, refusing to encrypt it: {e}"))?;
+        let document = read_plaintext_document(&source, rel_path)?;
 
         let blob =
             mntl_core::encrypt_note(&mk, profile_id, document.as_bytes()).map_err(|e| e.to_string())?;
@@ -135,6 +155,62 @@ fn encrypt_note_inner(
             rel_path: dest_rel,
         })
     }
+}
+
+/// Convert a plain Markdown file into a `.mntl` note beside it, dropping the
+/// file's own YAML frontmatter.
+///
+/// Like encrypting, the replacement is written and read back before the
+/// original goes. The original is sent to the OS trash rather than shredded:
+/// nothing here is secret, and the trash keeps the untouched `.md` — with its
+/// frontmatter — recoverable.
+#[tauri::command]
+pub fn convert_markdown_to_note(vault_root: String, rel_path: String) -> Result<CreatedNote, String> {
+    logged("convert_markdown_to_note", || {
+        convert_markdown_inner(&vault_root, &rel_path)
+    })
+}
+
+/// Send a converted Markdown file to the OS trash. Tests unlink it instead,
+/// rather than filling the developer's recycle bin.
+fn discard_markdown_original(path: &Path) -> Result<(), String> {
+    #[cfg(not(test))]
+    let result = trash::delete(path).map_err(|e| e.to_string());
+    #[cfg(test)]
+    let result = fs::remove_file(path).map_err(|e| e.to_string());
+    result.map_err(|e| format!("Failed to remove the original Markdown file: {e}"))
+}
+
+fn convert_markdown_inner(vault_root: &str, rel_path: &str) -> Result<CreatedNote, String> {
+    if !is_markdown_note(rel_path) {
+        return Err("Only a Markdown file can be converted to a note".to_string());
+    }
+
+    let source = resolve_rel_path(vault_root, rel_path)?;
+    let (dir_rel, stem, _) = split_rel_note_path(rel_path);
+    let dest_rel = join_rel_note_path(&dir_rel, &stem, EXT_PLAIN);
+    let dest = resolve_rel_path(vault_root, &dest_rel)?;
+
+    if dest.exists() {
+        return Err(format!("\"{stem}\" already exists as a note in this folder"));
+    }
+
+    let document = read_plaintext_document(&source, rel_path)?;
+    write_atomic(&dest, document.as_bytes())?;
+
+    let written =
+        fs::read_to_string(&dest).map_err(|e| format!("Failed to verify converted note: {e}"))?;
+    if written != *document {
+        let _ = fs::remove_file(&dest);
+        return Err("Converted note failed verification; the original is untouched".to_string());
+    }
+
+    discard_markdown_original(&source)?;
+
+    Ok(CreatedNote {
+        name: stem,
+        rel_path: dest_rel,
+    })
 }
 
 /// Decrypt an encrypted note back to a plaintext `.mntl` file.
@@ -358,6 +434,53 @@ mod tests {
         assert!(!root.join("secret.mntl.enc").exists());
 
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn encrypting_a_markdown_file_drops_its_frontmatter_and_removes_it() {
+        let root = temp_dir("encrypt-markdown");
+        let root_str = root.to_string_lossy().into_owned();
+        let keys = unlocked(&root_str, &["my-diary"]);
+        fs::write(root.join("secret.md"), format!("---
+tags: [x]
+---
+{BODY}")).unwrap();
+
+        let encrypted = encrypt_note_inner(&root_str, "secret.md", "my-diary", &keys).unwrap();
+        assert_eq!(encrypted.rel_path, "secret.mntl.enc");
+        assert!(!root.join("secret.md").exists());
+        assert_eq!(read_note_inner(&root_str, "secret.mntl.enc", &keys).unwrap(), BODY);
+    }
+
+    #[test]
+    fn converting_markdown_writes_a_mntl_note_without_its_frontmatter() {
+        let root = temp_dir("convert-markdown");
+        let root_str = root.to_string_lossy().into_owned();
+        fs::write(root.join("readme.markdown"), format!("---
+tags: [x]
+---
+{BODY}")).unwrap();
+
+        let converted = convert_markdown_inner(&root_str, "readme.markdown").unwrap();
+        assert_eq!(converted.rel_path, "readme.mntl");
+        assert_eq!(converted.name, "readme");
+        assert!(!root.join("readme.markdown").exists());
+        assert_eq!(
+            fs::read_to_string(root.join("readme.mntl")).unwrap(),
+            mntl_core::encode_unencrypted_note(BODY).unwrap()
+        );
+    }
+
+    #[test]
+    fn converting_markdown_refuses_collisions_and_non_markdown_files() {
+        let root = temp_dir("convert-markdown-collision");
+        let root_str = root.to_string_lossy().into_owned();
+        fs::write(root.join("readme.md"), BODY).unwrap();
+        write_plain(&root.join("readme.mntl"), "existing");
+
+        assert!(convert_markdown_inner(&root_str, "readme.md").is_err());
+        assert!(root.join("readme.md").is_file());
+        assert!(convert_markdown_inner(&root_str, "readme.mntl").is_err());
     }
 
     #[test]

@@ -228,6 +228,11 @@ export class MainMenu {
     this.tabsState.closeAllTabs();
   }
 
+  protected async newVault(): Promise<void> {
+    this.closeMenu();
+    await this.vaultState.createVault();
+  }
+
   protected async openVault(): Promise<void> {
     this.closeMenu();
     await this.vaultState.pickVault();

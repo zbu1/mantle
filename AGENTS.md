@@ -12,7 +12,11 @@ Angular 22 (frontend, signals-based, no NgModules).
   UI primitives (menu surface/item, context menu).
 - **Rust backend** (`src-tauri/`): Tauri commands in `src-tauri/src/vault.rs`
   for scanning a vault directory and reading/writing/creating notes, on top of
-  the `mntl-core` crate. `src-tauri/src/vault_meta.rs` loads/saves
+  the `mntl-core` crate. Plain Markdown files (`.md` / `.markdown`) also open
+  as notes: they're saved in place as Markdown, their own YAML frontmatter is
+  hidden and written back verbatim, and they only become `.mntl` through
+  `convert_markdown_to_note` or encryption (both drop that frontmatter).
+  `src-tauri/src/vault_meta.rs` loads/saves
   `.mantle/state.json` inside the vault — favorites, manual sort order, and
   collapsed folders — a vault-local file so this metadata travels with the
   vault across machines/sync rather than living in this app install's local

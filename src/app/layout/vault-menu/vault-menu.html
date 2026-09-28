@@ -23,9 +23,13 @@
   }
 
   <app-menu-separator />
+  <app-menu-item label="Create New Vault…" [active]="hoveredKey() === 'createVault'"
+    (hovered)="hoveredKey.set('createVault')" (selected)="createVault()">
+    <svg menuItemIcon lucideFolderPlus [size]="14"></svg>
+  </app-menu-item>
   <app-menu-item label="Open Another Vault…" [active]="hoveredKey() === 'openAnother'"
     (hovered)="hoveredKey.set('openAnother')" (selected)="openAnotherVault()">
-    <svg menuItemIcon lucideFolderPlus [size]="14"></svg>
+    <svg menuItemIcon lucideFolderOpen [size]="14"></svg>
   </app-menu-item>
 
   <app-menu-separator />

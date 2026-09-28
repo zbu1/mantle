@@ -4,6 +4,7 @@ import { installTauriMock } from '../../../testing/tauri-mock';
 import { TabsState } from '../../notes/tabs-state';
 import { NewEncryptedNoteState } from '../../notes/new-encrypted-note/new-encrypted-note-state';
 import { VaultMetaState } from '../../notes/vault-meta-state';
+import { VaultRootState } from '../../notes/vault-root-state';
 import { VaultState } from '../../notes/vault-state';
 import { VaultFolderNode, VaultNoteNode } from '../../notes/vault-tree.model';
 import { ContextMenuState } from '../../shared/context-menu/context-menu-state';
@@ -26,7 +27,14 @@ describe('Sidebar', () => {
     expect(fixture.componentInstance).toBeTruthy();
   });
 
+  /** Marks `/vault` as the open vault (without scanning it) before the sidebar is created. */
+  function openVault(): void {
+    installTauriMock();
+    TestBed.inject(VaultRootState).path.set('/vault');
+  }
+
   it('reflects the collapsed state from SidebarState', () => {
+    openVault();
     const fixture = TestBed.createComponent(Sidebar);
     const state = TestBed.inject(SidebarState);
     fixture.detectChanges();
@@ -40,6 +48,7 @@ describe('Sidebar', () => {
   });
 
   it('removes hidden sections from the sidebar but never the Vault', () => {
+    openVault();
     const fixture = TestBed.createComponent(Sidebar);
     const state = TestBed.inject(SidebarState);
     fixture.detectChanges();

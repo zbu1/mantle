@@ -2,24 +2,16 @@ import { Injectable, computed, effect, inject, signal, untracked } from '@angula
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { join } from '@tauri-apps/api/path';
-import { open } from '@tauri-apps/plugin-dialog';
+import { open, save } from '@tauri-apps/plugin-dialog';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { flattenVaultNotes, withRenamedNote, VaultFolderNode } from './vault-tree.model';
 import { TabsState } from './tabs-state';
 import { VaultMetaState } from './vault-meta-state';
+import { VaultRootState } from './vault-root-state';
 import { formatError, logError, logInfo } from '../core/logger';
 
-const STORAGE_KEY = 'mantle.vault.v1';
 const RECENT_KEY = 'mantle.vault.recent.v1';
 const MAX_RECENT_VAULTS = 8;
-
-function readStoredPath(): string | null {
-  try {
-    return localStorage.getItem(STORAGE_KEY);
-  } catch {
-    return null;
-  }
-}
 
 function readStoredRecents(): string[] {
   try {
@@ -52,7 +44,7 @@ export class VaultState {
   private readonly tabsState = inject(TabsState);
   private readonly vaultMeta = inject(VaultMetaState);
 
-  readonly rootPath = signal<string | null>(readStoredPath());
+  readonly rootPath = inject(VaultRootState).path;
   readonly tree = signal<VaultFolderNode | null>(null);
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
@@ -73,16 +65,6 @@ export class VaultState {
   });
 
   constructor() {
-    effect(() => {
-      const path = this.rootPath();
-      try {
-        if (path) localStorage.setItem(STORAGE_KEY, path);
-        else localStorage.removeItem(STORAGE_KEY);
-      } catch {
-        // storage unavailable (e.g. private browsing) — ignore
-      }
-    });
-
     effect(() => {
       const path = this.rootPath();
       if (path) this.rememberRecentVault(path);
@@ -155,6 +137,26 @@ export class VaultState {
     await this.refresh();
   }
 
+  /**
+   * Creates a new, empty vault and opens it. A native save dialog picks both
+   * the location and the name in one step; the backend creates that folder
+   * (refusing one that already exists) and seeds its `.mantle/` state.
+   */
+  async createVault(): Promise<void> {
+    const selected = await save({ title: 'Create New Vault', defaultPath: 'New Vault' });
+    if (!selected) return;
+    this.error.set(null);
+    try {
+      const path = await invoke<string>('create_vault', { path: selected });
+      logInfo(`Created vault "${path}"`);
+      this.rootPath.set(path);
+      await this.refresh();
+    } catch (err) {
+      logError(`Failed to create vault "${selected}": ${formatError(err)}`);
+      this.error.set(formatError(err));
+    }
+  }
+
   /** Switches to an already-known vault path (e.g. from the sidebar's recent-vaults switcher). */
   async switchVault(path: string): Promise<void> {
     if (path === this.rootPath()) return;
@@ -166,6 +168,7 @@ export class VaultState {
   closeVault(): void {
     this.rootPath.set(null);
     this.tree.set(null);
+    this.error.set(null);
     this.previousRoot = null;
     this.previousNotes = null;
     this.tabsState.closeAllTabs();

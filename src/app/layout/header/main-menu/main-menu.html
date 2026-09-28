@@ -50,6 +50,10 @@
         </app-menu-item>
 
         <app-menu-separator />
+        <app-menu-item label="New Vault…" [active]="hoveredItem() === 'newVault'"
+          (hovered)="hoveredItem.set('newVault')" (selected)="newVault()">
+          <svg menuItemIcon lucideFolderPlus [size]="14"></svg>
+        </app-menu-item>
         <app-menu-item label="Open Vault…" [active]="hoveredItem() === 'openVault'"
           (hovered)="hoveredItem.set('openVault')" (selected)="openVault()">
           <svg menuItemIcon lucideFolders [size]="14"></svg>

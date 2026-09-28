@@ -8,11 +8,12 @@ import { CreatedNote, VaultState } from './vault-state';
 import { NoteEncryptionModalState } from './note-encryption-modal/note-encryption-modal-state';
 import { NotesState } from './notes-state';
 import { TabsState } from './tabs-state';
-import { VaultNoteNode } from './vault-tree.model';
+import { VaultNoteNode, markdownExtensionOf } from './vault-tree.model';
 
 /**
- * Encrypting, decrypting and re-homing individual notes, plus the context-menu
- * entries that trigger them.
+ * Encrypting, decrypting and re-homing individual notes, converting plain
+ * Markdown files into Mantle notes, plus the context-menu entries that trigger
+ * them.
  *
  * Shared by the sidebar's note menu and the editor toolbar's encryption
  * button, which offer the same actions.
@@ -51,14 +52,50 @@ export class NoteEncryptionActions {
       ];
     }
 
-    return [
-      {
-        kind: 'item',
-        label: note.encrypted ? 'Change Encryption…' : 'Encrypt…',
-        icon: 'lock',
-        action: () => this.modalState.open(note),
-      },
-    ];
+    const items: ContextMenuItem[] = [];
+    if (markdownExtensionOf(note.relPath)) {
+      items.push({ kind: 'item', label: 'Convert to Mantle Note', icon: 'convert', action: () => void this.convertToNote(note) });
+    }
+    items.push({
+      kind: 'item',
+      label: note.encrypted ? 'Change Encryption…' : 'Encrypt…',
+      icon: 'lock',
+      action: () => this.modalState.open(note),
+    });
+    return items;
+  }
+
+  /**
+   * Convert a plain Markdown file into a `.mntl` note beside it. The file's
+   * own YAML frontmatter is dropped; the original goes to the OS trash.
+   */
+  async convertToNote(note: VaultNoteNode): Promise<void> {
+    const root = this.vaultState.rootPath();
+    const ext = markdownExtensionOf(note.relPath);
+    if (!root || !ext) return;
+
+    const confirmed = await this.dialogState.confirm(
+      `"${note.name}${ext}" will become "${note.name}.mntl". Other Markdown apps won't open it ` +
+        `any more, and any YAML frontmatter at the top of the file will be removed. ` +
+        `The original file is moved to the trash.`,
+      { title: 'Convert to Mantle note?', tone: 'warning', confirmLabel: 'Convert' },
+    );
+    if (!confirmed) return;
+
+    await this.notesState.flushPending([note.relPath]);
+
+    try {
+      const created = await invoke<CreatedNote>('convert_markdown_to_note', {
+        vaultRoot: root,
+        relPath: note.relPath,
+      });
+      this.retarget(note.relPath, created);
+      logInfo(`Converted "${note.relPath}" to "${created.relPath}"`);
+      await this.vaultState.refresh();
+    } catch (err) {
+      logError(`Failed to convert "${note.relPath}": ${formatError(err)}`);
+      await this.dialogState.alert(String(err), { title: 'Conversion Failed', tone: 'error' });
+    }
   }
 
   /** Encrypt a plaintext note into `profileId`, unlocking that profile first if needed. */
@@ -178,12 +215,6 @@ export class NoteEncryptionActions {
       logError(`Failed to create an encrypted note: ${formatError(err)}`);
       throw err;
     }
-  }
-
-  /** Prompt for a new profile and encrypt `note` into it. Public: also used by the editor toolbar's "New profile…" picker option. */
-  async createProfileThenEncrypt(note: VaultNoteNode): Promise<void> {
-    const profileId = await this.credentialsState.promptCreate();
-    if (profileId) await this.encrypt(note, profileId);
   }
 
   private async ensureUnlocked(note: VaultNoteNode): Promise<boolean> {

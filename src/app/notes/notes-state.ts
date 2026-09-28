@@ -28,7 +28,7 @@ export function titleFromRelPath(relPath: string): string {
   const last = relPath.split('/').pop() ?? relPath;
   // `.mntl.enc` first: it's a compound extension, so stripping `.mntl` alone
   // would leave every encrypted note titled "Dream journal.mntl.enc".
-  return last.replace(/\.mntl\.enc$/, '').replace(/\.mntl$/, '');
+  return last.replace(/\.mntl\.enc$/, '').replace(/\.(mntl|md|markdown)$/, '');
 }
 
 const DEBOUNCE_MS = 1000;

@@ -101,6 +101,11 @@ describe('NotesState', () => {
       expect(titleFromRelPath('Personal/todo.mntl')).toBe('todo');
       expect(titleFromRelPath('todo.mntl')).toBe('todo');
     });
+
+    it('strips the extension of a plain Markdown file', () => {
+      expect(titleFromRelPath('Docs/readme.md')).toBe('readme');
+      expect(titleFromRelPath('guide.markdown')).toBe('guide');
+    });
   });
 
   describe('locked notes', () => {
