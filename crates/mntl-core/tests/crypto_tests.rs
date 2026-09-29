@@ -1,7 +1,7 @@
 use mntl_core::{
-    compute_verifier, decode_unencrypted_note, decrypt_note, derive_kek, derive_kek_with_params,
+    compute_verifier, decode_unencrypted_note, decrypt_note, derive_kek_with_params,
     encode_unencrypted_note, encrypt_note, extract_encrypted_header, extract_unencrypted_header,
-    generate_master_key, split_markdown_frontmatter, unwrap_master_key, verify_master_key,
+    split_markdown_frontmatter, unwrap_master_key, verify_master_key,
     wrap_master_key, KdfParams, MasterKey, MntlError, ENVELOPE_VERSION, MAGIC_MENC, NOTE_VERSION,
 };
 
@@ -17,7 +17,7 @@ fn test_kdf() -> KdfParams {
 
 /// A master key, without paying for a KDF run.
 fn test_mk() -> MasterKey {
-    generate_master_key().unwrap()
+    MasterKey::generate().unwrap()
 }
 
 #[test]
@@ -38,7 +38,7 @@ fn test_derive_kek_deterministic() {
 fn test_derive_kek_uses_default_params() {
     // The one place the production cost is exercised, so a broken default
     // (e.g. parameters Argon2 rejects) fails loudly rather than only in the app.
-    let kek = derive_kek("password", b"salt_bytes_here!").unwrap();
+    let kek = derive_kek_with_params("password", b"salt_bytes_here!", &KdfParams::default()).unwrap();
     assert_eq!(kek.expose().len(), 32);
 }
 

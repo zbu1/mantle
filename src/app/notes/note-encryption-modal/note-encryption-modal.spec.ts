@@ -9,7 +9,8 @@ import { VaultState } from '../vault-state';
 import { VaultNode, VaultNoteNode } from '../vault-tree.model';
 import { NoteEncryptionModal } from './note-encryption-modal';
 import { NoteEncryptionModalState } from './note-encryption-modal-state';
-import { dirOf, fileNameOf, relPathAfter } from './note-encryption-modal.model';
+import { relPathAfter } from './note-encryption-modal.model';
+import { dirOf, fileNameOf } from '../vault-tree.model';
 
 const KDF = { mCost: 19456, tCost: 2, pCost: 1 };
 

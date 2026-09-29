@@ -1,74 +1,11 @@
-import { EditorState, Command } from 'prosemirror-state';
+import { Command } from 'prosemirror-state';
 import { EditorView } from 'prosemirror-view';
-import { toggleMark, setBlockType, wrapIn } from 'prosemirror-commands';
+import { setBlockType, wrapIn } from 'prosemirror-commands';
 import { wrapInList, liftListItem } from 'prosemirror-schema-list';
 import { schema } from './schema';
 
-export function isMarkActive(state: EditorState, markName: string): boolean {
-  const markType = schema.marks[markName];
-  if (!markType) return false;
-  const { from, $from, to, empty } = state.selection;
-  if (empty) {
-    return !!markType.isInSet(state.storedMarks || $from.marks());
-  } else {
-    return state.doc.rangeHasMark(from, to, markType);
-  }
-}
-
-export function getMarkAttributes(state: EditorState, markName: string): Record<string, any> {
-  const markType = schema.marks[markName];
-  if (!markType) return {};
-  const { from, $from, to, empty } = state.selection;
-  if (empty) {
-    const mark = markType.isInSet(state.storedMarks || $from.marks());
-    return mark ? mark.attrs : {};
-  } else {
-    let attrs = {};
-    state.doc.nodesBetween(from, to, (node) => {
-      const mark = markType.isInSet(node.marks);
-      if (mark) attrs = mark.attrs;
-    });
-    return attrs;
-  }
-}
-
 export function executeCommand(view: EditorView, command: Command): boolean {
   return command(view.state, view.dispatch, view);
-}
-
-export function toggleBold(view: EditorView): boolean {
-  return executeCommand(view, toggleMark(schema.marks['strong']));
-}
-
-export function toggleItalic(view: EditorView): boolean {
-  return executeCommand(view, toggleMark(schema.marks['em']));
-}
-
-export function toggleStrike(view: EditorView): boolean {
-  return executeCommand(view, toggleMark(schema.marks['strike']));
-}
-
-export function toggleCode(view: EditorView): boolean {
-  return executeCommand(view, toggleMark(schema.marks['code']));
-}
-
-export function setLink(view: EditorView, href: string): boolean {
-  const markType = schema.marks['link'];
-  if (!markType) return false;
-  const { from, to } = view.state.selection;
-  if (from === to) return false;
-  const tr = view.state.tr.addMark(from, to, markType.create({ href }));
-  view.dispatch(tr);
-  return true;
-}
-
-export function unsetLink(view: EditorView): boolean {
-  const markType = schema.marks['link'];
-  if (!markType) return false;
-  const { from, to } = view.state.selection;
-  const tr = view.state.tr.removeMark(from, to, markType);
-  view.dispatch(tr);
-  return true;
 }
 
 export function setHeading(view: EditorView, level: number): boolean {

@@ -4,12 +4,4 @@ import { Injectable, signal } from '@angular/core';
 @Injectable({ providedIn: 'root' })
 export class VaultRenameState {
   readonly renamingPath = signal<string | null>(null);
-
-  start(relPath: string): void {
-    this.renamingPath.set(relPath);
-  }
-
-  stop(): void {
-    this.renamingPath.set(null);
-  }
 }

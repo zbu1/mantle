@@ -24,6 +24,7 @@ import { VaultSelectionState } from '../../notes/vault-selection-state';
 import {
   filterVaultTree,
   flattenAllNotes,
+  dirOf,
   flattenVaultNotes,
   isNoteLocked,
   isVaultTreeDrag,
@@ -126,7 +127,7 @@ export class Sidebar {
     return notes.map((note) => ({
       note,
       locked: isNoteLocked(note, unlocked),
-      folder: nameCounts.get(note.name)! > 1 ? parentDirOf(note.relPath) || '/' : null,
+      folder: nameCounts.get(note.name)! > 1 ? dirOf(note.relPath) || '/' : null,
     }));
   });
 
@@ -168,7 +169,7 @@ export class Sidebar {
       try {
         const created = await this.vaultState.createNote(relDir, name);
         this.tabsState.openNote({ id: created.relPath, title: created.name });
-        this.renameState.start(created.relPath);
+        this.renameState.renamingPath.set(created.relPath);
         return;
       } catch {
         // name collision — try the next candidate
@@ -187,7 +188,7 @@ export class Sidebar {
         if (selectedNotes.length > 0) {
           await this.onNotesDropped({ relPaths: selectedNotes, destRelDir: created.relPath });
         }
-        this.renameState.start(created.relPath);
+        this.renameState.renamingPath.set(created.relPath);
         return;
       } catch {
         // name collision — try the next candidate
@@ -338,7 +339,7 @@ export class Sidebar {
       { kind: 'separator' },
       ...this.encryptionActions.menuItems(note),
       { kind: 'separator' },
-      { kind: 'item', label: 'Rename', icon: 'rename', action: () => this.renameState.start(note.relPath) },
+      { kind: 'item', label: 'Rename', icon: 'rename', action: () => this.renameState.renamingPath.set(note.relPath) },
       this.favoriteMenuItem(note.relPath),
       { kind: 'separator' },
       { kind: 'item', label: 'Delete', icon: 'delete', danger: true, action: () => void this.deleteNote(note) },
@@ -365,7 +366,7 @@ export class Sidebar {
         action: () => void this.vaultState.revealInFileExplorer(folder.relPath),
       },
       { kind: 'separator' },
-      { kind: 'item', label: 'Rename', icon: 'rename', action: () => this.renameState.start(folder.relPath) },
+      { kind: 'item', label: 'Rename', icon: 'rename', action: () => this.renameState.renamingPath.set(folder.relPath) },
       { kind: 'separator' },
       {
         kind: 'item',
@@ -543,8 +544,7 @@ export class Sidebar {
   protected async onNotesDropped(payload: { relPaths: string[]; destRelDir: string }): Promise<void> {
     const { relPaths, destRelDir } = payload;
     for (const relPath of relPaths) {
-      const parentDir = relPath.includes('/') ? relPath.slice(0, relPath.lastIndexOf('/')) : '';
-      if (parentDir === destRelDir) continue;
+      if (dirOf(relPath) === destRelDir) continue;
       const moved = await this.vaultState.moveNote(relPath, destRelDir);
       this.notesState.renameNoteId(relPath, moved.relPath);
       this.tabsState.renameNoteId(relPath, moved.relPath, moved.name);
@@ -556,8 +556,7 @@ export class Sidebar {
   /** Moves a dropped folder into `destRelDir` and retargets any open tabs for notes nested inside it. */
   protected async onFolderDropped(payload: { relPath: string; destRelDir: string }): Promise<void> {
     const { relPath, destRelDir } = payload;
-    const parentDir = relPath.includes('/') ? relPath.slice(0, relPath.lastIndexOf('/')) : '';
-    if (parentDir === destRelDir) return;
+    if (dirOf(relPath) === destRelDir) return;
     const tree = this.vaultState.tree();
     const oldPrefix = `${relPath}/`;
     const affected = tree ? [...flattenVaultNotes(tree)].filter(([notePath]) => notePath.startsWith(oldPrefix)) : [];
@@ -719,8 +718,4 @@ export class Sidebar {
     this.dragStartX.set(null);
     this.state.resizing.set(false);
   }
-}
-
-function parentDirOf(relPath: string): string {
-  return relPath.includes('/') ? relPath.slice(0, relPath.lastIndexOf('/')) : '';
 }

@@ -6,6 +6,7 @@ import {
   VaultFolderNode,
   VaultNode,
   VaultNoteNode,
+  dirOf,
   isNoteLocked,
   isVaultTreeDrag,
   markdownExtensionOf,
@@ -218,8 +219,7 @@ export class VaultTreeNode {
     const selected = this.selectionState.selected();
     if (selected.size === 0) return false;
     for (const relPath of selected) {
-      const parentDir = relPath.includes('/') ? relPath.slice(0, relPath.lastIndexOf('/')) : '';
-      if (parentDir !== folder.relPath) return false;
+      if (dirOf(relPath) !== folder.relPath) return false;
     }
     return true;
   }
@@ -227,8 +227,7 @@ export class VaultTreeNode {
   /** True if dropping `draggedRelPath` onto `target` would be a no-op or create a cycle (moving a folder into itself/a descendant). */
   private isInvalidFolderDropTarget(draggedRelPath: string, target: VaultFolderNode): boolean {
     if (target.relPath === draggedRelPath || target.relPath.startsWith(`${draggedRelPath}/`)) return true;
-    const draggedParentDir = draggedRelPath.includes('/') ? draggedRelPath.slice(0, draggedRelPath.lastIndexOf('/')) : '';
-    return draggedParentDir === target.relPath;
+    return dirOf(draggedRelPath) === target.relPath;
   }
 
   protected onRenameKeydown(event: KeyboardEvent): void {
@@ -237,13 +236,13 @@ export class VaultTreeNode {
       (event.target as HTMLInputElement).blur();
     } else if (event.key === 'Escape') {
       event.preventDefault();
-      this.renameState.stop();
+      this.renameState.renamingPath.set(null);
     }
   }
 
   protected onNoteRenameBlur(note: VaultNoteNode, value: string): void {
     if (this.renameState.renamingPath() !== note.relPath) return;
-    this.renameState.stop();
+    this.renameState.renamingPath.set(null);
     const newName = value.trim();
     if (!newName || newName === note.name) return;
     this.noteRenamed.emit({ relPath: note.relPath, newName });
@@ -251,7 +250,7 @@ export class VaultTreeNode {
 
   protected onFolderRenameBlur(folder: VaultFolderNode, value: string): void {
     if (this.renameState.renamingPath() !== folder.relPath) return;
-    this.renameState.stop();
+    this.renameState.renamingPath.set(null);
     const newName = value.trim();
     if (!newName || newName === folder.name) return;
     this.folderRenamed.emit({ relPath: folder.relPath, newName });

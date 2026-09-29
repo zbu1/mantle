@@ -401,7 +401,7 @@ mod tests {
     fn unlocked(vault_root: &str, profile_ids: &[&str]) -> SessionKeys {
         let keys = SessionKeys::default();
         for id in profile_ids {
-            keys.unlock_for_test(vault_root, id, mntl_core::generate_master_key().unwrap())
+            keys.unlock_for_test(vault_root, id, mntl_core::MasterKey::generate().unwrap())
                 .unwrap();
         }
         keys

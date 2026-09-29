@@ -56,11 +56,6 @@ export function markdownExtensionOf(relPath: string): string | null {
   return MARKDOWN_EXTENSIONS.find((ext) => relPath.endsWith(ext)) ?? null;
 }
 
-/** True when the note at `relPath` is a plain Markdown file rather than a Mantle note. */
-export function isMarkdownNote(relPath: string): boolean {
-  return markdownExtensionOf(relPath) !== null;
-}
-
 /** True when `note` is encrypted and its credential profile is not currently unlocked. */
 export function isNoteLocked(note: VaultNoteNode, unlockedProfiles: ReadonlySet<string>): boolean {
   if (!note.encrypted) return false;
@@ -168,4 +163,15 @@ export function flattenAllNotes(root: VaultFolderNode): VaultNoteNode[] {
   };
   visit(root);
   return notes;
+}
+
+/** The folder part of a vault-relative path; empty string for the vault root. */
+export function dirOf(relPath: string): string {
+  const slash = relPath.lastIndexOf('/');
+  return slash === -1 ? '' : relPath.slice(0, slash);
+}
+
+/** The filename part of a vault-relative path. */
+export function fileNameOf(relPath: string): string {
+  return relPath.slice(relPath.lastIndexOf('/') + 1);
 }

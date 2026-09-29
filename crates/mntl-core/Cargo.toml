@@ -15,13 +15,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
 thiserror = "2.0"
-getrandom = { version = "0.2", features = ["js"] }
 rand_core = { version = "0.6", features = ["getrandom"] }
 hmac = "0.12"
 sha2 = "0.10"
 subtle = "2"
-
-[dev-dependencies]
-# Integration tests inspect the raw header JSON to freeze the on-disk wire
-# format; the crate's own serde_json isn't visible from `tests/`.
-serde_json = "1.0"

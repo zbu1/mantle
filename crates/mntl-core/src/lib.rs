@@ -10,7 +10,7 @@
 //!   ([`encode_unencrypted_note`] / [`decode_unencrypted_note`]).
 //! - **`.mntl.enc` (encrypted)**: a zero-knowledge encrypted binary envelope.
 //!   A user password is stretched into a 256-bit Key Encryption Key (KEK)
-//!   with Argon2id ([`derive_kek`]), which wraps a per-profile [`MasterKey`].
+//!   with Argon2id ([`derive_kek_with_params`]), which wraps a per-profile [`MasterKey`].
 //!   Each note is encrypted with a freshly generated content encryption key
 //!   using XChaCha20-Poly1305, and that key is wrapped with the master key
 //!   using AES-KW ([`encrypt_note`] / [`decrypt_note`]). The envelope is a
@@ -45,19 +45,19 @@
 //!
 //! ```
 //! use mntl_core::{
-//!     decrypt_note, derive_kek, encrypt_note, generate_master_key, unwrap_master_key,
-//!     wrap_master_key,
+//!     decrypt_note, derive_kek_with_params, encrypt_note, unwrap_master_key, wrap_master_key,
+//!     KdfParams, MasterKey,
 //! };
 //!
 //! // Once, when the profile is created: wrap a fresh master key with a
 //! // password-derived KEK. Only `salt` and `wrapped` are stored.
 //! let salt = b"a unique per-profile salt";
-//! let kek = derive_kek("correct horse battery staple", salt)?;
-//! let master_key = generate_master_key()?;
+//! let kek = derive_kek_with_params("correct horse battery staple", salt, &KdfParams::default())?;
+//! let master_key = MasterKey::generate()?;
 //! let wrapped = wrap_master_key(&kek, &master_key)?;
 //!
 //! // Later, on unlock: re-derive the KEK and recover the same master key.
-//! let kek = derive_kek("correct horse battery staple", salt)?;
+//! let kek = derive_kek_with_params("correct horse battery staple", salt, &KdfParams::default())?;
 //! let master_key = unwrap_master_key(&kek, &wrapped)?;
 //!
 //! // Every note in the profile is then sealed under that one master key.
@@ -101,21 +101,10 @@ pub use header::{
     MAGIC_MENC, NOTE_VERSION,
 };
 pub use keys::{
-    compute_verifier, generate_master_key, unwrap_master_key, verify_master_key, wrap_master_key,
+    compute_verifier, unwrap_master_key, verify_master_key, wrap_master_key,
     KeyEncryptionKey, MasterKey, WRAPPED_KEY_LEN,
 };
 pub use tags::{dedupe_tags, markdown_tags, normalize_tag, same_tag, set_markdown_tags};
-
-/// Derive a 256-bit Key Encryption Key (KEK) using Argon2id with default KDF parameters.
-///
-/// Equivalent to [`derive_kek_with_params`] with [`KdfParams::default`].
-///
-/// # Errors
-///
-/// Returns [`MntlError::KdfError`] if Argon2 hashing fails (e.g. invalid parameters).
-pub fn derive_kek(password: &str, salt: &[u8]) -> Result<KeyEncryptionKey, MntlError> {
-    derive_kek_with_params(password, salt, &KdfParams::default())
-}
 
 /// Derive a 256-bit Key Encryption Key (KEK) using Argon2id with explicit KDF parameters.
 ///

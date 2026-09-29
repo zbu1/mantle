@@ -407,7 +407,7 @@ export class CommandPalette {
 
   private async newFolder(): Promise<void> {
     const created = await this.vaultState.createFolderWithUniqueName();
-    this.renameState.start(created.relPath);
+    this.renameState.renamingPath.set(created.relPath);
   }
 
   private async toggleFullscreen(): Promise<void> {

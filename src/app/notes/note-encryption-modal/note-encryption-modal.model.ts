@@ -24,14 +24,3 @@ export function relPathAfter(relPath: string, outcome: EncryptionOutcome): strin
   }
   return relPath;
 }
-
-/** The folder part of a vault-relative path; empty string for the vault root. */
-export function dirOf(relPath: string): string {
-  const slash = relPath.lastIndexOf('/');
-  return slash === -1 ? '' : relPath.slice(0, slash);
-}
-
-/** The filename part of a vault-relative path. */
-export function fileNameOf(relPath: string): string {
-  return relPath.slice(relPath.lastIndexOf('/') + 1);
-}

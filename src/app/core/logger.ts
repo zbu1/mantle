@@ -1,4 +1,4 @@
-import { attachConsole, debug, error, info, warn } from '@tauri-apps/plugin-log';
+import { attachConsole, error, info } from '@tauri-apps/plugin-log';
 import { isTauri } from './tauri-env';
 
 /**
@@ -16,16 +16,8 @@ function send(level: (message: string) => Promise<void>, fallback: (message: str
   });
 }
 
-export function logDebug(message: string): void {
-  send(debug, console.debug, message);
-}
-
 export function logInfo(message: string): void {
   send(info, console.info, message);
-}
-
-export function logWarn(message: string): void {
-  send(warn, console.warn, message);
 }
 
 export function logError(message: string): void {

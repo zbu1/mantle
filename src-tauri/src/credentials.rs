@@ -33,7 +33,7 @@ use crate::vault_meta::STATE_DIR;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use mntl_core::{
-    compute_verifier, derive_kek_with_params, generate_master_key, unwrap_master_key,
+    compute_verifier, derive_kek_with_params, unwrap_master_key,
     verify_master_key, wrap_master_key, KdfParams, MasterKey,
 };
 use rand_core::{OsRng, RngCore};
@@ -385,7 +385,7 @@ fn create_profile_inner(
         .map_err(|e| format!("Failed to generate salt: {e}"))?;
 
     let kek = derive_kek_with_params(password, &salt, kdf).map_err(|e| e.to_string())?;
-    let master_key = generate_master_key().map_err(|e| e.to_string())?;
+    let master_key = MasterKey::generate().map_err(|e| e.to_string())?;
     let wrapped = wrap_master_key(&kek, &master_key).map_err(|e| e.to_string())?;
 
     let profile = CredentialProfile {
@@ -831,7 +831,7 @@ mod tests {
         let mut registry = load_registry(&root_str).unwrap();
         let salt = BASE64.decode(&registry.profiles[0].salt).unwrap();
         let kek = derive_kek_with_params("hunter2", &salt, &test_kdf()).unwrap();
-        let impostor = generate_master_key().unwrap();
+        let impostor = MasterKey::generate().unwrap();
         registry.profiles[0].wrapped_master_key =
             BASE64.encode(wrap_master_key(&kek, &impostor).unwrap());
         save_registry(&root_str, &registry).unwrap();

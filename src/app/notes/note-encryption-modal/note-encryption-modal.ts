@@ -7,7 +7,8 @@ import { ProfileChoice, chosenProfileId } from '../profile-picker/profile-picker
 import { VaultState } from '../vault-state';
 import { VaultNoteNode, findFolder, markdownExtensionOf } from '../vault-tree.model';
 import { NoteEncryptionModalState } from './note-encryption-modal-state';
-import { EncryptionOutcome, dirOf, fileNameOf, relPathAfter } from './note-encryption-modal.model';
+import { EncryptionOutcome, relPathAfter } from './note-encryption-modal.model';
+import { dirOf, fileNameOf } from '../vault-tree.model';
 
 /**
  * The modal behind a note's "Encrypt…" / "Change Encryption…" context-menu

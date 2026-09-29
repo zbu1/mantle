@@ -205,7 +205,7 @@ mod tests {
             ..Default::default()
         };
         let document = mntl_core::encode_note(&frontmatter, "Body").unwrap();
-        let mk = mntl_core::generate_master_key().unwrap();
+        let mk = mntl_core::MasterKey::generate().unwrap();
         fs::write(path, mntl_core::encrypt_note(&mk, profile_id, document.as_bytes()).unwrap()).unwrap();
         mk
     }

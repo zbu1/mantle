@@ -56,7 +56,7 @@ pub struct KeyEncryptionKey([u8; 32]);
 pub struct MasterKey([u8; 32]);
 
 impl KeyEncryptionKey {
-    /// Build a KEK from raw bytes. Callers normally use [`crate::derive_kek`].
+    /// Build a KEK from raw bytes. Callers normally use [`crate::derive_kek_with_params`].
     pub fn from_bytes(bytes: [u8; 32]) -> Self {
         Self(bytes)
     }
@@ -102,15 +102,6 @@ impl std::fmt::Debug for MasterKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("MasterKey(<redacted>)")
     }
-}
-
-/// Generate a fresh [`MasterKey`]. Convenience wrapper over [`MasterKey::generate`].
-///
-/// # Errors
-///
-/// Returns [`MntlError::RngError`] if the OS random number generator fails.
-pub fn generate_master_key() -> Result<MasterKey, MntlError> {
-    MasterKey::generate()
 }
 
 /// Wrap a master key with a KEK using AES-KW (AES-256).

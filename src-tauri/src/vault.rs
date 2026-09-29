@@ -1112,7 +1112,7 @@ tags: [x]
         fs::write(root.join("bare.md"), "Body").unwrap();
         let frontmatter = mntl_core::NoteFrontmatter { tags: vec!["private".into()], ..Default::default() };
         let document = mntl_core::encode_note(&frontmatter, "Body").unwrap();
-        let mk = mntl_core::generate_master_key().unwrap();
+        let mk = mntl_core::MasterKey::generate().unwrap();
         let blob = mntl_core::encrypt_note(&mk, "diary", document.as_bytes()).unwrap();
         fs::write(root.join("secret.mntl.enc"), blob).unwrap();
 
@@ -1279,7 +1279,7 @@ tags: [x]
     /// Seal a real `.mntl.enc` file so scan tests exercise the actual format
     /// rather than a hand-rolled approximation of it.
     fn write_encrypted(path: &Path, profile_id: &str, body: &str) -> mntl_core::MasterKey {
-        let mk = mntl_core::generate_master_key().unwrap();
+        let mk = mntl_core::MasterKey::generate().unwrap();
         let document = mntl_core::encode_unencrypted_note(body).unwrap();
         let blob = mntl_core::encrypt_note(&mk, profile_id, document.as_bytes()).unwrap();
         fs::write(path, blob).unwrap();
