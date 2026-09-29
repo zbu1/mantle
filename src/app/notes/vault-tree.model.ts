@@ -4,6 +4,19 @@ export const VAULT_NOTE_DRAG_MIME = 'application/x-mantle-note-paths';
 /** dataTransfer MIME type used to drag a single folder relPath onto another folder/the vault root. */
 export const VAULT_FOLDER_DRAG_MIME = 'application/x-mantle-folder-path';
 
+/**
+ * dataTransfer MIME type for dragging a *reference* to a single note relPath —
+ * a Favorites or Recent Files row. Dropping one on Favorites favorites it;
+ * the vault tree ignores it, so dragging a reference never moves the file.
+ */
+export const NOTE_REFERENCE_DRAG_MIME = 'application/x-mantle-note-ref';
+
+/** True if `event` drags notes or a folder out of the vault tree, i.e. something a folder drop can move. */
+export function isVaultTreeDrag(event: DragEvent): boolean {
+  const types = event.dataTransfer?.types ?? [];
+  return types.includes(VAULT_NOTE_DRAG_MIME) || types.includes(VAULT_FOLDER_DRAG_MIME);
+}
+
 export interface VaultFolderNode {
   type: 'folder';
   name: string;
@@ -23,6 +36,11 @@ export interface VaultNoteNode {
   encrypted: boolean;
   /** Credential profile this note is encrypted under, or null for plaintext notes and unreadable headers. */
   profile: string | null;
+  /**
+   * The note's tags, or null when they can't be read: an encrypted note whose
+   * profile was locked at scan time, or an unparseable file.
+   */
+  tags: string[] | null;
 }
 
 export type VaultNode = VaultFolderNode | VaultNoteNode;
@@ -73,6 +91,35 @@ export function withRenamedNote(root: VaultFolderNode, relPath: string, newRelPa
     return children.some((child, i) => child !== node.children[i]) ? { ...node, children } : node;
   };
   return rename(root) as VaultFolderNode;
+}
+
+/** Returns a copy of `root` with the note at `relPath` given `tags`. No-op (same reference) if not found. */
+export function withNoteTags(root: VaultFolderNode, relPath: string, tags: string[]): VaultFolderNode {
+  const retag = (node: VaultNode): VaultNode => {
+    if (node.type === 'note') return node.relPath === relPath ? { ...node, tags } : node;
+    const children = node.children.map(retag);
+    return children.some((child, i) => child !== node.children[i]) ? { ...node, children } : node;
+  };
+  return retag(root) as VaultFolderNode;
+}
+
+/**
+ * `root` pruned to the notes whose name contains `query` (ignoring case), plus
+ * the folders on the way to them. Folders are kept only as ancestors; a
+ * folder whose own name matches isn't a hit. A blank query returns `root`.
+ */
+export function filterVaultTree(root: VaultFolderNode, query: string): VaultFolderNode {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return root;
+  const prune = (folder: VaultFolderNode): VaultFolderNode => ({
+    ...folder,
+    children: folder.children.flatMap((child): VaultNode[] => {
+      if (child.type === 'note') return child.name.toLowerCase().includes(needle) ? [child] : [];
+      const pruned = prune(child);
+      return pruned.children.length > 0 ? [pruned] : [];
+    }),
+  });
+  return prune(root);
 }
 
 /** Flattens a vault tree into a map of note relPath -> display name. */

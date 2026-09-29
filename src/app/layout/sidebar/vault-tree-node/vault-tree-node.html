@@ -2,26 +2,25 @@
 <div (dragenter)="onFolderDragOver(folder, $event)" (dragover)="onFolderDragOver(folder, $event)" (drop)="onFolderDrop(folder, $event)"
   [class.bg-primary/10]="dragState.hoveredDir() === folder.relPath" class="rounded-md">
   @if (renaming()) {
-  <div [style.padding-left.px]="36 + depth() * 16" class="flex w-full items-center gap-1.5 rounded-md py-1 pr-2">
-    <svg lucideChevronRight [size]="12" class="shrink-0" [class.rotate-90]="expanded()"></svg>
-    <svg lucideFolder [size]="14" class="shrink-0 text-muted-foreground"></svg>
+  <div [style.padding-left.px]="indentOf(depth())" class="flex w-full items-center gap-1.5 rounded-md py-1 pr-2">
+    <svg lucideChevronRight [size]="12" class="shrink-0" [class.rotate-90]="isExpanded()"></svg>
     <input #renameInput type="text" [value]="folder.name" (keydown)="onRenameKeydown($event)"
       (blur)="onFolderRenameBlur(folder, renameInput.value)" (click)="$event.stopPropagation()"
       class="w-full min-w-0 flex-1 rounded-sm border border-primary/50 bg-background px-1 py-0 text-xs text-foreground outline-none" />
   </div>
   } @else {
-  <app-explorer-row [label]="folder.name" [depth]="depth()" [expanded]="expanded()" [draggable]="true"
+  <app-explorer-row [label]="folder.name" [depth]="depth()" [baseIndent]="BASE_INDENT" [indentStep]="INDENT_STEP"
+    [strong]="true" [expanded]="isExpanded()" [draggable]="true"
     (toggle)="toggleExpanded()" (headerDragStart)="onFolderDragStart(folder, $event)"
-    (headerContextMenu)="folderContextMenu.emit({ event: $event, folder })">
-    <svg explorerIcon lucideFolder [size]="14" class="shrink-0 text-muted-foreground"></svg>
-  </app-explorer-row>
+    (headerContextMenu)="folderContextMenu.emit({ event: $event, folder })" />
   }
-  <app-explorer-body [expanded]="expanded()">
-    <div class="p-0.5">
+  <app-explorer-body [expanded]="isExpanded()">
+    <div class="py-px">
       <div class="relative">
-        <div class="pointer-events-none absolute top-0 bottom-0 z-10 w-px bg-border" [style.left.px]="36 + depth() * 16 + 6"></div>
+        <!-- Indent guide, running down from under the folder's chevron. -->
+        <div class="pointer-events-none absolute top-0 bottom-1 z-10 w-px bg-border" [style.left.px]="indentOf(depth()) + 5.5"></div>
         @for (child of folder.children; track child.relPath) {
-        <app-vault-tree-node [node]="child" [depth]="depth() + 1" [unlockedProfiles]="unlockedProfiles()"
+        <app-vault-tree-node [node]="child" [depth]="depth() + 1" [unlockedProfiles]="unlockedProfiles()" [filter]="filter()"
           (openNote)="openNote.emit($event)" (openNoteInBackground)="openNoteInBackground.emit($event)"
           (noteContextMenu)="noteContextMenu.emit($event)" (folderContextMenu)="folderContextMenu.emit($event)"
           (lockedClicked)="lockedClicked.emit($event)" (notesDropped)="notesDropped.emit($event)"
@@ -35,26 +34,27 @@
 } @else if (asNote(); as note) {
 <div [attr.data-note-path]="note.relPath" [draggable]="!renaming()" (dragstart)="onNoteDragStart(note, $event)">
   @if (renaming()) {
-  <div [style.padding-left.px]="depth() * 16 + 44" class="flex items-center gap-2 py-1.5 pr-2">
-    <svg class="shrink-0 text-muted-foreground" lucideFileText [size]="14"></svg>
+  <div [style.padding-left.px]="noteIndentOf(depth()) - 5" class="flex items-center py-1 pr-2">
     <input #renameInput type="text" [value]="note.name" (keydown)="onRenameKeydown($event)"
       (blur)="onNoteRenameBlur(note, renameInput.value)" (click)="$event.stopPropagation()"
       class="w-full min-w-0 flex-1 rounded-sm border border-primary/50 bg-background px-1 py-0 text-xs text-foreground outline-none" />
   </div>
   } @else {
   <app-sidebar-item-button [label]="note.name" [labelSuffix]="markdownExt(note)" [selected]="selectionState.isSelected(note.relPath)"
-    [indent]="depth() * 16 + 8" [suppressNativeTitle]="true" [appHoverTooltip]="note.name"
+    [active]="note.relPath === activeNoteId()" [baseIndent]="0" [indent]="noteIndentOf(depth())" [highlight]="filter()"
+    [suppressNativeTitle]="true" [appHoverTooltip]="note.name"
     [appHoverTooltipSublabel]="encryptionStatus(note)" (clicked)="onNoteClick(note, $event)"
     (middleClicked)="openNoteInBackground.emit(note)" (contextMenu)="onNoteContextMenu(note, $event)">
-    @if (isLocked(note)) {
-    <svg sidebarItemIcon lucideLock [size]="13" class="shrink-0"></svg>
-    } @else if (note.encrypted) {
-    <svg sidebarItemIcon lucideLockOpen [size]="13" class="shrink-0 text-primary"></svg>
-    } @else {
-    <svg sidebarItemIcon lucideFileText [size]="14" class="shrink-0"></svg>
-    }
     @if (note.encrypted) {
-    <span sidebarItemTrailing class="shrink-0 truncate pl-1 text-[11px] text-muted-foreground">{{ profileName(note) }}</span>
+    <!-- Icons are kept for what isn't plain text: which profile seals the note, and whether it's open. -->
+    <span sidebarItemTrailing class="flex min-w-0 shrink items-center gap-1 pl-1 text-[11px] text-muted-foreground">
+      <span class="truncate">{{ profileName(note) }}</span>
+      @if (isLocked(note)) {
+      <svg lucideLock [size]="11" class="shrink-0"></svg>
+      } @else {
+      <svg lucideLockOpen [size]="11" class="shrink-0 text-primary"></svg>
+      }
+    </span>
     }
   </app-sidebar-item-button>
   }

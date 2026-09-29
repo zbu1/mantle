@@ -1,5 +1,5 @@
 import { Component, computed, inject, output } from '@angular/core';
-import { LucideKeyRound, LucideLock } from '@lucide/angular';
+import { LucideLock } from '@lucide/angular';
 import { CredentialsState } from '../../../notes/credentials-state';
 import { VaultNoteNode } from '../../../notes/vault-tree.model';
 import { SidebarItemButton } from '../sidebar-item-button/sidebar-item-button';
@@ -11,7 +11,7 @@ import { ContextMenuItem } from '../../../shared/context-menu/context-menu.model
 /** The Credential Profiles section of the sidebar, below Tags. */
 @Component({
   selector: 'app-credentials-section',
-  imports: [SidebarSection, SidebarItemButton, CredentialProfileRow, LucideKeyRound, LucideLock],
+  imports: [SidebarSection, SidebarItemButton, CredentialProfileRow, LucideLock],
   templateUrl: './credentials-section.html',
   host: { class: 'contents' },
 })

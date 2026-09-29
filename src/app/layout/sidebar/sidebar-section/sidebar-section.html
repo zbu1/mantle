@@ -1,15 +1,15 @@
-<button type="button" (click)="toggle()" (contextmenu)="onHeaderContextMenu($event)"
-  class="flex w-full min-w-0 shrink-0 items-center gap-1.5 rounded-t-md px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground hover:bg-surface hover:text-foreground">
-  <svg lucideChevronRight [size]="12" class="shrink-0 transition-transform duration-200"
+<button type="button" (click)="toggle()" (contextmenu)="onHeaderContextMenu($event)" [attr.aria-expanded]="expanded()"
+  class="group/section flex h-7 w-full min-w-0 shrink-0 items-center gap-1.5 rounded-md px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground">
+  <svg lucideChevronRight [size]="11" class="shrink-0 text-muted-foreground/60 transition-transform duration-200 group-hover/section:text-foreground"
     [class.rotate-90]="expanded()"></svg>
-  <span class="shrink-0">
-    <ng-content select="[sidebarSectionIcon]" />
-  </span>
-  <span class="min-w-0 truncate">{{ label() }}</span>
+  <span class="min-w-0 flex-1 truncate text-left">{{ label() }}</span>
+  @if (count(); as count) {
+  <span class="shrink-0 tabular-nums text-muted-foreground/60">{{ count }}</span>
+  }
 </button>
 
 @if (expanded()) {
-<div class="flex flex-col px-0.5">
+<div class="flex flex-col pb-1">
   <ng-content />
 </div>
 }

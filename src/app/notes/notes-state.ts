@@ -2,7 +2,14 @@ import { Injectable, inject, signal } from '@angular/core';
 import { invoke } from '@tauri-apps/api/core';
 import { logError } from '../core/logger';
 import { Note } from './note.model';
+import { sameTag, tagKey } from './tags';
 import { VaultState } from './vault-state';
+
+/** What the Rust `read_note` command returns. */
+interface NoteDocument {
+  content: string;
+  tags: string[];
+}
 
 export type NoteEntry =
   | { status: 'loading' }
@@ -62,8 +69,8 @@ export class NotesState {
       return;
     }
     try {
-      const content = await invoke<string>('read_note', { vaultRoot: root, relPath: id });
-      const note: Note = { id, title: titleFromRelPath(id), content };
+      const { content, tags } = await invoke<NoteDocument>('read_note', { vaultRoot: root, relPath: id });
+      const note: Note = { id, title: titleFromRelPath(id), content, tags };
       this.entries.update((entries) => ({ ...entries, [id]: { status: 'loaded', note } }));
     } catch (err) {
       const profileId = lockedProfileFrom(err);
@@ -156,6 +163,37 @@ export class NotesState {
     this.scheduleFlush(id);
   }
 
+  /** Replaces a loaded note's tags, saving them with the same debounce as its content. */
+  updateTags(id: string, tags: readonly string[]): void {
+    const entry = this.entries()[id];
+    if (!entry || entry.status !== 'loaded') return;
+    const current = entry.note.tags;
+    if (current.length === tags.length && current.every((tag, i) => tag === tags[i])) return;
+    this.entries.update((entries) => ({ ...entries, [id]: { status: 'loaded', note: { ...entry.note, tags: [...tags] } } }));
+    this.scheduleFlush(id);
+  }
+
+  /**
+   * Mirrors a vault-wide rename (or, with `to` null, removal) of the tag
+   * `from` into the loaded notes, after the backend has already rewritten the
+   * files. Without this, the next save of an open note would write its old
+   * tags back. Nothing is scheduled: disk already has the result.
+   */
+  retagLoaded(from: string, to: string | null): void {
+    this.entries.update((entries) => {
+      let changed = false;
+      const next = { ...entries };
+      for (const [id, entry] of Object.entries(entries)) {
+        if (entry.status !== 'loaded' || !entry.note.tags.some((tag) => sameTag(tag, from))) continue;
+        const renamed = entry.note.tags.flatMap((tag) => (sameTag(tag, from) ? (to === null ? [] : [to]) : [tag]));
+        const tags = renamed.filter((tag, i) => renamed.findIndex((t) => tagKey(t) === tagKey(tag)) === i);
+        next[id] = { status: 'loaded', note: { ...entry.note, tags } };
+        changed = true;
+      }
+      return changed ? next : entries;
+    });
+  }
+
   private scheduleFlush(id: string): void {
     const existing = this.pendingWrites.get(id);
     if (existing) clearTimeout(existing);
@@ -173,7 +211,7 @@ export class NotesState {
     const entry = this.entries()[id];
     if (!root || !entry || entry.status !== 'loaded') return;
     try {
-      await invoke('write_note', { vaultRoot: root, relPath: id, content: entry.note.content });
+      await invoke('write_note', { vaultRoot: root, relPath: id, content: entry.note.content, tags: entry.note.tags });
     } catch (err) {
       // A save can fail because the note's profile was locked while the write
       // was in flight. Either way this is unsaved user work, so it belongs in

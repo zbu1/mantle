@@ -1,5 +1,5 @@
 import { Component, ElementRef, computed, effect, inject, input, output, signal, viewChild } from '@angular/core';
-import { LucideChevronRight, LucideFileText, LucideFolder, LucideLock, LucideLockOpen } from '@lucide/angular';
+import { LucideChevronRight, LucideLock, LucideLockOpen } from '@lucide/angular';
 import {
   VAULT_FOLDER_DRAG_MIME,
   VAULT_NOTE_DRAG_MIME,
@@ -7,9 +7,11 @@ import {
   VaultNode,
   VaultNoteNode,
   isNoteLocked,
+  isVaultTreeDrag,
   markdownExtensionOf,
 } from '../../../notes/vault-tree.model';
 import { CredentialsState } from '../../../notes/credentials-state';
+import { TabsState } from '../../../notes/tabs-state';
 import { VaultDragState } from '../../../notes/vault-drag-state';
 import { VaultRenameState } from '../../../notes/vault-rename-state';
 import { VaultSelectionState } from '../../../notes/vault-selection-state';
@@ -36,8 +38,6 @@ EMPTY_DRAG_IMAGE.src =
     VaultTreeNode,
     HoverTooltip,
     LucideChevronRight,
-    LucideFileText,
-    LucideFolder,
     LucideLock,
     LucideLockOpen,
   ],
@@ -53,6 +53,11 @@ export class VaultTreeNode {
    * its inputs the way the rest of the tree is.
    */
   readonly unlockedProfiles = input<ReadonlySet<string>>(new Set<string>());
+  /**
+   * The sidebar's filter text. The tree is already pruned to matches; this
+   * marks the match in each name and holds every folder open.
+   */
+  readonly filter = input('');
 
   readonly openNote = output<VaultNoteNode>();
   readonly openNoteInBackground = output<VaultNoteNode>();
@@ -73,8 +78,21 @@ export class VaultTreeNode {
   protected readonly dragState = inject(VaultDragState);
   protected readonly renameState = inject(VaultRenameState);
   protected readonly credentialsState = inject(CredentialsState);
+  private readonly tabsState = inject(TabsState);
+
+  /** Left padding of a folder row at depth 0, and per level. Tighter than the secondary sections: the tree is the body. */
+  protected readonly BASE_INDENT = 8;
+  protected readonly INDENT_STEP = 14;
 
   protected readonly expanded = signal(true);
+  /** Folders are held open while filtering, so every match is in view. */
+  protected readonly isExpanded = computed(() => this.expanded() || this.filter().trim() !== '');
+
+  /** The note open in the active tab, which gets the ember rail. */
+  protected readonly activeNoteId = computed(() => {
+    const activeId = this.tabsState.activeId();
+    return this.tabsState.tabs().find((tab) => tab.id === activeId)?.noteId ?? null;
+  });
 
   protected readonly renaming = computed(() => this.renameState.renamingPath() === this.node().relPath);
 
@@ -99,6 +117,15 @@ export class VaultTreeNode {
   protected asNote(): VaultNoteNode | null {
     const n = this.node();
     return n.type === 'note' ? n : null;
+  }
+
+  protected indentOf(depth: number): number {
+    return this.BASE_INDENT + depth * this.INDENT_STEP;
+  }
+
+  /** A note's name lines up with its sibling folders' names: past the chevron (12px) and its gap (6px). */
+  protected noteIndentOf(depth: number): number {
+    return this.indentOf(depth) + 18;
   }
 
   protected toggleExpanded(): void {
@@ -172,6 +199,7 @@ export class VaultTreeNode {
   }
 
   protected onFolderDragOver(folder: VaultFolderNode, event: DragEvent): void {
+    if (!isVaultTreeDrag(event)) return;
     event.preventDefault();
     event.stopPropagation();
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';

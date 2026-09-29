@@ -12,7 +12,7 @@ export interface RecentNote {
  * Mirror of the Rust `VaultMeta` persisted at `<vault>/.mantle/state.json`.
  * The whole object round-trips on every save (the Rust side replaces the file
  * wholesale), so this service keeps the fields it doesn't use itself
- * (favorites, order, collapsedFolders) intact rather than dropping them.
+ * (order, collapsedFolders) intact rather than dropping them.
  */
 export interface VaultMeta {
   version: number;
@@ -36,6 +36,9 @@ function normalizeMeta(raw: unknown): VaultMeta {
   const base = emptyMeta();
   if (!raw || typeof raw !== 'object') return base;
   const meta = { ...base, ...(raw as Partial<VaultMeta>) };
+  meta.favorites = Array.isArray(meta.favorites)
+    ? [...new Set(meta.favorites.filter((relPath) => typeof relPath === 'string'))]
+    : [];
   meta.recentNotes = Array.isArray(meta.recentNotes)
     ? meta.recentNotes.filter((entry) => typeof entry?.relPath === 'string' && typeof entry?.openedAt === 'number')
     : [];
@@ -43,8 +46,12 @@ function normalizeMeta(raw: unknown): VaultMeta {
 }
 
 /**
- * The open vault's persisted metadata (`.mantle/state.json`) — for now only the
- * recently-opened note list is wired to the UI.
+ * The open vault's persisted metadata (`.mantle/state.json`) — for now the
+ * recently-opened note list and favorites are wired to the UI.
+ *
+ * Favorites deliberately outlive their note disappearing from a scan: a file
+ * that vanishes outside the app (e.g. mid-sync) keeps its entry, hidden, so it
+ * comes back if the file does. Only an in-app delete (`forgetNote`) drops it.
  *
  * Deliberately independent of `VaultState` (which drives it via `load`/`unload`)
  * so the two services don't depend on each other. Until a load succeeds every
@@ -61,6 +68,11 @@ export class VaultMetaState {
 
   /** Recently opened notes, most recent first. Empty until the vault's metadata has loaded. */
   readonly recentNotes = computed<readonly RecentNote[]>(() => this.meta()?.recentNotes ?? []);
+
+  /** Favorited note relPaths in display order. Empty until the vault's metadata has loaded. */
+  readonly favorites = computed<readonly string[]>(() => this.meta()?.favorites ?? []);
+
+  private readonly favoriteSet = computed<ReadonlySet<string>>(() => new Set(this.favorites()));
 
   /** True once the open vault's metadata has been read successfully. */
   readonly loaded = computed(() => this.meta() !== null);
@@ -103,23 +115,23 @@ export class VaultMetaState {
 
   /** Moves `relPath` to the top of the recents list, stamping it as opened now. */
   recordOpened(relPath: string, openedAt = Date.now()): void {
-    this.updateRecents((recents) =>
+    this.updateList('recentNotes', (recents) =>
       [{ relPath, openedAt }, ...recents.filter((entry) => entry.relPath !== relPath)].slice(0, MAX_RECENT_NOTES),
     );
   }
 
   /** Removes `relPath` from the recents list — a note was deleted, or the user dismissed it. */
   removeRecent(relPath: string): void {
-    this.updateRecents((recents) => recents.filter((entry) => entry.relPath !== relPath));
+    this.updateList('recentNotes', (recents) => recents.filter((entry) => entry.relPath !== relPath));
   }
 
   clearRecents(): void {
-    this.updateRecents(() => []);
+    this.updateList('recentNotes', () => []);
   }
 
   /** Repoints a recent entry at a note's new path, keeping its position and timestamp. */
   renameRecent(oldRelPath: string, newRelPath: string): void {
-    this.updateRecents((recents) => {
+    this.updateList('recentNotes', (recents) => {
       if (oldRelPath === newRelPath || !recents.some((entry) => entry.relPath === oldRelPath)) return recents;
       // If the destination path was already listed, keep only the renamed entry
       // so the list never holds the same note twice.
@@ -129,13 +141,79 @@ export class VaultMetaState {
     });
   }
 
-  private updateRecents(update: (recents: RecentNote[]) => RecentNote[]): void {
+  isFavorite(relPath: string): boolean {
+    return this.favoriteSet().has(relPath);
+  }
+
+  toggleFavorite(relPath: string): void {
+    if (this.isFavorite(relPath)) this.removeFavorites([relPath]);
+    else this.addFavorites([relPath]);
+  }
+
+  /** Appends whichever of `relPaths` aren't favorites yet, in the given order. */
+  addFavorites(relPaths: readonly string[]): void {
+    this.updateList('favorites', (favorites) => {
+      const current = new Set(favorites);
+      return [...favorites, ...new Set(relPaths.filter((relPath) => !current.has(relPath)))];
+    });
+  }
+
+  removeFavorites(relPaths: readonly string[]): void {
+    const removed = new Set(relPaths);
+    this.updateList('favorites', (favorites) => favorites.filter((relPath) => !removed.has(relPath)));
+  }
+
+  /**
+   * Moves `relPaths` — adding any that aren't favorites yet — so they sit
+   * together, in the given order, right before `beforeRelPath`; at the end
+   * when that's null or not a favorite. Backs drag-and-drop in the Favorites
+   * section, for both reordering and dropping new notes in.
+   */
+  placeFavorites(relPaths: readonly string[], beforeRelPath: string | null): void {
+    this.updateList('favorites', (favorites) => {
+      const moving = [...new Set(relPaths)];
+      const movingSet = new Set(moving);
+      let anchor = beforeRelPath;
+      // Dropping an entry right before itself: anchor on the next one that stays put.
+      if (anchor !== null && movingSet.has(anchor)) {
+        anchor = favorites.slice(favorites.indexOf(anchor) + 1).find((relPath) => !movingSet.has(relPath)) ?? null;
+      }
+      const rest = favorites.filter((relPath) => !movingSet.has(relPath));
+      const index = anchor === null ? -1 : rest.indexOf(anchor);
+      const at = index < 0 ? rest.length : index;
+      return [...rest.slice(0, at), ...moving, ...rest.slice(at)];
+    });
+  }
+
+  /** Repoints a favorite at a note's new path, keeping its position. */
+  renameFavorite(oldRelPath: string, newRelPath: string): void {
+    this.updateList('favorites', (favorites) => {
+      if (oldRelPath === newRelPath || !favorites.includes(oldRelPath)) return favorites;
+      return favorites
+        .filter((relPath) => relPath !== newRelPath)
+        .map((relPath) => (relPath === oldRelPath ? newRelPath : relPath));
+    });
+  }
+
+  /** A note was renamed or moved in-app (or re-extensioned by encryption/conversion): follow it everywhere. */
+  renameNote(oldRelPath: string, newRelPath: string): void {
+    this.renameRecent(oldRelPath, newRelPath);
+    this.renameFavorite(oldRelPath, newRelPath);
+  }
+
+  /** A note was deleted in-app: drop it from recents and favorites. */
+  forgetNote(relPath: string): void {
+    this.removeRecent(relPath);
+    this.removeFavorites([relPath]);
+  }
+
+  private updateList<K extends 'recentNotes' | 'favorites'>(key: K, update: (list: VaultMeta[K]) => VaultMeta[K]): void {
     const meta = this.meta();
     if (!meta) return;
-    const next = update(meta.recentNotes);
-    if (next === meta.recentNotes) return;
-    if (next.length === meta.recentNotes.length && next.every((entry, i) => entry === meta.recentNotes[i])) return;
-    this.meta.set({ ...meta, recentNotes: next });
+    const current: readonly unknown[] = meta[key];
+    const next = update(meta[key]);
+    if (next.length === current.length && (next as readonly unknown[]).every((entry, i) => entry === current[i])) return;
+    this.meta.set({ ...meta, [key]: next });
     this.scheduleSave();
   }
 

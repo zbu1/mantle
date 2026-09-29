@@ -84,6 +84,7 @@
 pub mod error;
 pub mod header;
 pub mod keys;
+pub mod tags;
 
 use aes_kw::KekAes256;
 use argon2::{Algorithm, Argon2, Params, Version};
@@ -103,6 +104,7 @@ pub use keys::{
     compute_verifier, generate_master_key, unwrap_master_key, verify_master_key, wrap_master_key,
     KeyEncryptionKey, MasterKey, WRAPPED_KEY_LEN,
 };
+pub use tags::{dedupe_tags, markdown_tags, normalize_tag, same_tag, set_markdown_tags};
 
 /// Derive a 256-bit Key Encryption Key (KEK) using Argon2id with default KDF parameters.
 ///
@@ -320,7 +322,7 @@ const FRONTMATTER_DELIM: &str = "---";
 /// Expects the file to start with a line containing exactly `---`, followed
 /// by the frontmatter, followed by another line containing exactly `---`.
 /// Everything after that closing delimiter's newline is the body.
-fn split_frontmatter(note: &str) -> Result<(&str, &str), MntlError> {
+pub(crate) fn split_frontmatter(note: &str) -> Result<(&str, &str), MntlError> {
     let first_line_len = note.find('\n').ok_or(MntlError::MissingFrontmatter)?;
     if note[..first_line_len].trim_end_matches('\r') != FRONTMATTER_DELIM {
         return Err(MntlError::MissingFrontmatter);
@@ -355,8 +357,21 @@ fn split_frontmatter(note: &str) -> Result<(&str, &str), MntlError> {
 /// Returns [`MntlError::FrontmatterParseError`] if the frontmatter header
 /// fails to serialize (not expected to happen in practice).
 pub fn encode_unencrypted_note(content: &str) -> Result<String, MntlError> {
-    let frontmatter = NoteFrontmatter::default();
-    let yaml = serde_yaml::to_string(&frontmatter)?;
+    encode_note(&NoteFrontmatter::default(), content)
+}
+
+/// Encode a note into a `.mntl` text file under the given frontmatter, e.g.
+/// to keep a note's tags across a save.
+///
+/// `frontmatter.v` is written as given; pass [`NoteFrontmatter::default`]
+/// (with fields set on it) to write the current [`NOTE_VERSION`].
+///
+/// # Errors
+///
+/// Returns [`MntlError::FrontmatterParseError`] if the frontmatter header
+/// fails to serialize (not expected to happen in practice).
+pub fn encode_note(frontmatter: &NoteFrontmatter, content: &str) -> Result<String, MntlError> {
+    let yaml = serde_yaml::to_string(frontmatter)?;
     let yaml = yaml.trim_end_matches('\n');
 
     Ok(format!("{FRONTMATTER_DELIM}\n{yaml}\n{FRONTMATTER_DELIM}\n{content}"))
@@ -366,11 +381,20 @@ pub fn encode_unencrypted_note(content: &str) -> Result<String, MntlError> {
 ///
 /// # Errors
 ///
+/// As [`decode_note`].
+pub fn decode_unencrypted_note(note: &str) -> Result<String, MntlError> {
+    decode_note(note).map(|(_, body)| body)
+}
+
+/// Decode a `.mntl` text file into its frontmatter and note body.
+///
+/// # Errors
+///
 /// Returns [`MntlError::MissingFrontmatter`] if `note` does not start with a
 /// well-formed `---` frontmatter block, [`MntlError::FrontmatterParseError`]
 /// if the frontmatter YAML is invalid, and [`MntlError::UnsupportedVersion`]
 /// if its `v` field does not match [`NOTE_VERSION`].
-pub fn decode_unencrypted_note(note: &str) -> Result<String, MntlError> {
+pub fn decode_note(note: &str) -> Result<(NoteFrontmatter, String), MntlError> {
     let (frontmatter, body) = split_frontmatter(note)?;
     let header: NoteFrontmatter = serde_yaml::from_str(frontmatter)?;
 
@@ -378,7 +402,7 @@ pub fn decode_unencrypted_note(note: &str) -> Result<String, MntlError> {
         return Err(MntlError::UnsupportedVersion(header.v));
     }
 
-    Ok(body.to_string())
+    Ok((header, body.to_string()))
 }
 
 /// Split a plain Markdown (`.md`) file into its YAML frontmatter block and

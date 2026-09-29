@@ -1,16 +1,17 @@
-import { Component, DestroyRef, HostListener, computed, effect, inject, signal } from '@angular/core';
-import { LucideClock, LucideFileText, LucideFolders, LucideLock, LucideStar, LucideTags } from '@lucide/angular';
+import { Component, DestroyRef, HostListener, computed, effect, inject, signal, untracked } from '@angular/core';
+import { LucideFileText, LucideLock } from '@lucide/angular';
 import { SidebarSection } from './sidebar-section/sidebar-section';
 import { SidebarItemButton } from './sidebar-item-button/sidebar-item-button';
-import { SidebarToolbar } from './sidebar-toolbar/sidebar-toolbar';
+import { VaultHeader } from './vault-header/vault-header';
 import { VaultTreeNode } from './vault-tree-node/vault-tree-node';
 import { CredentialsSection } from './credentials-section/credentials-section';
 import { TagGroupRow } from './tag-group-row/tag-group-row';
 import { CredentialsState } from '../../notes/credentials-state';
 import { NewEncryptedNoteState } from '../../notes/new-encrypted-note/new-encrypted-note-state';
 import { NoteEncryptionActions } from '../../notes/note-encryption-actions';
-import { FAVORITE_NOTES, MockNote, TAG_GROUPS } from '../../notes/notes-data';
-import { COLLAPSE_THRESHOLD, SidebarState } from './sidebar-state';
+import { normalizeTag, TAG_RULES, TagGroup } from '../../notes/tags';
+import { TagEditReport, TagsState } from '../../notes/tags-state';
+import { COLLAPSE_THRESHOLD, SIDEBAR_SECTIONS, SidebarState } from './sidebar-state';
 import { NotesState } from '../../notes/notes-state';
 import { TabsState } from '../../notes/tabs-state';
 import { VaultState } from '../../notes/vault-state';
@@ -21,9 +22,12 @@ import { VaultDragState } from '../../notes/vault-drag-state';
 import { VaultRenameState } from '../../notes/vault-rename-state';
 import { VaultSelectionState } from '../../notes/vault-selection-state';
 import {
+  filterVaultTree,
   flattenAllNotes,
   flattenVaultNotes,
   isNoteLocked,
+  isVaultTreeDrag,
+  NOTE_REFERENCE_DRAG_MIME,
   VAULT_FOLDER_DRAG_MIME,
   VAULT_NOTE_DRAG_MIME,
   VaultFolderNode,
@@ -39,9 +43,16 @@ interface RecentRow {
   locked: boolean;
 }
 
+interface FavoriteRow {
+  note: VaultNoteNode;
+  locked: boolean;
+  /** Parent folder shown next to the name, set only when another favorite shares the name. */
+  folder: string | null;
+}
+
 @Component({
   selector: 'app-sidebar',
-  imports: [SidebarSection, SidebarItemButton, SidebarToolbar, VaultTreeNode, CredentialsSection, TagGroupRow, LucideFolders, LucideStar, LucideClock, LucideTags, LucideFileText, LucideLock],
+  imports: [SidebarSection, SidebarItemButton, VaultHeader, VaultTreeNode, CredentialsSection, TagGroupRow, LucideFileText, LucideLock],
   templateUrl: './sidebar.html',
   host: { class: 'contents' },
 })
@@ -60,9 +71,18 @@ export class Sidebar {
   private readonly encryptionActions = inject(NoteEncryptionActions);
   private readonly newEncryptedNoteState = inject(NewEncryptedNoteState);
   private readonly vaultMeta = inject(VaultMetaState);
+  protected readonly tagsState = inject(TagsState);
 
-  protected readonly favorites = FAVORITE_NOTES;
-  protected readonly tagGroups = TAG_GROUPS;
+  /** Text in the header's filter field; the tree shows only notes whose name contains it. Session-only. */
+  protected readonly filterQuery = signal('');
+
+  protected readonly visibleTree = computed(() => {
+    const tree = this.vaultState.tree();
+    return tree ? filterVaultTree(tree, this.filterQuery()) : null;
+  });
+
+  /** Whether any secondary section is shown, i.e. whether the stack below the tree renders at all. */
+  protected readonly anySectionVisible = computed(() => SIDEBAR_SECTIONS.some(({ id }) => this.state.isSectionVisible(id)));
 
   /** Recent notes shown before the "Show more" expander is used. */
   private static readonly COLLAPSED_RECENT_COUNT = 5;
@@ -91,8 +111,27 @@ export class Sidebar {
     () => this.showAllRecents() && this.recentRows().length > Sidebar.COLLAPSED_RECENT_COUNT,
   );
 
-  /** Session-only favorite toggle stub — not persisted, not wired to the real Favorites section yet. */
-  protected readonly favoritedPaths = signal<ReadonlySet<string>>(new Set());
+  /**
+   * Favorites whose note is in the vault, in display order. A favorite whose
+   * file is missing (e.g. removed outside the app) is hidden, not dropped.
+   */
+  protected readonly favoriteRows = computed<FavoriteRow[]>(() => {
+    const tree = this.vaultState.tree();
+    if (!tree) return [];
+    const notesByPath = new Map(flattenAllNotes(tree).map((note) => [note.relPath, note]));
+    const unlocked = this.credentialsState.unlockedIds();
+    const notes = this.vaultMeta.favorites().flatMap((relPath) => notesByPath.get(relPath) ?? []);
+    const nameCounts = new Map<string, number>();
+    for (const note of notes) nameCounts.set(note.name, (nameCounts.get(note.name) ?? 0) + 1);
+    return notes.map((note) => ({
+      note,
+      locked: isNoteLocked(note, unlocked),
+      folder: nameCounts.get(note.name)! > 1 ? parentDirOf(note.relPath) || '/' : null,
+    }));
+  });
+
+  /** Where a drag over Favorites would land: an index into `favoriteRows` (its length = the end), or null. */
+  protected readonly favoriteDropIndex = signal<number | null>(null);
 
   private readonly dragStartX = signal<number | null>(null);
   private readonly dragStartWidth = signal<number>(0);
@@ -100,6 +139,17 @@ export class Sidebar {
   constructor() {
     const refreshClock = setInterval(() => this.now.set(Date.now()), 60_000);
     inject(DestroyRef).onDestroy(() => clearInterval(refreshClock));
+
+    // Revealing a tag (e.g. clicking its chip in the editor) needs its row on
+    // screen, so open whatever hides it. The row itself scrolls and highlights.
+    effect(() => {
+      if (!this.tagsState.revealRequest()) return;
+      untracked(() => {
+        this.state.setCollapsed(false);
+        if (!this.state.isSectionVisible('tags')) this.state.toggleSectionVisibility('tags');
+        if (!this.state.isSectionExpanded('tags')) this.state.toggleSection('tags');
+      });
+    });
 
     // Drop selected notes that no longer exist once the tree changes (deleted/moved externally).
     effect(() => {
@@ -145,33 +195,6 @@ export class Sidebar {
     }
   }
 
-  protected openNote(note: MockNote): void {
-    this.tabsState.openNote(note);
-  }
-
-  protected openNoteInBackground(note: MockNote): void {
-    this.tabsState.openNoteInBackground(note);
-  }
-
-  protected openNoteContextMenu(event: MouseEvent, note: MockNote): void {
-    const items: ContextMenuItem[] = [
-      { kind: 'item', label: 'Open', icon: 'open', action: () => this.openNote(note) },
-      { kind: 'item', label: 'Open in New Tab', icon: 'open-new-tab', action: () => this.openNoteInBackground(note) },
-      { kind: 'separator' },
-      { kind: 'item', label: 'Rename', icon: 'rename', action: () => {} },
-      { kind: 'item', label: 'Duplicate', icon: 'duplicate', action: () => {} },
-      {
-        kind: 'item',
-        label: note.favorite ? 'Remove from Favorites' : 'Add to Favorites',
-        icon: note.favorite ? 'unfavorite' : 'favorite',
-        action: () => {},
-      },
-      { kind: 'separator' },
-      { kind: 'item', label: 'Delete', icon: 'delete', danger: true, action: () => {} },
-    ];
-    this.contextMenuState.open(event, items);
-  }
-
   protected recentTime(row: RecentRow): string {
     return formatRelativeTime(row.openedAt, this.now());
   }
@@ -184,13 +207,63 @@ export class Sidebar {
       { kind: 'separator' },
       { kind: 'item', label: 'Show in File Explorer', icon: 'reveal', action: () => void this.vaultState.revealInFileExplorer(note.relPath) },
       { kind: 'separator' },
+      this.favoriteMenuItem(note.relPath),
       { kind: 'item', label: 'Remove from Recents', icon: 'close', action: () => this.vaultMeta.removeRecent(note.relPath) },
     ];
     this.contextMenuState.open(event, items);
   }
 
-  protected onTagNoteContextMenu(payload: { event: MouseEvent; note: MockNote }): void {
-    this.openNoteContextMenu(payload.event, payload.note);
+  protected onTagContextMenu(event: MouseEvent, group: TagGroup): void {
+    const items: ContextMenuItem[] = [
+      { kind: 'item', label: 'Rename Tag…', icon: 'rename', action: () => void this.renameTag(group) },
+      { kind: 'separator' },
+      { kind: 'item', label: 'Remove Tag from All Notes', icon: 'delete', danger: true, action: () => void this.removeTag(group) },
+    ];
+    this.contextMenuState.open(event, items);
+  }
+
+  private async renameTag(group: TagGroup): Promise<void> {
+    const to = await this.dialogState.prompt(
+      `Rename #${group.name} in every note that has it. Renaming it to a tag that already exists merges the two.`,
+      { title: 'Rename Tag', confirmLabel: 'Rename', initialValue: group.name, placeholder: 'tag' },
+    );
+    if (to === null || to.trim() === group.name) return;
+    const normalized = normalizeTag(to);
+    if (!normalized) {
+      await this.dialogState.alert(`"${to.trim()}" isn't a valid tag. ${TAG_RULES}.`, { title: 'Rename Failed', tone: 'error' });
+      return;
+    }
+    try {
+      await this.reportLockedSkips(await this.tagsState.renameTag(group.name, normalized), 'renamed');
+    } catch (err) {
+      await this.dialogState.alert(err instanceof Error ? err.message : String(err), { title: 'Rename Failed', tone: 'error' });
+    }
+  }
+
+  private async removeTag(group: TagGroup): Promise<void> {
+    const count = group.notes.length;
+    const confirmed = await this.dialogState.confirm(
+      `Remove #${group.name} from ${count === 1 ? '1 note' : `${count} notes`}? The notes themselves are kept.`,
+      { title: 'Remove Tag', tone: 'warning', confirmLabel: 'Remove Tag' },
+    );
+    if (!confirmed) return;
+    try {
+      await this.reportLockedSkips(await this.tagsState.removeTag(group.name), 'removed');
+    } catch (err) {
+      await this.dialogState.alert(err instanceof Error ? err.message : String(err), { title: 'Remove Failed', tone: 'error' });
+    }
+  }
+
+  /** Locked notes can't be read, so a vault-wide tag edit can't reach them; say so rather than imply it did. */
+  private async reportLockedSkips(report: TagEditReport, verb: string): Promise<void> {
+    const skipped = report.lockedSkipped;
+    if (skipped === 0) return;
+    await this.dialogState.alert(
+      `The tag was ${verb} in ${report.updated.length === 1 ? '1 note' : `${report.updated.length} notes`}, but ` +
+        `${skipped === 1 ? '1 encrypted note is' : `${skipped} encrypted notes are`} in a locked profile and ` +
+        `couldn't be checked. Unlock ${skipped === 1 ? 'its profile' : 'their profiles'} and do this again to include ${skipped === 1 ? 'it' : 'them'}.`,
+      { title: 'Some Notes Were Skipped', tone: 'warning' },
+    );
   }
 
   protected onOpenNote(note: VaultNoteNode): void {
@@ -224,6 +297,15 @@ export class Sidebar {
         });
         items.push({ kind: 'separator' });
       }
+      const allFavorites = [...selected].every((relPath) => this.vaultMeta.isFavorite(relPath));
+      items.push({
+        kind: 'item',
+        label: allFavorites ? `Remove ${selected.size} Notes from Favorites` : `Add ${selected.size} Notes to Favorites`,
+        icon: allFavorites ? 'unfavorite' : 'favorite',
+        action: () =>
+          allFavorites ? this.vaultMeta.removeFavorites([...selected]) : this.vaultMeta.addFavorites([...selected]),
+      });
+      items.push({ kind: 'separator' });
       items.push({
         kind: 'item',
         label: `Delete ${selected.size} Notes`,
@@ -257,12 +339,7 @@ export class Sidebar {
       ...this.encryptionActions.menuItems(note),
       { kind: 'separator' },
       { kind: 'item', label: 'Rename', icon: 'rename', action: () => this.renameState.start(note.relPath) },
-      {
-        kind: 'item',
-        label: this.favoritedPaths().has(note.relPath) ? 'Remove from Favorites' : 'Add to Favorites',
-        icon: this.favoritedPaths().has(note.relPath) ? 'unfavorite' : 'favorite',
-        action: () => this.toggleFavoriteStub(note.relPath),
-      },
+      this.favoriteMenuItem(note.relPath),
       { kind: 'separator' },
       { kind: 'item', label: 'Delete', icon: 'delete', danger: true, action: () => void this.deleteNote(note) },
     ];
@@ -303,14 +380,117 @@ export class Sidebar {
     this.contextMenuState.open(event, items);
   }
 
-  private toggleFavoriteStub(relPath: string): void {
-    const next = new Set(this.favoritedPaths());
-    if (next.has(relPath)) next.delete(relPath);
-    else next.add(relPath);
-    this.favoritedPaths.set(next);
+  /** Right-click on the vault tree's background: create/paste at the vault root. */
+  protected onVaultContextMenu(event: MouseEvent): void {
+    if (!this.vaultState.tree()) return;
+    const items: ContextMenuItem[] = [
+      { kind: 'item', label: 'New Note', icon: 'new-note', action: () => void this.onNewNote('') },
+      {
+        kind: 'item',
+        label: 'New Encrypted Note',
+        icon: 'new-encrypted-note',
+        action: () => this.newEncryptedNoteState.open({ relDir: '' }),
+      },
+      { kind: 'item', label: 'New Folder', icon: 'new-folder', action: () => void this.onNewFolder('') },
+      { kind: 'separator' },
+      {
+        kind: 'item',
+        label: 'Show in File Explorer',
+        icon: 'reveal',
+        action: () => void this.vaultState.revealInFileExplorer(''),
+      },
+      { kind: 'separator' },
+      {
+        kind: 'item',
+        label: 'Paste',
+        icon: 'paste',
+        disabled: !this.clipboardState.entry(),
+        action: () => void this.pasteInto(''),
+      },
+    ];
+    this.contextMenuState.open(event, items);
+  }
+
+  private favoriteMenuItem(relPath: string): ContextMenuItem {
+    const favorite = this.vaultMeta.isFavorite(relPath);
+    return {
+      kind: 'item',
+      label: favorite ? 'Remove from Favorites' : 'Add to Favorites',
+      icon: favorite ? 'unfavorite' : 'favorite',
+      action: () => this.vaultMeta.toggleFavorite(relPath),
+    };
+  }
+
+  protected onFavoriteContextMenu(event: MouseEvent, row: FavoriteRow): void {
+    const { note } = row;
+    const items: ContextMenuItem[] = [
+      { kind: 'item', label: 'Open', icon: 'open', action: () => this.onOpenNote(note) },
+      { kind: 'item', label: 'Open in New Tab', icon: 'open-new-tab', action: () => this.onOpenNoteInBackground(note) },
+      { kind: 'separator' },
+      { kind: 'item', label: 'Show in File Explorer', icon: 'reveal', action: () => void this.vaultState.revealInFileExplorer(note.relPath) },
+      { kind: 'separator' },
+      { kind: 'item', label: 'Remove from Favorites', icon: 'unfavorite', action: () => this.vaultMeta.removeFavorites([note.relPath]) },
+    ];
+    this.contextMenuState.open(event, items);
+  }
+
+  /** Drags a Favorites or Recent Files row as a note reference — droppable on Favorites only. */
+  protected onNoteReferenceDragStart(event: DragEvent, relPath: string): void {
+    if (!event.dataTransfer) return;
+    event.dataTransfer.setData(NOTE_REFERENCE_DRAG_MIME, relPath);
+    event.dataTransfer.effectAllowed = 'move';
+  }
+
+  protected onFavoritesDragOver(event: DragEvent): void {
+    const types = event.dataTransfer?.types ?? [];
+    if (!types.includes(NOTE_REFERENCE_DRAG_MIME) && !types.includes(VAULT_NOTE_DRAG_MIME)) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    this.dragState.clearHover();
+    const row = (event.target as Element | null)?.closest<HTMLElement>('[data-favorite-index]');
+    if (!row) {
+      this.favoriteDropIndex.set(this.favoriteRows().length);
+      return;
+    }
+    const rect = row.getBoundingClientRect();
+    const index = Number(row.dataset['favoriteIndex']);
+    this.favoriteDropIndex.set(event.clientY > rect.top + rect.height / 2 ? index + 1 : index);
+  }
+
+  protected onFavoritesDragLeave(event: DragEvent): void {
+    const related = event.relatedTarget as Node | null;
+    if (related && (event.currentTarget as HTMLElement).contains(related)) return;
+    this.favoriteDropIndex.set(null);
+  }
+
+  protected onFavoritesDrop(event: DragEvent): void {
+    event.preventDefault();
+    const rows = this.favoriteRows();
+    const index = this.favoriteDropIndex() ?? rows.length;
+    this.favoriteDropIndex.set(null);
+    const before = rows[index]?.note.relPath ?? null;
+    const reference = event.dataTransfer?.getData(NOTE_REFERENCE_DRAG_MIME);
+    if (reference) {
+      this.vaultMeta.placeFavorites([reference], before);
+      return;
+    }
+    const raw = event.dataTransfer?.getData(VAULT_NOTE_DRAG_MIME);
+    if (!raw) return;
+    try {
+      this.vaultMeta.placeFavorites(JSON.parse(raw) as string[], before);
+    } catch {
+      // malformed drag payload — ignore
+    }
+  }
+
+  /** Clears the drop indicator when a drag ends anywhere, e.g. cancelled with Esc over Favorites. */
+  @HostListener('document:dragend')
+  protected onDocumentDragEnd(): void {
+    this.favoriteDropIndex.set(null);
   }
 
   protected onVaultBackgroundDragOver(event: DragEvent): void {
+    if (!isVaultTreeDrag(event)) return;
     event.preventDefault();
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
     const draggedFolder = this.dragState.draggingFolder();
@@ -368,7 +548,7 @@ export class Sidebar {
       const moved = await this.vaultState.moveNote(relPath, destRelDir);
       this.notesState.renameNoteId(relPath, moved.relPath);
       this.tabsState.renameNoteId(relPath, moved.relPath, moved.name);
-      this.vaultMeta.renameRecent(relPath, moved.relPath);
+      this.vaultMeta.renameNote(relPath, moved.relPath);
     }
     this.selectionState.clear();
   }
@@ -388,7 +568,7 @@ export class Sidebar {
         const newNotePath = newPrefix + oldNotePath.slice(oldPrefix.length);
         this.notesState.renameNoteId(oldNotePath, newNotePath);
         this.tabsState.renameNoteId(oldNotePath, newNotePath, name);
-        this.vaultMeta.renameRecent(oldNotePath, newNotePath);
+        this.vaultMeta.renameNote(oldNotePath, newNotePath);
       }
     } catch (err) {
       await this.dialogState.alert(String(err), { title: 'Move Failed', tone: 'error' });
@@ -401,7 +581,7 @@ export class Sidebar {
       const renamed = await this.vaultState.renameNote(relPath, newName);
       this.notesState.renameNoteId(relPath, renamed.relPath);
       this.tabsState.renameNoteId(relPath, renamed.relPath, renamed.name);
-      this.vaultMeta.renameRecent(relPath, renamed.relPath);
+      this.vaultMeta.renameNote(relPath, renamed.relPath);
     } catch (err) {
       await this.dialogState.alert(String(err), { title: 'Rename Failed', tone: 'error' });
     }
@@ -420,7 +600,7 @@ export class Sidebar {
         const newNotePath = newPrefix + oldNotePath.slice(oldPrefix.length);
         this.notesState.renameNoteId(oldNotePath, newNotePath);
         this.tabsState.renameNoteId(oldNotePath, newNotePath, name);
-        this.vaultMeta.renameRecent(oldNotePath, newNotePath);
+        this.vaultMeta.renameNote(oldNotePath, newNotePath);
       }
     } catch (err) {
       await this.dialogState.alert(String(err), { title: 'Rename Failed', tone: 'error' });
@@ -436,7 +616,7 @@ export class Sidebar {
     if (!confirmed) return;
     await this.vaultState.deleteNote(note.relPath);
     this.tabsState.closeByNoteId(note.relPath);
-    this.vaultMeta.removeRecent(note.relPath);
+    this.vaultMeta.forgetNote(note.relPath);
   }
 
   private async deleteFolder(folder: VaultFolderNode): Promise<void> {
@@ -450,7 +630,7 @@ export class Sidebar {
       await this.vaultState.deleteFolder(folder.relPath);
       for (const relPath of affectedNotePaths) {
         this.tabsState.closeByNoteId(relPath);
-        this.vaultMeta.removeRecent(relPath);
+        this.vaultMeta.forgetNote(relPath);
       }
     } catch (err) {
       await this.dialogState.alert(String(err), { title: 'Delete Failed', tone: 'error' });
@@ -468,7 +648,7 @@ export class Sidebar {
     for (const relPath of relPaths) {
       await this.vaultState.deleteNote(relPath);
       this.tabsState.closeByNoteId(relPath);
-      this.vaultMeta.removeRecent(relPath);
+      this.vaultMeta.forgetNote(relPath);
     }
     this.selectionState.clear();
   }
@@ -482,7 +662,7 @@ export class Sidebar {
       const moved = await this.vaultState.moveNote(clip.relPath, destRelDir);
       this.notesState.renameNoteId(clip.relPath, moved.relPath);
       this.tabsState.renameNoteId(clip.relPath, moved.relPath, moved.name);
-      this.vaultMeta.renameRecent(clip.relPath, moved.relPath);
+      this.vaultMeta.renameNote(clip.relPath, moved.relPath);
       this.clipboardState.clear();
     }
   }
@@ -539,4 +719,8 @@ export class Sidebar {
     this.dragStartX.set(null);
     this.state.resizing.set(false);
   }
+}
+
+function parentDirOf(relPath: string): string {
+  return relPath.includes('/') ? relPath.slice(0, relPath.lastIndexOf('/')) : '';
 }

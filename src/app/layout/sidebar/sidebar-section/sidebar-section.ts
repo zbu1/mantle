@@ -8,11 +8,13 @@ import { SectionId, SIDEBAR_SECTIONS, SidebarState } from '../sidebar-state';
   selector: 'app-sidebar-section',
   imports: [LucideChevronRight],
   templateUrl: './sidebar-section.html',
-  host: { class: 'flex flex-col rounded-md' },
+  host: { class: 'flex flex-col' },
 })
 export class SidebarSection {
   readonly id = input.required<SectionId>();
   readonly label = input.required<string>();
+  /** How many items the section holds, shown quietly after the label. Hidden when null or 0. */
+  readonly count = input<number | null>(null);
 
   protected readonly state = inject(SidebarState);
   private readonly contextMenuState = inject(ContextMenuState);
@@ -29,7 +31,6 @@ export class SidebarSection {
       kind: 'item',
       label: section.label,
       checked: this.state.isSectionVisible(section.id),
-      disabled: !this.state.canHideSection(section.id),
       action: () => this.state.toggleSectionVisibility(section.id),
     }));
     this.contextMenuState.open(event, items);

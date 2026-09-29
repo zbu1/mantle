@@ -1,14 +1,19 @@
-<app-explorer-row [label]="group().name" [expanded]="expanded()" (toggle)="toggleExpanded()">
-  <span explorerIcon class="h-1.5 w-1.5 shrink-0 rounded-full" [style.background-color]="group().color"></span>
-</app-explorer-row>
+<div #row class="rounded-md transition-colors duration-700" [class.bg-primary/10]="flashing()">
+  <app-explorer-row [label]="group().name" [expanded]="expanded()" (toggle)="toggleExpanded()"
+    (headerContextMenu)="tagContextMenu.emit($event)">
+    <svg explorerIcon lucideHash [size]="12" class="shrink-0 transition-colors"
+      [class.text-primary]="flashing() || expanded()" [class.text-muted-foreground]="!flashing() && !expanded()"></svg>
+    <span explorerTrailing class="shrink-0 text-[11px] tabular-nums text-muted-foreground">{{ group().notes.length }}</span>
+  </app-explorer-row>
 
-<app-explorer-body [expanded]="expanded()">
-  <div class="mt-0.5 flex flex-col">
-    @for (note of group().notes; track note.id) {
-    <app-sidebar-item-button [label]="note.title" [indent]="24" (clicked)="openNote.emit(note)"
-      (middleClicked)="openNoteInBackground.emit(note)" (contextMenu)="noteContextMenu.emit({ event: $event, note })">
-      <svg sidebarItemIcon lucideFileText [size]="14" class="shrink-0" [style.color]="group().color"></svg>
-    </app-sidebar-item-button>
-    }
-  </div>
-</app-explorer-body>
+  <app-explorer-body [expanded]="expanded()">
+    <div class="mt-0.5 flex flex-col">
+      @for (note of group().notes; track note.relPath) {
+      <app-sidebar-item-button [label]="note.name" [indent]="24" (clicked)="openNote.emit(note)"
+        (middleClicked)="openNoteInBackground.emit(note)" (contextMenu)="noteContextMenu.emit({ event: $event, note })">
+        <svg sidebarItemIcon lucideFileText [size]="14" class="shrink-0"></svg>
+      </app-sidebar-item-button>
+      }
+    </div>
+  </app-explorer-body>
+</div>

@@ -4,84 +4,114 @@
   [style.width.px]="state.effectiveWidth()"
   [style.transition]="state.resizing() ? 'none' : 'width 200ms ease-out'">
   @if (!state.collapsed()) {
-  <app-sidebar-toolbar (newNote)="onNewNote()" (newFolder)="onNewFolder()" />
+  <app-vault-header [(filter)]="filterQuery" (newNote)="onNewNote()" (newFolder)="onNewFolder()" />
 
-  <div class="scrollbar-thin mr-1 flex flex-1 flex-col gap-0.5 overflow-y-auto overscroll-contain p-2">
+  <!-- The vault tree: the sidebar's body, always open, taking whatever height the sections below leave. -->
+  <div class="scrollbar-thin mr-1 flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain rounded-md px-1.5 py-1.5"
+    data-vault-tree [class.bg-primary/10]="dragState.hoveredDir() === ''"
+    (dragenter)="onVaultBackgroundDragOver($event)" (dragover)="onVaultBackgroundDragOver($event)"
+    (dragleave)="onVaultBackgroundDragLeave($event)" (drop)="onVaultBackgroundDrop($event)"
+    (contextmenu)="onVaultContextMenu($event)">
+    @if (vaultState.error(); as err) {
+    <div class="px-2 py-1 text-xs text-destructive">{{ err }}</div>
+    } @else if (visibleTree(); as tree) {
+    @for (child of tree.children; track child.relPath) {
+    <app-vault-tree-node [node]="child" [unlockedProfiles]="credentialsState.unlockedIds()" [filter]="filterQuery()"
+      (openNote)="onOpenNote($event)"
+      (openNoteInBackground)="onOpenNoteInBackground($event)" (noteContextMenu)="onNoteContextMenu($event)"
+      (folderContextMenu)="onFolderContextMenu($event)" (lockedClicked)="onLockedClicked($event)"
+      (notesDropped)="onNotesDropped($event)" (folderDropped)="onFolderDropped($event)"
+      (noteRenamed)="onNoteRenamed($event)" (folderRenamed)="onFolderRenamed($event)" />
+    }
+    @if (tree.children.length === 0) {
+    @if (filterQuery().trim()) {
+    <div class="px-2 py-1 text-xs text-muted-foreground">No notes match “{{ filterQuery().trim() }}”.</div>
+    } @else {
+    <div class="px-2 py-1 text-xs text-muted-foreground">No notes yet. Press + to create one.</div>
+    }
+    }
+    } @else if (vaultState.loading()) {
+    <div class="px-2 py-1 text-xs text-muted-foreground">Loading vault…</div>
+    } @else {
+    <div class="px-2 py-1 text-xs text-muted-foreground">No vault open. Pick one from the vault name above.</div>
+    }
+  </div>
+
+  <!-- Secondary sections: quieter, capped so the tree always keeps most of the height. -->
+  @if (anySectionVisible()) {
+  <div class="scrollbar-thin mr-1 flex max-h-[40%] shrink-0 flex-col overflow-y-auto overscroll-contain border-t border-border px-1.5 py-1">
     @if (state.isSectionVisible('favorites')) {
-    <app-sidebar-section id="favorites" label="Favorites">
-      <svg sidebarSectionIcon lucideStar [size]="12"></svg>
-      @for (note of favorites; track note.id) {
-      <app-sidebar-item-button [label]="note.title" (clicked)="openNote(note)"
-        (middleClicked)="openNoteInBackground(note)" (contextMenu)="openNoteContextMenu($event, note)">
-        <svg sidebarItemIcon lucideFileText [size]="14" class="shrink-0"></svg>
-      </app-sidebar-item-button>
-      }
+    <app-sidebar-section id="favorites" label="Favorites" [count]="favoriteRows().length">
+      <div class="flex flex-col" (dragenter)="onFavoritesDragOver($event)" (dragover)="onFavoritesDragOver($event)"
+        (dragleave)="onFavoritesDragLeave($event)" (drop)="onFavoritesDrop($event)">
+        @for (row of favoriteRows(); track row.note.relPath; let i = $index) {
+        <div class="relative" draggable="true" [attr.data-favorite-index]="i"
+          (dragstart)="onNoteReferenceDragStart($event, row.note.relPath)">
+          @if (favoriteDropIndex() === i) {
+          <div class="pointer-events-none absolute inset-x-2 -top-px h-0.5 rounded-full bg-primary"></div>
+          }
+          <app-sidebar-item-button [label]="row.note.name" (clicked)="onOpenNote(row.note)"
+            (middleClicked)="onOpenNoteInBackground(row.note)" (contextMenu)="onFavoriteContextMenu($event, row)">
+            @if (row.locked) {
+            <svg sidebarItemIcon lucideLock [size]="13" class="shrink-0"></svg>
+            } @else {
+            <svg sidebarItemIcon lucideFileText [size]="14" class="shrink-0"></svg>
+            }
+            @if (row.folder; as folder) {
+            <span sidebarItemTrailing class="max-w-[45%] shrink-0 truncate text-xs text-muted-foreground">{{ folder }}</span>
+            }
+          </app-sidebar-item-button>
+          @if (favoriteDropIndex() === i + 1 && $last) {
+          <div class="pointer-events-none absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-primary"></div>
+          }
+        </div>
+        } @empty {
+        <div class="rounded-md py-1 pl-6 pr-2 text-xs text-muted-foreground"
+          [class.bg-primary/10]="favoriteDropIndex() !== null">No favorites yet.</div>
+        }
+      </div>
     </app-sidebar-section>
     }
 
     @if (state.isSectionVisible('recent')) {
     <app-sidebar-section id="recent" label="Recent Files">
-      <svg sidebarSectionIcon lucideClock [size]="12"></svg>
       @for (row of visibleRecents(); track row.note.relPath) {
-      <app-sidebar-item-button [label]="row.note.name" (clicked)="onOpenNote(row.note)"
-        (middleClicked)="onOpenNoteInBackground(row.note)" (contextMenu)="onRecentContextMenu($event, row)">
-        @if (row.locked) {
-        <svg sidebarItemIcon lucideLock [size]="13" class="shrink-0"></svg>
-        } @else {
-        <svg sidebarItemIcon lucideFileText [size]="14" class="shrink-0"></svg>
-        }
-        <span sidebarItemTrailing class="shrink-0 text-xs text-muted-foreground">{{ recentTime(row) }}</span>
-      </app-sidebar-item-button>
+      <div draggable="true" (dragstart)="onNoteReferenceDragStart($event, row.note.relPath)">
+        <app-sidebar-item-button [label]="row.note.name" (clicked)="onOpenNote(row.note)"
+          (middleClicked)="onOpenNoteInBackground(row.note)" (contextMenu)="onRecentContextMenu($event, row)">
+          @if (row.locked) {
+          <svg sidebarItemIcon lucideLock [size]="13" class="shrink-0"></svg>
+          } @else {
+          <svg sidebarItemIcon lucideFileText [size]="14" class="shrink-0"></svg>
+          }
+          <span sidebarItemTrailing class="shrink-0 text-xs text-muted-foreground">{{ recentTime(row) }}</span>
+        </app-sidebar-item-button>
+      </div>
       } @empty {
-      <div class="py-1 pl-9 pr-2 text-xs text-muted-foreground">No recent notes yet.</div>
+      <div class="py-1 pl-6 pr-2 text-xs text-muted-foreground">No recent notes yet.</div>
       }
       @if (hiddenRecentCount() > 0) {
       <button type="button" (click)="showAllRecents.set(true)"
-        class="w-full rounded-md py-1 pl-9 pr-2 text-left text-xs text-muted-foreground hover:bg-surface hover:text-foreground">
+        class="w-full rounded-md py-1 pl-6 pr-2 text-left text-xs text-muted-foreground hover:bg-surface hover:text-foreground">
         Show {{ hiddenRecentCount() }} more
       </button>
       } @else if (canCollapseRecents()) {
       <button type="button" (click)="showAllRecents.set(false)"
-        class="w-full rounded-md py-1 pl-9 pr-2 text-left text-xs text-muted-foreground hover:bg-surface hover:text-foreground">
+        class="w-full rounded-md py-1 pl-6 pr-2 text-left text-xs text-muted-foreground hover:bg-surface hover:text-foreground">
         Show less
       </button>
       }
     </app-sidebar-section>
     }
 
-    <app-sidebar-section id="workspace" label="Vault">
-      <svg sidebarSectionIcon lucideFolders [size]="12"></svg>
-      <div class="flex flex-col rounded-md" data-vault-tree [class.bg-primary/10]="dragState.hoveredDir() === ''"
-        (dragenter)="onVaultBackgroundDragOver($event)" (dragover)="onVaultBackgroundDragOver($event)"
-        (dragleave)="onVaultBackgroundDragLeave($event)" (drop)="onVaultBackgroundDrop($event)">
-        @if (vaultState.loading()) {
-        <div class="px-2 py-1 text-xs text-muted-foreground">Loading vault…</div>
-        } @else if (vaultState.error(); as err) {
-        <div class="px-2 py-1 text-xs text-destructive">{{ err }}</div>
-        } @else if (vaultState.tree(); as tree) {
-        @for (child of tree.children; track child.relPath) {
-        <app-vault-tree-node [node]="child" [unlockedProfiles]="credentialsState.unlockedIds()"
-          (openNote)="onOpenNote($event)"
-          (openNoteInBackground)="onOpenNoteInBackground($event)" (noteContextMenu)="onNoteContextMenu($event)"
-          (folderContextMenu)="onFolderContextMenu($event)" (lockedClicked)="onLockedClicked($event)"
-          (notesDropped)="onNotesDropped($event)" (folderDropped)="onFolderDropped($event)"
-          (noteRenamed)="onNoteRenamed($event)" (folderRenamed)="onFolderRenamed($event)" />
-        }
-        @if (tree.children.length === 0) {
-        <div class="px-2 py-1 text-xs text-muted-foreground">No notes yet — click "New Note" to create one.</div>
-        }
-        } @else {
-        <div class="px-2 py-1 text-xs text-muted-foreground">No vault open — click "Open Vault" to pick a folder.</div>
-        }
-      </div>
-    </app-sidebar-section>
-
     @if (state.isSectionVisible('tags')) {
-    <app-sidebar-section id="tags" label="Tags">
-      <svg sidebarSectionIcon lucideTags [size]="12"></svg>
-      @for (group of tagGroups; track group.name) {
-      <app-tag-group-row [group]="group" (openNote)="openNote($event)"
-        (openNoteInBackground)="openNoteInBackground($event)" (noteContextMenu)="onTagNoteContextMenu($event)" />
+    <app-sidebar-section id="tags" label="Tags" [count]="tagsState.groups().length">
+      @for (group of tagsState.groups(); track group.key) {
+      <app-tag-group-row [group]="group" (openNote)="onOpenNote($event)"
+        (openNoteInBackground)="onOpenNoteInBackground($event)" (noteContextMenu)="onNoteContextMenu($event)"
+        (tagContextMenu)="onTagContextMenu($event, group)" />
+      } @empty {
+      <div class="py-1 pl-6 pr-2 text-xs text-muted-foreground">No tags yet. Add one from a note's header.</div>
       }
     </app-sidebar-section>
     }
@@ -90,6 +120,7 @@
     <app-credentials-section (openNote)="onOpenNote($event)" (noteContextMenu)="onNoteContextMenu($event)" />
     }
   </div>
+  }
   }
 
   <div class="group absolute inset-y-0 right-0 z-10 -mr-1 flex w-2 cursor-col-resize items-center justify-center"

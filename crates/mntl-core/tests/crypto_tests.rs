@@ -402,6 +402,30 @@ fn test_extract_headers() {
 }
 
 #[test]
+fn test_tags_roundtrip_through_the_frontmatter_and_the_envelope() {
+    let frontmatter = mntl_core::NoteFrontmatter {
+        tags: vec!["reference".into(), "Q3".into()],
+        ..Default::default()
+    };
+    let file = mntl_core::encode_note(&frontmatter, "Body").unwrap();
+    assert_eq!(file, "---\nv: 2\ntags:\n- reference\n- Q3\n---\nBody");
+
+    let mk = test_mk();
+    let blob = encrypt_note(&mk, "profile", file.as_bytes()).unwrap();
+    let recovered = decrypt_note(&mk, &blob).unwrap();
+    let (decoded, body) = mntl_core::decode_note(std::str::from_utf8(&recovered).unwrap()).unwrap();
+    assert_eq!(decoded, frontmatter);
+    assert_eq!(body, "Body");
+}
+
+#[test]
+fn test_a_note_without_tags_has_none_and_writes_no_key() {
+    let (frontmatter, _) = mntl_core::decode_note("---\nv: 2\n---\nBody").unwrap();
+    assert!(frontmatter.tags.is_empty());
+    assert_eq!(encode_unencrypted_note("Body").unwrap(), "---\nv: 2\n---\nBody");
+}
+
+#[test]
 fn test_missing_frontmatter_fails() {
     let result = decode_unencrypted_note("Just plain text, no frontmatter at all.");
     assert!(matches!(result, Err(MntlError::MissingFrontmatter)));

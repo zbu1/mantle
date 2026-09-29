@@ -167,13 +167,6 @@
           <svg menuItemTrailing lucideCheck [size]="14"></svg>
           }
         </app-menu-item>
-        <app-menu-item label="Vault" [active]="hoveredItem() === 'sectionWorkspace'"
-          (hovered)="hoveredItem.set('sectionWorkspace')" (selected)="toggleSection('workspace')">
-          <svg menuItemIcon lucideFolders [size]="14"></svg>
-          @if (sidebarState.isSectionExpanded('workspace')) {
-          <svg menuItemTrailing lucideCheck [size]="14"></svg>
-          }
-        </app-menu-item>
         <app-menu-item label="Tags" [active]="hoveredItem() === 'sectionTags'"
           (hovered)="hoveredItem.set('sectionTags')" (selected)="toggleSection('tags')">
           <svg menuItemIcon lucideTags [size]="14"></svg>

@@ -181,6 +181,8 @@ export class CredentialsState {
 
     this.notesState.markLocked(paths, profileId);
     await this.refresh();
+    // Rescan so the tree drops the tags it read from this profile's notes.
+    await this.vaultState.refresh();
   }
 
   async lockAll(): Promise<void> {
@@ -197,6 +199,7 @@ export class CredentialsState {
       this.notesState.markLocked(this.notePathsFor(profile.id), profile.id);
     }
     await this.refresh();
+    await this.vaultState.refresh();
   }
 
   /**
@@ -252,6 +255,8 @@ export class CredentialsState {
       this.notesState.reload(path);
     }
     await this.refresh();
+    // Rescan so the tree reads the tags sealed inside this profile's notes.
+    await this.vaultState.refresh();
     return null;
   }
 

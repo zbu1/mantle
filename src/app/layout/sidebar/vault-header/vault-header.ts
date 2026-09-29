@@ -1,4 +1,4 @@
-import { Component, ElementRef, HostListener, effect, inject, output, signal, viewChild } from '@angular/core';
+import { Component, ElementRef, HostListener, effect, inject, model, output, signal, viewChild } from '@angular/core';
 import {
   LucideArrowDownAZ,
   LucideArrowUpAZ,
@@ -6,20 +6,20 @@ import {
   LucideCheck,
   LucideClock,
   LucideEllipsis,
-  LucideFilePlus,
   LucideFileText,
   LucideFoldVertical,
   LucideFolderOpen,
   LucideFolderPlus,
-  LucideFolders,
+  LucideKeyRound,
   LucideListOrdered,
   LucideLockKeyhole,
   LucidePlus,
+  LucideSearch,
   LucideSettings,
-  LucideSlidersHorizontal,
   LucideStar,
   LucideTags,
   LucideUnfoldVertical,
+  LucideX,
 } from '@lucide/angular';
 import { MenuItem } from '../../../shared/menu/menu-item';
 import { MenuSeparator } from '../../../shared/menu/menu-separator';
@@ -28,30 +28,29 @@ import { CredentialsState } from '../../../notes/credentials-state';
 import { NewEncryptedNoteState } from '../../../notes/new-encrypted-note/new-encrypted-note-state';
 import { VaultState } from '../../../notes/vault-state';
 import { SettingsModalState } from '../../../shared/settings/settings-modal-state';
+import { VaultMenu } from '../../vault-menu/vault-menu';
 import { SectionId, SidebarState } from '../sidebar-state';
 
 /** Session-only, not persisted — see `sortMode` below. */
 type SortMode = 'name-asc' | 'name-desc' | 'modified' | 'created' | 'manual';
 
-type ToolbarMenu = 'new' | 'sort' | 'view' | 'more';
-
 /**
- * The horizontal icon rail at the top of the sidebar: quick-access buttons
- * for creating new items, plus Sort/View/More dropdowns, sitting above the
- * scrolling section list so they never scroll away with it.
- *
- * Each button owns an independent open/closed dropdown, but only one is ever
- * open at a time — opening one closes whichever else was open, the same
- * single-`activeMenu` approach `MainMenu` uses for its category bar.
+ * The top of the sidebar, and the vault's title: the vault's name (which is
+ * also its switcher), a filter for the tree, a New Note button, and one
+ * overflow menu for everything else — creating other items, sort, which
+ * sections show, and vault-wide actions. Pinned above the scrolling tree.
  */
 @Component({
-  selector: 'app-sidebar-toolbar',
+  selector: 'app-vault-header',
   imports: [
+    VaultMenu,
     MenuSurface,
     MenuItem,
     MenuSeparator,
     LucidePlus,
-    LucideFilePlus,
+    LucideSearch,
+    LucideX,
+    LucideEllipsis,
     LucideFolderPlus,
     LucideLockKeyhole,
     LucideArrowDownAZ,
@@ -59,33 +58,34 @@ type ToolbarMenu = 'new' | 'sort' | 'view' | 'more';
     LucideClock,
     LucideCalendarPlus,
     LucideListOrdered,
-    LucideSlidersHorizontal,
     LucideStar,
-    LucideFolders,
     LucideTags,
+    LucideKeyRound,
     LucideFileText,
-    LucideEllipsis,
     LucideUnfoldVertical,
     LucideFoldVertical,
     LucideFolderOpen,
     LucideSettings,
     LucideCheck,
   ],
-  templateUrl: './sidebar-toolbar.html',
-  host: { class: 'flex shrink-0 items-center justify-center gap-0.5 px-1 pb-1' },
+  templateUrl: './vault-header.html',
+  host: { class: 'frame block shrink-0 rounded-t-xl border-b border-border px-3 pb-2.5 pt-2' },
 })
-export class SidebarToolbar {
+export class VaultHeader {
   protected readonly vaultState = inject(VaultState);
   protected readonly credentialsState = inject(CredentialsState);
   protected readonly sidebarState = inject(SidebarState);
   private readonly newEncryptedNoteState = inject(NewEncryptedNoteState);
   private readonly settingsModalState = inject(SettingsModalState);
 
+  /** The tree filter, owned by the sidebar. */
+  readonly filter = model('');
+
   /** Sidebar owns note/folder creation (shared with the right-click menus); this just asks for it. */
   readonly newNote = output<void>();
   readonly newFolder = output<void>();
 
-  protected readonly activeMenu = signal<ToolbarMenu | null>(null);
+  protected readonly menuOpen = signal(false);
 
   /**
    * Cosmetic only — no vault tree ordering is wired to this yet (see
@@ -94,38 +94,35 @@ export class SidebarToolbar {
    */
   protected readonly sortMode = signal<SortMode>('name-asc');
 
-  /** Stub — nothing renders differently yet; here so the View menu isn't only a duplicate of the section toggles. */
+  /** Stub — nothing renders differently yet. */
   protected readonly showExtensions = signal(false);
 
   protected readonly hasVault = () => !!this.vaultState.rootPath();
 
-  // Drives which row in the open dropdown is highlighted — see MenuItem.active.
+  // Drives which row in the menu is highlighted — see MenuItem.active.
   protected readonly hoveredItem = signal<string | null>(null);
   private readonly resetHoverOnMenuChange = effect(() => {
-    this.activeMenu();
+    this.menuOpen();
     this.hoveredItem.set(null);
   });
 
-  // Wraps the four trigger buttons so outside-clicks can be told apart from
-  // clicks that open one of them; only one dropdown is ever in the DOM at a
-  // time, so a single ref covers whichever is open (same trick as MainMenu).
-  private readonly rail = viewChild<ElementRef<HTMLElement>>('rail');
+  private readonly trigger = viewChild<ElementRef<HTMLElement>>('trigger');
   private readonly panel = viewChild('panel', { read: ElementRef<HTMLElement> });
 
-  protected toggleMenu(menu: ToolbarMenu): void {
-    this.activeMenu.update((current) => (current === menu ? null : menu));
+  protected toggleMenu(): void {
+    this.menuOpen.update((open) => !open);
   }
 
-  protected closeMenu(): void {
-    this.activeMenu.set(null);
+  private closeMenu(): void {
+    this.menuOpen.set(false);
   }
 
   @HostListener('document:pointerdown', ['$event'])
   protected onDocumentPointerDown(event: PointerEvent): void {
-    if (!this.activeMenu()) return;
+    if (!this.menuOpen()) return;
     const target = event.target;
     if (!(target instanceof Node)) return;
-    if (this.rail()?.nativeElement.contains(target)) return;
+    if (this.trigger()?.nativeElement.contains(target)) return;
     if (this.panel()?.nativeElement.contains(target)) return;
     this.closeMenu();
   }
@@ -136,11 +133,29 @@ export class SidebarToolbar {
   }
 
   @HostListener('window:blur')
-  protected onBlur(): void {
+  protected onWindowBlur(): void {
     this.closeMenu();
   }
 
-  // ---- New ----
+  // ---- Filter ----
+
+  protected onFilterInput(value: string): void {
+    this.filter.set(value);
+  }
+
+  /** Esc clears the filter, or leaves the field if it's already empty. */
+  protected onFilterEscape(event: Event, field: HTMLInputElement): void {
+    event.stopPropagation();
+    if (this.filter()) this.filter.set('');
+    else field.blur();
+  }
+
+  protected clearFilter(field: HTMLInputElement): void {
+    this.filter.set('');
+    field.focus();
+  }
+
+  // ---- Create ----
 
   protected onNewNote(): void {
     this.closeMenu();
@@ -164,7 +179,7 @@ export class SidebarToolbar {
     this.sortMode.set(mode);
   }
 
-  // ---- View ----
+  // ---- Sections ----
 
   protected toggleSection(id: SectionId): void {
     this.closeMenu();
@@ -176,7 +191,7 @@ export class SidebarToolbar {
     this.showExtensions.update((v) => !v);
   }
 
-  // ---- More ----
+  // ---- Vault ----
   //
   // Expand/collapse-all have no shared expansion state to drive yet —
   // VaultTreeNode's `expanded` signal is local per node — so these are stubs.

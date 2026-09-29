@@ -14,8 +14,9 @@ Angular 22 (frontend, signals-based, no NgModules).
   for scanning a vault directory and reading/writing/creating notes, on top of
   the `mntl-core` crate. Plain Markdown files (`.md` / `.markdown`) also open
   as notes: they're saved in place as Markdown, their own YAML frontmatter is
-  hidden and written back verbatim, and they only become `.mntl` through
-  `convert_markdown_to_note` or encryption (both drop that frontmatter).
+  hidden and written back verbatim (except the `tags:` key, which Mantle
+  edits), and they only become `.mntl` through `convert_markdown_to_note` or
+  encryption (both drop that frontmatter but keep its tags).
   `src-tauri/src/vault_meta.rs` loads/saves
   `.mantle/state.json` inside the vault — favorites, manual sort order, and
   collapsed folders — a vault-local file so this metadata travels with the
@@ -25,11 +26,32 @@ Angular 22 (frontend, signals-based, no NgModules).
   `.mantle/profiles.json` registry and the in-memory session keys of unlocked
   profiles. `src-tauri/src/notes_crypto.rs` converts notes between the
   plaintext and encrypted formats and moves them between profiles.
+  `src-tauri/src/tags.rs` renames or removes a tag across the whole vault.
 - **`crates/mntl-core`**: standalone Rust crate (Cargo workspace member,
   independent of Tauri) implementing the `.mntl` note format — plaintext
   Markdown with a YAML frontmatter header — and the `.mntl.enc` encrypted
   envelope format (Argon2id KEK derivation, XChaCha20-Poly1305 + AES-KW
-  envelope encryption).
+  envelope encryption). Its `tags` module defines what a valid tag is and
+  reads/edits tags in a plain Markdown file's frontmatter.
+
+## Tags
+
+- A note's tags live **in the note**: `NoteFrontmatter::tags` for `.mntl`
+  (sealed inside the ciphertext for `.mntl.enc`), and the Obsidian-style
+  `tags:` key of a `.md` file's own frontmatter. There is no separate tag
+  store and no cache; the index is derived from `scan_vault`, which reads each
+  plaintext note's frontmatter and decrypts the notes of unlocked profiles.
+  A locked note's tags are unknown (`tags: null`), so the frontend rescans on
+  unlock/lock.
+- Tags are flat and case-insensitive (`Idea` = `idea`, first spelling kept).
+  New tags must pass `normalize_tag` / `normalizeTag` (letters, digits, `-`,
+  `_`; not all digits); tags another tool wrote into a `.md` are read as-is.
+- `read_note` returns `{ content, tags }` and `write_note` takes both, so
+  every save carries the tags; `NotesState` debounces tag edits like content.
+- A vault-wide rename/remove rewrites note files, so `TagsState` flushes
+  pending writes first and then mirrors the edit into loaded notes
+  (`NotesState.retagLoaded`), or the next save would restore the old tags.
+  Notes in locked profiles are skipped and reported, not silently missed.
 
 ## Encryption
 
@@ -80,7 +102,7 @@ Package manager is **pnpm** (see `pnpm-lock.yaml`), not npm.
 
 - Frontend tests use Jest with `jest-preset-angular` (config in `jest.config.ts`, setup in `setup-jest.ts`).
 - Test files live next to the code they test (e.g. `header.spec.ts` next to `header.ts`).
-- Rust: `#[cfg(test)]` unit tests in `src-tauri/src/vault.rs` (path traversal, note classification, compound `.mntl.enc` extension handling, scanning), `src-tauri/src/vault_meta.rs` (default-on-missing, round trip, forward-compatible parsing), `src-tauri/src/credentials.rs` (slugs, registry, unlock), and `src-tauri/src/notes_crypto.rs` (encrypt/decrypt conversion); `crates/mntl-core/tests/crypto_tests.rs` covers the key hierarchy and the envelope format.
+- Rust: `#[cfg(test)]` unit tests in `src-tauri/src/vault.rs` (path traversal, note classification, compound `.mntl.enc` extension handling, scanning), `src-tauri/src/vault_meta.rs` (default-on-missing, round trip, forward-compatible parsing), `src-tauri/src/credentials.rs` (slugs, registry, unlock), `src-tauri/src/notes_crypto.rs` (encrypt/decrypt conversion), and `src-tauri/src/tags.rs` (vault-wide rename/remove); `crates/mntl-core/tests/crypto_tests.rs` covers the key hierarchy and the envelope format, and `crates/mntl-core/src/tags.rs` has unit tests for tag validation and Markdown frontmatter editing.
 - Rust tests that need an unlocked profile use `SessionKeys::unlock_for_test` and cheap `KdfParams`, rather than paying for a production-cost Argon2id derivation per test.
 
 ## Conventions

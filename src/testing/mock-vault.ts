@@ -4,6 +4,7 @@ export interface FixtureNote {
   id: string;
   title: string;
   content: string;
+  tags: string[];
 }
 
 export const FIXTURE_NOTES: FixtureNote[] = [
@@ -11,16 +12,19 @@ export const FIXTURE_NOTES: FixtureNote[] = [
     id: 'daily-standup',
     title: 'daily-standup',
     content: 'Yesterday: shipped the sidebar resize handle. Today: tab strip. Blockers: none.',
+    tags: ['work', 'urgent'],
   },
   {
     id: 'architecture-notes',
     title: 'architecture-notes',
     content: 'Notes on the layout shell: header, sidebar, and the tabbed content area.',
+    tags: ['work'],
   },
   {
     id: 'todo',
     title: 'todo',
     content: '- Wire up sidebar clicks to open tabs\n- Persist open tabs\n- Empty state for no tabs',
+    tags: [],
   },
 ];
 
@@ -33,16 +37,18 @@ export const FIXTURE_NOTES: FixtureNote[] = [
 export function installMockVaultInvoke(): jest.Mock {
   const { invoke } = installTauriMock();
   const contents = new Map(FIXTURE_NOTES.map((n) => [n.id, n.content]));
+  const tags = new Map(FIXTURE_NOTES.map((n) => [n.id, n.tags]));
 
   invoke.mockImplementation(async (command: string, args: Record<string, unknown> = {}) => {
     switch (command) {
       case 'read_note': {
         const relPath = args['relPath'] as string;
         if (!contents.has(relPath)) throw new Error(`Note not found: ${relPath}`);
-        return contents.get(relPath);
+        return { content: contents.get(relPath), tags: tags.get(relPath) ?? [] };
       }
       case 'write_note': {
         contents.set(args['relPath'] as string, args['content'] as string);
+        tags.set(args['relPath'] as string, (args['tags'] as string[] | undefined) ?? []);
         return undefined;
       }
       case 'scan_vault': {
@@ -56,6 +62,7 @@ export function installMockVaultInvoke(): jest.Mock {
             relPath: n.id,
             encrypted: false,
             profile: null,
+            tags: tags.get(n.id) ?? [],
           })),
         };
       }

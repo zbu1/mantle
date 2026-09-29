@@ -8,6 +8,7 @@ import { VaultRootState } from '../../notes/vault-root-state';
 import { VaultState } from '../../notes/vault-state';
 import { VaultFolderNode, VaultNoteNode } from '../../notes/vault-tree.model';
 import { ContextMenuState } from '../../shared/context-menu/context-menu-state';
+import { TagsState } from '../../notes/tags-state';
 import { Sidebar } from './sidebar';
 import { SidebarState } from './sidebar-state';
 
@@ -47,20 +48,20 @@ describe('Sidebar', () => {
     expect(fixture.nativeElement.querySelector('app-sidebar-section')).toBeFalsy();
   });
 
-  it('removes hidden sections from the sidebar but never the Vault', () => {
+  it('removes hidden sections from the sidebar, but always shows the vault tree', () => {
     openVault();
     const fixture = TestBed.createComponent(Sidebar);
     const state = TestBed.inject(SidebarState);
     fixture.detectChanges();
     const ids = () =>
       [...fixture.nativeElement.querySelectorAll('app-sidebar-section')].map((el: HTMLElement) => el.getAttribute('id'));
-    expect(ids()).toEqual(['favorites', 'recent', 'workspace', 'tags', 'credentials']);
+    expect(ids()).toEqual(['favorites', 'recent', 'tags', 'credentials']);
 
     for (const section of ['favorites', 'recent', 'tags', 'credentials'] as const) state.toggleSectionVisibility(section);
-    state.toggleSectionVisibility('workspace');
     fixture.detectChanges();
 
-    expect(ids()).toEqual(['workspace']);
+    expect(ids()).toEqual([]);
+    expect(fixture.nativeElement.querySelector('[data-vault-tree]')).toBeTruthy();
   });
 
   function resizeHandle(fixture: ComponentFixture<Sidebar>): HTMLElement {
@@ -155,7 +156,7 @@ describe('Sidebar', () => {
     const HOUR = 3_600_000;
 
     function note(relPath: string): VaultNoteNode {
-      return { type: 'note', name: relPath.replace(/\.mntl$/, ''), relPath, encrypted: false, profile: null };
+      return { type: 'note', name: relPath.replace(/\.mntl$/, ''), relPath, encrypted: false, profile: null, tags: [] };
     }
 
     /** Opens `/vault` containing `inTree`, whose metadata lists `recent` (most recent first, an hour apart). */
@@ -266,6 +267,70 @@ describe('Sidebar', () => {
     });
   });
 
+  describe('Favorites section', () => {
+    function note(relPath: string): VaultNoteNode {
+      const name = relPath.split('/').pop()!.replace(/\.mntl$/, '');
+      return { type: 'note', name, relPath, encrypted: false, profile: null, tags: [] };
+    }
+
+    /** Opens `/vault` containing `inTree` (flat, folders implied by relPath), whose metadata lists `favorites`. */
+    async function setup(inTree: string[], favorites: string[]) {
+      const mock = installTauriMock();
+      const root: VaultFolderNode = { type: 'folder', name: 'vault', relPath: '', children: inTree.map(note) };
+      mock.respondWith('scan_vault', root);
+      mock.respondWith('list_credential_profiles', []);
+      mock.respondWith('load_vault_meta', { version: 1, favorites, order: {}, collapsedFolders: [], recentNotes: [] });
+
+      const fixture = TestBed.createComponent(Sidebar);
+      const vaultState = TestBed.inject(VaultState);
+      vaultState.rootPath.set('/vault');
+      TestBed.tick();
+      await vaultState.refresh();
+      fixture.detectChanges();
+      return fixture;
+    }
+
+    function rowTexts(fixture: ComponentFixture<Sidebar>): string[] {
+      return [...fixture.nativeElement.querySelectorAll('app-sidebar-section[id="favorites"] app-sidebar-item-button')].map(
+        (row) => (row as HTMLElement).textContent!.replace(/\s+/g, ' ').trim(),
+      );
+    }
+
+    it('lists favorites in stored order, hiding ones missing from the vault', async () => {
+      const fixture = await setup(['a.mntl', 'b.mntl'], ['b.mntl', 'gone.mntl', 'a.mntl']);
+
+      expect(rowTexts(fixture)).toEqual(['b', 'a']);
+    });
+
+    it('shows the parent folder only for favorites that share a name', async () => {
+      const fixture = await setup(['todo.mntl', 'Work/todo.mntl', 'ideas.mntl'], ['todo.mntl', 'Work/todo.mntl', 'ideas.mntl']);
+
+      expect(rowTexts(fixture)).toEqual(['todo/', 'todoWork', 'ideas']);
+    });
+
+    it('shows an empty state with no favorites', async () => {
+      const fixture = await setup(['a.mntl'], []);
+
+      expect(fixture.nativeElement.querySelector('app-sidebar-section[id="favorites"]').textContent).toContain(
+        'No favorites yet.',
+      );
+    });
+
+    it('removes a favorite from its context menu', async () => {
+      const fixture = await setup(['a.mntl', 'b.mntl'], ['a.mntl', 'b.mntl']);
+      const row = fixture.nativeElement.querySelector('app-sidebar-section[id="favorites"] app-sidebar-item-button button');
+      row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+      const item = TestBed.inject(ContextMenuState)
+        .menu()!
+        .items.find((i) => i.kind === 'item' && i.label === 'Remove from Favorites');
+
+      if (item?.kind === 'item') item.action();
+      fixture.detectChanges();
+
+      expect(rowTexts(fixture)).toEqual(['b']);
+    });
+  });
+
   describe('folder context menu', () => {
     async function openFolderMenu() {
       const mock = installTauriMock();
@@ -307,6 +372,181 @@ describe('Sidebar', () => {
       if (item?.kind === 'item') item.action();
 
       expect(TestBed.inject(NewEncryptedNoteState).request()).toEqual({ relDir: 'Work', profileId: null });
+    });
+  });
+
+  describe('vault background context menu', () => {
+    async function openVaultMenu() {
+      const mock = installTauriMock();
+      const root: VaultFolderNode = {
+        type: 'folder',
+        name: 'vault',
+        relPath: '',
+        children: [{ type: 'folder', name: 'Work', relPath: 'Work', children: [] }],
+      };
+      mock.respondWith('scan_vault', root);
+      mock.respondWith('list_credential_profiles', []);
+      mock.respondWith('load_vault_meta', { version: 1, favorites: [], order: {}, collapsedFolders: [], recentNotes: [] });
+
+      const fixture = TestBed.createComponent(Sidebar);
+      const vaultState = TestBed.inject(VaultState);
+      vaultState.rootPath.set('/vault');
+      TestBed.tick();
+      await vaultState.refresh();
+      fixture.detectChanges();
+
+      const tree = fixture.nativeElement.querySelector('[data-vault-tree]') as HTMLElement;
+      tree.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+      return TestBed.inject(ContextMenuState).menu()!.items;
+    }
+
+    it('offers New Note, New Encrypted Note and New Folder at the vault root', async () => {
+      const items = await openVaultMenu();
+
+      const labels = items.flatMap((item) => (item.kind === 'item' ? [item.label] : []));
+      expect(labels.slice(0, 3)).toEqual(['New Note', 'New Encrypted Note', 'New Folder']);
+    });
+
+    it('opens the New Encrypted Note modal for the vault root', async () => {
+      const items = await openVaultMenu();
+      const item = items.find((i) => i.kind === 'item' && i.label === 'New Encrypted Note');
+
+      if (item?.kind === 'item') item.action();
+
+      expect(TestBed.inject(NewEncryptedNoteState).request()).toEqual({ relDir: '', profileId: null });
+    });
+  });
+
+  describe('Vault tree', () => {
+    function note(relPath: string): VaultNoteNode {
+      const name = relPath.split('/').pop()!.replace(/\.mntl$/, '');
+      return { type: 'note', name, relPath, encrypted: false, profile: null, tags: [] };
+    }
+
+    async function setup() {
+      const mock = installTauriMock();
+      mock.respondWith('scan_vault', {
+        type: 'folder',
+        name: 'vault',
+        relPath: '',
+        children: [
+          { type: 'folder', name: 'Work', relPath: 'Work', children: [note('Work/Roadmap.mntl'), note('Work/standup.mntl')] },
+          note('todo.mntl'),
+        ],
+      });
+      mock.respondWith('list_credential_profiles', []);
+      mock.respondWith('load_vault_meta', { version: 1, favorites: [], order: {}, collapsedFolders: [], recentNotes: [] });
+      const fixture = TestBed.createComponent(Sidebar);
+      const vaultState = TestBed.inject(VaultState);
+      vaultState.rootPath.set('/vault');
+      TestBed.tick();
+      await vaultState.refresh();
+      fixture.detectChanges();
+      return fixture;
+    }
+
+    function notePaths(fixture: ComponentFixture<Sidebar>): string[] {
+      return [...fixture.nativeElement.querySelectorAll('[data-vault-tree] [data-note-path]')].map(
+        (el) => (el as HTMLElement).dataset['notePath']!,
+      );
+    }
+
+    function filter(fixture: ComponentFixture<Sidebar>, value: string): void {
+      const input: HTMLInputElement = fixture.nativeElement.querySelector('input[aria-label="Filter notes"]');
+      input.value = value;
+      input.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+    }
+
+    it('narrows the tree to notes matching the header filter, marking the match', async () => {
+      const fixture = await setup();
+      expect(notePaths(fixture)).toEqual(['Work/Roadmap.mntl', 'Work/standup.mntl', 'todo.mntl']);
+
+      filter(fixture, 'road');
+      expect(notePaths(fixture)).toEqual(['Work/Roadmap.mntl']);
+      expect(fixture.nativeElement.querySelector('[data-vault-tree] mark').textContent).toBe('Road');
+
+      filter(fixture, 'zzz');
+      expect(notePaths(fixture)).toEqual([]);
+      expect(fixture.nativeElement.querySelector('[data-vault-tree]').textContent).toContain('No notes match “zzz”');
+    });
+
+    it('marks the note open in the active tab', async () => {
+      const fixture = await setup();
+      TestBed.inject(TabsState).openNote({ id: 'todo.mntl', title: 'todo' });
+      fixture.detectChanges();
+
+      const current = [...fixture.nativeElement.querySelectorAll('[data-vault-tree] [aria-current="page"]')];
+      expect(current).toHaveLength(1);
+      expect((current[0] as HTMLElement).textContent).toContain('todo');
+    });
+  });
+
+  describe('Tags section', () => {
+    function note(name: string, tags: string[]): VaultNoteNode {
+      return { type: 'note', name, relPath: `${name}.mntl`, encrypted: false, profile: null, tags };
+    }
+
+    async function setup(children: VaultNoteNode[]) {
+      const mock = installTauriMock();
+      mock.respondWith('scan_vault', { type: 'folder', name: 'vault', relPath: '', children });
+      mock.respondWith('list_credential_profiles', []);
+      mock.respondWith('load_vault_meta', { version: 1, favorites: [], order: {}, collapsedFolders: [], recentNotes: [] });
+      const fixture = TestBed.createComponent(Sidebar);
+      const vaultState = TestBed.inject(VaultState);
+      vaultState.rootPath.set('/vault');
+      TestBed.tick();
+      await vaultState.refresh();
+      fixture.detectChanges();
+      return fixture;
+    }
+
+    function tagRows(fixture: ComponentFixture<Sidebar>): string[] {
+      return [...fixture.nativeElement.querySelectorAll('app-sidebar-section[id="tags"] app-explorer-row')].map((row) => {
+        const label = (row as HTMLElement).querySelector('.truncate')!.textContent!.trim();
+        const count = (row as HTMLElement).querySelector('.tabular-nums')!.textContent!.trim();
+        return `${label} ${count}`;
+      });
+    }
+
+    it("lists the vault's tags with their note counts", async () => {
+      const fixture = await setup([note('plan', ['work', 'Idea']), note('todo', ['work'])]);
+      expect(tagRows(fixture)).toEqual(['Idea 1', 'work 2']);
+    });
+
+    it('says so when the vault has no tags', async () => {
+      const fixture = await setup([note('plan', [])]);
+      expect(fixture.nativeElement.querySelector('app-sidebar-section[id="tags"]').textContent).toContain('No tags yet');
+    });
+
+    it('reveals a tag by reopening the sidebar and its Tags section', async () => {
+      const fixture = await setup([note('plan', ['work'])]);
+      const state = TestBed.inject(SidebarState);
+      state.toggleSectionVisibility('tags');
+      state.setCollapsed(true);
+      fixture.detectChanges();
+
+      TestBed.inject(TagsState).reveal('WORK');
+      TestBed.tick();
+      fixture.detectChanges();
+
+      expect(state.collapsed()).toBe(false);
+      expect(state.isSectionVisible('tags')).toBe(true);
+      expect(state.isSectionExpanded('tags')).toBe(true);
+      expect(tagRows(fixture)).toEqual(['work 1']);
+    });
+
+    it('offers to rename or remove a tag from its context menu', async () => {
+      const fixture = await setup([note('plan', ['work'])]);
+      const header: HTMLElement = fixture.nativeElement.querySelector(
+        'app-sidebar-section[id="tags"] app-explorer-row [role="button"]',
+      );
+      header.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }));
+
+      const labels = TestBed.inject(ContextMenuState)
+        .menu()
+        ?.items.map((item) => (item.kind === 'item' ? item.label : '-'));
+      expect(labels).toEqual(['Rename Tag…', '-', 'Remove Tag from All Notes']);
     });
   });
 });

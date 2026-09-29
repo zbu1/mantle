@@ -1,4 +1,4 @@
-import { Component, ElementRef, computed, effect, inject, viewChild } from '@angular/core';
+import { Component, ElementRef, HostListener, computed, effect, inject, viewChild } from '@angular/core';
 import {
   LucideArrowLeft,
   LucideArrowRight,
@@ -11,6 +11,7 @@ import {
   LucideLock,
   LucideLockOpen,
   LucideRefreshCw,
+  LucideStar,
   LucideTriangleAlert,
   LucideX,
 } from '@lucide/angular';
@@ -19,11 +20,13 @@ import { NotesState, titleFromRelPath } from '../../../notes/notes-state';
 import { CredentialsState } from '../../../notes/credentials-state';
 import { EncryptionPanelState } from '../../../notes/encryption-panel/encryption-panel-state';
 import { VaultState } from '../../../notes/vault-state';
+import { VaultMetaState } from '../../../notes/vault-meta-state';
 import { NoteEditor } from '../../../notes/editor/note-editor';
+import { TagBar } from '../../../notes/tag-bar/tag-bar';
 import { ContextMenuState } from '../../../shared/context-menu/context-menu-state';
 import { ContextMenuItem } from '../../../shared/context-menu/context-menu.model';
 import { DialogState } from '../../../shared/dialog/dialog-state';
-import { VaultNoteNode, flattenEncryptedNotes, markdownExtensionOf } from '../../../notes/vault-tree.model';
+import { VaultNoteNode, flattenEncryptedNotes, flattenVaultNotes, markdownExtensionOf } from '../../../notes/vault-tree.model';
 import { MarkdownNoticeState } from '../../../notes/markdown-notice-state';
 import { NoteEncryptionActions } from '../../../notes/note-encryption-actions';
 
@@ -33,6 +36,7 @@ const RENAME_DEBOUNCE_MS = 1000;
   selector: 'app-content-area',
   imports: [
     NoteEditor,
+    TagBar,
     LucideArrowLeft,
     LucideArrowRight,
     LucideExpand,
@@ -46,6 +50,7 @@ const RENAME_DEBOUNCE_MS = 1000;
     LucideTriangleAlert,
     LucideRefreshCw,
     LucideFolderOpen,
+    LucideStar,
   ],
   templateUrl: './content-area.html',
 })
@@ -59,6 +64,7 @@ export class ContentArea {
   private readonly dialogState = inject(DialogState);
   private readonly encryptionActions = inject(NoteEncryptionActions);
   protected readonly markdownNotice = inject(MarkdownNoticeState);
+  private readonly vaultMeta = inject(VaultMetaState);
 
   private readonly contentRoot = viewChild<ElementRef<HTMLElement>>('contentRoot');
   private readonly encryptionButton = viewChild<ElementRef<HTMLButtonElement>>('encryptionButton');
@@ -102,6 +108,35 @@ export class ContentArea {
     const id = this.lockedProfileId();
     return id !== null && !this.credentialsState.profileById(id);
   });
+
+  /**
+   * The active note's relPath while it can be favorited: it exists in the
+   * vault and the vault's metadata has loaded. Null hides the star.
+   */
+  protected readonly favoritableNoteId = computed<string | null>(() => {
+    const tab = this.activeTab();
+    const tree = this.vaultState.tree();
+    if (!tab || !tree || !this.vaultMeta.loaded()) return null;
+    return flattenVaultNotes(tree).has(tab.noteId) ? tab.noteId : null;
+  });
+
+  protected readonly activeIsFavorite = computed(() => {
+    const relPath = this.favoritableNoteId();
+    return relPath !== null && this.vaultMeta.isFavorite(relPath);
+  });
+
+  protected toggleActiveFavorite(): void {
+    const relPath = this.favoritableNoteId();
+    if (relPath !== null) this.vaultMeta.toggleFavorite(relPath);
+  }
+
+  @HostListener('document:keydown', ['$event'])
+  protected onDocumentKeydown(event: KeyboardEvent): void {
+    if (!(event.ctrlKey || event.metaKey) || !event.shiftKey || event.altKey || event.key.toLowerCase() !== 'b') return;
+    if (this.favoritableNoteId() === null) return;
+    event.preventDefault();
+    if (!event.repeat) this.toggleActiveFavorite();
+  }
 
   /** The active note's extension (e.g. `.md`) when it's a plain Markdown file, or null. */
   protected readonly activeMarkdownExt = computed(() => {
@@ -157,6 +192,7 @@ export class ContentArea {
       relPath: tab.noteId,
       encrypted: false,
       profile: null,
+      tags: null,
     };
   }
 
@@ -243,6 +279,7 @@ export class ContentArea {
       const renamed = await this.vaultState.renameNote(tab.noteId, newTitle);
       this.notesState.renameNoteId(tab.noteId, renamed.relPath);
       this.tabsState.renameNoteId(tab.noteId, renamed.relPath, renamed.name);
+      this.vaultMeta.renameNote(tab.noteId, renamed.relPath);
       this.vaultState.renameNoteInTree(tab.noteId, renamed.relPath, renamed.name);
     } catch (err) {
       this.tabsState.updateTabTitle(tabId, onDiskTitle);
@@ -267,6 +304,18 @@ export class ContentArea {
       { kind: 'item', label: 'Copy Content', icon: 'copy', action: () => this.copyContent(tab.noteId) },
       { kind: 'item', label: 'Copy Title', icon: 'copy', action: () => navigator.clipboard.writeText(tab.title) },
     ];
+    if (this.favoritableNoteId() !== null) {
+      const favorite = this.activeIsFavorite();
+      items.push(
+        { kind: 'separator' },
+        {
+          kind: 'item',
+          label: favorite ? 'Remove from Favorites' : 'Add to Favorites',
+          icon: favorite ? 'unfavorite' : 'favorite',
+          action: () => this.toggleActiveFavorite(),
+        },
+      );
+    }
     this.contextMenuState.open(event, items);
   }
 

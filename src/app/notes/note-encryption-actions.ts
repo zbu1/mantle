@@ -8,6 +8,7 @@ import { CreatedNote, VaultState } from './vault-state';
 import { NoteEncryptionModalState } from './note-encryption-modal/note-encryption-modal-state';
 import { NotesState } from './notes-state';
 import { TabsState } from './tabs-state';
+import { VaultMetaState } from './vault-meta-state';
 import { VaultNoteNode, markdownExtensionOf } from './vault-tree.model';
 
 /**
@@ -29,6 +30,7 @@ export class NoteEncryptionActions {
   private readonly vaultState = inject(VaultState);
   private readonly notesState = inject(NotesState);
   private readonly tabsState = inject(TabsState);
+  private readonly vaultMeta = inject(VaultMetaState);
   private readonly dialogState = inject(DialogState);
   private readonly modalState = inject(NoteEncryptionModalState);
 
@@ -227,11 +229,13 @@ export class NoteEncryptionActions {
    *
    * A rescan would eventually reach the same place via `reconcileTabs`, but
    * doing it explicitly means an open tab never briefly points at a path that
-   * no longer exists.
+   * no longer exists, and recents/favorites follow even if that rescan sees
+   * more than this one change at once.
    */
   private retarget(oldRelPath: string, created: CreatedNote): void {
     this.notesState.renameNoteId(oldRelPath, created.relPath);
     this.notesState.reload(created.relPath);
     this.tabsState.renameNoteId(oldRelPath, created.relPath, created.name);
+    this.vaultMeta.renameNote(oldRelPath, created.relPath);
   }
 }

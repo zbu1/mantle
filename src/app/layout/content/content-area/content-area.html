@@ -32,6 +32,14 @@
     </button>
     <span class="flex-1"></span>
     <span class="shrink-0 text-xs text-muted-foreground">0 words · 0 characters</span>
+    @if (favoritableNoteId()) {
+    <button type="button" [title]="(activeIsFavorite() ? 'Remove from Favorites' : 'Add to Favorites') + ' (Ctrl+Shift+B)'"
+      [attr.aria-pressed]="activeIsFavorite()" (click)="toggleActiveFavorite()"
+      [class.text-primary]="activeIsFavorite()" [class.text-muted-foreground]="!activeIsFavorite()"
+      class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded hover:bg-surface hover:text-foreground">
+      <svg lucideStar [size]="15" [class.fill-current]="activeIsFavorite()"></svg>
+    </button>
+    }
     <button type="button" title="More" (click)="onMoreClick($event, tab)"
       class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-surface hover:text-foreground">
       <svg lucideEllipsis [size]="16"></svg>
@@ -60,13 +68,16 @@
   <div class="mx-auto max-w-4xl px-6 pb-6 h-full min-w-0 w-full">
     <input #titleInput type="text" [value]="tab.title" (input)="onTitleInput(tab, titleInput.value)"
       (keydown)="onTitleKeydown($event, tab, titleInput)" (blur)="onTitleBlur(tab)"
-      class="mb-4 w-full min-w-0 truncate border-0 bg-transparent p-0 text-2xl font-semibold tracking-tight text-foreground outline-none! focus-visible:shadow-none" />
+      class="mb-2 w-full min-w-0 truncate border-0 bg-transparent p-0 text-2xl font-semibold tracking-tight text-foreground outline-none! focus-visible:shadow-none" />
+    @if (!lockedProfileId()) {
+    <app-tag-bar [noteId]="tab.noteId" />
+    }
     @if (lockedProfileId()) {
     <!-- Replaces the editor rather than covering it: destroying app-note-editor
          is what drops the decrypted ProseMirror document from memory, and it
          resets the editor's "already applied" guard so the note re-renders
          after a lock/unlock cycle. -->
-    <div class="flex flex-col items-center justify-center gap-3 py-16 text-center">
+    <div class="mt-2 flex flex-col items-center justify-center gap-3 py-16 text-center">
       <svg lucideLock [size]="32" class="text-muted-foreground"></svg>
       <div class="text-sm font-medium text-foreground">This note is locked</div>
       @if (lockedProfileUnknown()) {

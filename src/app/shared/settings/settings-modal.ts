@@ -63,6 +63,7 @@ const SHORTCUTS: ShortcutEntry[] = [
   { action: 'New note', keys: 'Ctrl+N' },
   { action: 'Save note', keys: 'Ctrl+S' },
   { action: 'Close tab', keys: 'Ctrl+W' },
+  { action: 'Toggle favorite', keys: 'Ctrl+Shift+B' },
   { action: 'Navigate slash menu', keys: '↑ / ↓' },
   { action: 'Confirm slash menu item', keys: 'Enter' },
 ];
@@ -124,7 +125,7 @@ export class SettingsModal {
   protected readonly interfaceTextSize = signal<InterfaceTextSize>('md');
   protected readonly editorFont = signal<EditorFont>('default');
   protected readonly editorFontSize = signal(16);
-  // Mirrors sidebar-toolbar.ts's own `showExtensions` stub — that one is
+  // Mirrors vault-header.ts's own `showExtensions` stub — that one is
   // local to that component too, so this is a separate signal, not shared
   // state.
   protected readonly showFileExtensions = signal(false);
@@ -143,7 +144,7 @@ export class SettingsModal {
 
   // ---- Sidebar & Navigation ----
   // Section visibility and sidebar width below are [real] — SidebarState.
-  // Sort order mirrors sidebar-toolbar.ts's own SortMode stub: cosmetic
+  // Sort order mirrors vault-header.ts's own SortMode stub: cosmetic
   // there too, no tree ordering is wired to it yet.
   protected readonly sidebarSortMode = signal<SidebarSortMode>('name-asc');
   protected readonly autoExpandActiveFolder = signal(false);

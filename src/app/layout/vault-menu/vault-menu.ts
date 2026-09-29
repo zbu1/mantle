@@ -1,4 +1,4 @@
-import { Component, ElementRef, HostListener, computed, effect, inject, signal, viewChild } from '@angular/core';
+import { Component, ElementRef, HostListener, computed, effect, inject, input, signal, viewChild } from '@angular/core';
 import { LucideCheck, LucideChevronsUpDown, LucideFolderOpen, LucideFolderPlus, LucideFolders, LucideSettings } from '@lucide/angular';
 import { MenuItem } from '../../shared/menu/menu-item';
 import { MenuSeparator } from '../../shared/menu/menu-separator';
@@ -13,18 +13,26 @@ interface RecentVault {
 }
 
 /**
- * The workspace/vault switcher in the top bar, alongside the editor tabs: a
- * compact button showing the current vault's name that opens a menu anchored
- * to itself (not the click position) for switching vaults, opening another
- * one, or reaching settings.
+ * The workspace/vault switcher: a button showing the current vault's name
+ * that opens a menu anchored to itself (not the click position) for switching
+ * vaults, opening another one, or reaching settings.
+ *
+ * Two looks for one menu: `compact` in the top bar alongside the editor tabs,
+ * and `hero`, the vault's title at the top of the sidebar.
  */
 @Component({
   selector: 'app-vault-menu',
   imports: [MenuSurface, MenuItem, MenuSeparator, LucideFolders, LucideChevronsUpDown, LucideCheck, LucideFolderOpen, LucideFolderPlus, LucideSettings],
   templateUrl: './vault-menu.html',
-  host: { class: 'relative inline-flex min-w-0 shrink-0' },
+  host: {
+    class: 'relative inline-flex min-w-0',
+    '[class.shrink-0]': "variant() === 'compact'",
+    '[class.flex-1]': "variant() === 'hero'",
+  },
 })
 export class VaultMenu {
+  readonly variant = input<'compact' | 'hero'>('compact');
+
   private readonly vaultState = inject(VaultState);
   private readonly settingsModalState = inject(SettingsModalState);
 

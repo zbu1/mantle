@@ -1,4 +1,4 @@
-import { VaultFolderNode, findFolder, markdownExtensionOf } from './vault-tree.model';
+import { VaultFolderNode, filterVaultTree, findFolder, flattenVaultNotes, markdownExtensionOf } from './vault-tree.model';
 import { relPathAfter } from './note-encryption-modal/note-encryption-modal.model';
 
 const tree: VaultFolderNode = {
@@ -50,5 +50,42 @@ describe('markdownExtensionOf', () => {
     expect(relPathAfter('Docs/readme.md', 'encrypt')).toBe('Docs/readme.mntl.enc');
     expect(relPathAfter('guide.markdown', 'encrypt')).toBe('guide.mntl.enc');
     expect(relPathAfter('todo.mntl', 'encrypt')).toBe('todo.mntl.enc');
+  });
+});
+
+describe('filterVaultTree', () => {
+  const note = (relPath: string) => ({
+    type: 'note' as const,
+    name: relPath.split('/').pop()!.replace(/\.mntl$/, ''),
+    relPath,
+    encrypted: false,
+    profile: null,
+    tags: [],
+  });
+  const vault: VaultFolderNode = {
+    type: 'folder',
+    name: 'vault',
+    relPath: '',
+    children: [
+      {
+        type: 'folder',
+        name: 'Plans',
+        relPath: 'Plans',
+        children: [note('Plans/Roadmap.mntl'), { type: 'folder', name: 'Old', relPath: 'Plans/Old', children: [note('Plans/Old/Q1 roadmap.mntl')] }],
+      },
+      { type: 'folder', name: 'Roadmaps', relPath: 'Roadmaps', children: [note('Roadmaps/ideas.mntl')] },
+      note('todo.mntl'),
+    ],
+  };
+
+  it('keeps matching notes (ignoring case) and the folders on the way to them', () => {
+    const filtered = filterVaultTree(vault, ' ROADMAP ');
+    expect([...flattenVaultNotes(filtered).keys()]).toEqual(['Plans/Roadmap.mntl', 'Plans/Old/Q1 roadmap.mntl']);
+    // A folder whose own name matches isn't a hit.
+    expect(findFolder(filtered, 'Roadmaps')).toBeNull();
+  });
+
+  it('returns the tree untouched for a blank query', () => {
+    expect(filterVaultTree(vault, '  ')).toBe(vault);
   });
 });

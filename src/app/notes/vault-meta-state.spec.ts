@@ -161,6 +161,89 @@ describe('VaultMetaState', () => {
     });
   });
 
+  describe('favorites', () => {
+    beforeEach(async () => {
+      mock.respondWith('load_vault_meta', meta({ favorites: ['a.mntl', 'b.mntl', 'c.mntl'] }));
+      await state.load('/vault');
+    });
+
+    it('exposes stored favorites in order', () => {
+      expect(state.favorites()).toEqual(['a.mntl', 'b.mntl', 'c.mntl']);
+      expect(state.isFavorite('b.mntl')).toBe(true);
+      expect(state.isFavorite('z.mntl')).toBe(false);
+    });
+
+    it('toggles a note on (appended at the end) and off', () => {
+      state.toggleFavorite('d.mntl');
+      expect(state.favorites()).toEqual(['a.mntl', 'b.mntl', 'c.mntl', 'd.mntl']);
+
+      state.toggleFavorite('b.mntl');
+      expect(state.favorites()).toEqual(['a.mntl', 'c.mntl', 'd.mntl']);
+    });
+
+    it('adds only notes that are not favorites yet, and removes several at once', () => {
+      state.addFavorites(['b.mntl', 'd.mntl', 'e.mntl', 'd.mntl']);
+      expect(state.favorites()).toEqual(['a.mntl', 'b.mntl', 'c.mntl', 'd.mntl', 'e.mntl']);
+
+      state.removeFavorites(['a.mntl', 'e.mntl', 'nope.mntl']);
+      expect(state.favorites()).toEqual(['b.mntl', 'c.mntl', 'd.mntl']);
+    });
+
+    it('reorders a favorite before another, or to the end', () => {
+      state.placeFavorites(['c.mntl'], 'a.mntl');
+      expect(state.favorites()).toEqual(['c.mntl', 'a.mntl', 'b.mntl']);
+
+      state.placeFavorites(['c.mntl'], null);
+      expect(state.favorites()).toEqual(['a.mntl', 'b.mntl', 'c.mntl']);
+    });
+
+    it('treats dropping a favorite right before itself as a no-op', () => {
+      state.placeFavorites(['b.mntl'], 'b.mntl');
+      jest.advanceTimersByTime(600);
+
+      expect(state.favorites()).toEqual(['a.mntl', 'b.mntl', 'c.mntl']);
+      expect(saves()).toHaveLength(0);
+    });
+
+    it('inserts new notes at the drop position, keeping their order', () => {
+      state.placeFavorites(['x.mntl', 'c.mntl', 'y.mntl'], 'b.mntl');
+      expect(state.favorites()).toEqual(['a.mntl', 'x.mntl', 'c.mntl', 'y.mntl', 'b.mntl']);
+    });
+
+    it('follows a renamed note in place and without duplicating an existing entry', () => {
+      state.renameNote('b.mntl', 'Work/b.mntl.enc');
+      expect(state.favorites()).toEqual(['a.mntl', 'Work/b.mntl.enc', 'c.mntl']);
+
+      // The renamed entry keeps its own (first) position; the old 'c.mntl' entry goes.
+      state.renameNote('a.mntl', 'c.mntl');
+      expect(state.favorites()).toEqual(['c.mntl', 'Work/b.mntl.enc']);
+    });
+
+    it('forgets a deleted note from both favorites and recents', () => {
+      state.recordOpened('b.mntl', 1);
+
+      state.forgetNote('b.mntl');
+
+      expect(state.favorites()).toEqual(['a.mntl', 'c.mntl']);
+      expect(state.recentNotes()).toEqual([]);
+    });
+
+    it('drops malformed and duplicate entries when loading', async () => {
+      mock.respondWith('load_vault_meta', { version: 1, favorites: ['a.mntl', 3, 'a.mntl', null, 'b.mntl'] });
+
+      await state.load('/other');
+
+      expect(state.favorites()).toEqual(['a.mntl', 'b.mntl']);
+    });
+
+    it('saves favorite changes', () => {
+      state.toggleFavorite('a.mntl');
+      jest.advanceTimersByTime(600);
+
+      expect(saves()[0].state.favorites).toEqual(['b.mntl', 'c.mntl']);
+    });
+  });
+
   describe('saving', () => {
     beforeEach(async () => {
       mock.respondWith(

@@ -29,17 +29,30 @@ describe('SidebarSection', () => {
 
     const state = TestBed.inject(SidebarState);
     expect(state.isSectionExpanded('tags')).toBe(true);
-    expect(fixture.nativeElement.querySelector('.px-0\\.5')).toBeTruthy();
-
     const button: HTMLButtonElement = fixture.nativeElement.querySelector('button');
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+
     button.click();
     fixture.detectChanges();
 
     expect(state.isSectionExpanded('tags')).toBe(false);
-    expect(fixture.nativeElement.querySelector('.px-0\\.5')).toBeNull();
+    expect(button.getAttribute('aria-expanded')).toBe('false');
   });
 
-  it('right-clicking the header opens a checklist of sections, with the Vault locked on', () => {
+  it('shows a count after the label, but not a zero', () => {
+    const fixture = TestBed.createComponent(SidebarSection);
+    fixture.componentRef.setInput('id', 'tags');
+    fixture.componentRef.setInput('label', 'Tags');
+    fixture.componentRef.setInput('count', 5);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('button').textContent.replace(/\s+/g, '')).toBe('Tags5');
+
+    fixture.componentRef.setInput('count', 0);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('button').textContent.trim()).toBe('Tags');
+  });
+
+  it('right-clicking the header opens a checklist of the sections', () => {
     const fixture = TestBed.createComponent(SidebarSection);
     fixture.componentRef.setInput('id', 'tags');
     fixture.componentRef.setInput('label', 'Tags');
@@ -55,12 +68,11 @@ describe('SidebarSection', () => {
     expect(items.map((i) => [i.label, i.checked, !!i.disabled])).toEqual([
       ['Favorites', true, false],
       ['Recent Files', false, false],
-      ['Vault', true, true],
       ['Tags', true, false],
       ['Credential Profiles', true, false],
     ]);
 
-    items[3].action();
+    items[2].action();
     expect(state.isSectionVisible('tags')).toBe(false);
   });
 });

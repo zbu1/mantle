@@ -95,6 +95,10 @@ pub enum VaultNode {
         /// header. `None` for plaintext notes and for encrypted notes whose
         /// header could not be parsed.
         profile: Option<String>,
+        /// The note's tags, or `None` if they can't be read right now: an
+        /// encrypted note whose profile is locked (its tags are sealed inside
+        /// the ciphertext), or a file that can't be read or parsed.
+        tags: Option<Vec<String>>,
     },
 }
 
@@ -156,7 +160,71 @@ fn read_profile_id(path: &Path) -> Option<String> {
         .map(|h| h.credential_profile)
 }
 
-fn scan_dir(abs_dir: &Path, rel_dir: &Path) -> std::io::Result<Vec<VaultNode>> {
+/// Largest frontmatter block a scan reads to find a plaintext note's tags.
+/// Real ones are a few lines; this bounds the read for a file that opens with
+/// `---` but never closes it.
+const MAX_SCANNED_FRONTMATTER_LEN: usize = 64 * 1024;
+
+/// Read just the leading `---` frontmatter block of a text file, delimiters
+/// included, without reading the (potentially large) body. `None` if the file
+/// has no complete frontmatter block within [`MAX_SCANNED_FRONTMATTER_LEN`].
+fn read_frontmatter_prefix(path: &Path) -> Option<String> {
+    use std::io::BufRead;
+
+    let mut reader = std::io::BufReader::new(File::open(path).ok()?);
+    let mut prefix = String::new();
+    let mut first = true;
+    loop {
+        let read = reader.read_line(&mut prefix).ok()?;
+        if read == 0 || prefix.len() > MAX_SCANNED_FRONTMATTER_LEN {
+            return None;
+        }
+        let line = prefix[prefix.len() - read..].trim_end_matches(['\r', '\n']);
+        if line == "---" && !first {
+            return Some(prefix);
+        }
+        if line != "---" && first {
+            return None;
+        }
+        first = false;
+    }
+}
+
+/// The tags of the note at `path`, for a vault scan: read from the
+/// frontmatter of a plaintext note, or by decrypting an encrypted one whose
+/// profile is unlocked. `None` when they can't be known right now; like
+/// [`read_profile_id`], a scan never fails over one unreadable note.
+fn read_note_tags(
+    path: &Path,
+    file_name: &str,
+    profile: Option<&str>,
+    vault_root: &str,
+    keys: &SessionKeys,
+) -> Option<Vec<String>> {
+    if file_name.ends_with(EXT_ENCRYPTED) {
+        let mk = keys.get(vault_root, profile?).ok()??;
+        let blob = fs::read(path).ok()?;
+        let document = mntl_core::decrypt_note(&mk, &blob).ok()?;
+        let document = std::str::from_utf8(&document).ok()?;
+        return mntl_core::extract_unencrypted_header(document).ok().map(|h| h.tags);
+    }
+
+    let Some(prefix) = read_frontmatter_prefix(path) else {
+        // A Markdown file needs no frontmatter; it just has no tags.
+        return is_markdown_note(file_name).then(Vec::new);
+    };
+    if is_markdown_note(file_name) {
+        return Some(mntl_core::markdown_tags(&prefix));
+    }
+    mntl_core::extract_unencrypted_header(&prefix).ok().map(|h| h.tags)
+}
+
+fn scan_dir(
+    abs_dir: &Path,
+    rel_dir: &Path,
+    vault_root: &str,
+    keys: &SessionKeys,
+) -> std::io::Result<Vec<VaultNode>> {
     let mut folders = Vec::new();
     let mut notes = Vec::new();
 
@@ -170,7 +238,7 @@ fn scan_dir(abs_dir: &Path, rel_dir: &Path) -> std::io::Result<Vec<VaultNode>> {
         let child_rel = rel_dir.join(&name);
 
         if file_type.is_dir() {
-            let children = scan_dir(&entry.path(), &child_rel)?;
+            let children = scan_dir(&entry.path(), &child_rel, vault_root, keys)?;
             folders.push(VaultNode::Folder {
                 name,
                 rel_path: to_slash(&child_rel),
@@ -183,11 +251,13 @@ fn scan_dir(abs_dir: &Path, rel_dir: &Path) -> std::io::Result<Vec<VaultNode>> {
                 } else {
                     None
                 };
+                let tags = read_note_tags(&entry.path(), &name, profile.as_deref(), vault_root, keys);
                 notes.push(VaultNode::Note {
                     name: title,
                     rel_path: to_slash(&child_rel),
                     encrypted,
                     profile,
+                    tags,
                 });
             }
         }
@@ -274,24 +344,30 @@ pub fn create_vault(path: String) -> Result<String, String> {
     })
 }
 
+/// Lists the vault's folders and notes, with each note's tags.
+///
+/// Reading tags means decrypting every note of every unlocked profile, so the
+/// frontend rescans when a profile is unlocked or locked, to add or drop them.
 #[tauri::command]
-pub fn scan_vault(vault_root: String) -> Result<VaultNode, String> {
-    logged("scan_vault", || {
-        let root = PathBuf::from(&vault_root);
-        if !root.is_dir() {
-            return Err(format!(
-                "Vault root does not exist or is not a directory: {vault_root}"
-            ));
-        }
-        let children = scan_dir(&root, Path::new("")).map_err(|e| e.to_string())?;
-        Ok(VaultNode::Folder {
-            name: root
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default(),
-            rel_path: String::new(),
-            children,
-        })
+pub fn scan_vault(vault_root: String, keys: State<SessionKeys>) -> Result<VaultNode, String> {
+    logged("scan_vault", || scan_vault_inner(&vault_root, &keys))
+}
+
+pub(crate) fn scan_vault_inner(vault_root: &str, keys: &SessionKeys) -> Result<VaultNode, String> {
+    let root = PathBuf::from(vault_root);
+    if !root.is_dir() {
+        return Err(format!(
+            "Vault root does not exist or is not a directory: {vault_root}"
+        ));
+    }
+    let children = scan_dir(&root, Path::new(""), vault_root, keys).map_err(|e| e.to_string())?;
+    Ok(VaultNode::Folder {
+        name: root
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        rel_path: String::new(),
+        children,
     })
 }
 
@@ -312,12 +388,19 @@ pub(crate) fn master_key_for(
     }
 }
 
+/// A note as the editor sees it: its Markdown body and its tags.
+#[derive(Serialize, Debug, PartialEq, Eq)]
+pub struct NoteDocument {
+    pub content: String,
+    pub tags: Vec<String>,
+}
+
 #[tauri::command]
 pub fn read_note(
     vault_root: String,
     rel_path: String,
     keys: State<SessionKeys>,
-) -> Result<String, String> {
+) -> Result<NoteDocument, String> {
     logged("read_note", || read_note_inner(&vault_root, &rel_path, &keys))
 }
 
@@ -325,7 +408,7 @@ pub(crate) fn read_note_inner(
     vault_root: &str,
     rel_path: &str,
     keys: &SessionKeys,
-) -> Result<String, String> {
+) -> Result<NoteDocument, String> {
     let path = resolve_rel_path(vault_root, rel_path)?;
 
     if rel_path.ends_with(EXT_ENCRYPTED) {
@@ -334,16 +417,21 @@ pub(crate) fn read_note_inner(
         let document = mntl_core::decrypt_note(&mk, &bytes).map_err(|e| e.to_string())?;
         let document =
             std::str::from_utf8(&document).map_err(|_| "Decrypted note is not UTF-8".to_string())?;
-        return mntl_core::decode_unencrypted_note(document).map_err(|e| e.to_string());
+        let (frontmatter, content) = mntl_core::decode_note(document).map_err(|e| e.to_string())?;
+        return Ok(NoteDocument { content, tags: frontmatter.tags });
     }
 
     let raw = fs::read_to_string(&path).map_err(|e| format!("Failed to read note: {e}"))?;
     if is_markdown_note(rel_path) {
         // The frontmatter is another tool's; `write_note_inner` puts it back.
         let (_, body) = mntl_core::split_markdown_frontmatter(&raw);
-        return Ok(body.to_string());
+        return Ok(NoteDocument {
+            content: body.to_string(),
+            tags: mntl_core::markdown_tags(&raw),
+        });
     }
-    mntl_core::decode_unencrypted_note(&raw).map_err(|e| e.to_string())
+    let (frontmatter, content) = mntl_core::decode_note(&raw).map_err(|e| e.to_string())?;
+    Ok(NoteDocument { content, tags: frontmatter.tags })
 }
 
 #[tauri::command]
@@ -351,32 +439,43 @@ pub fn write_note(
     vault_root: String,
     rel_path: String,
     content: String,
+    tags: Vec<String>,
     keys: State<SessionKeys>,
 ) -> Result<(), String> {
     logged("write_note", || {
-        write_note_inner(&vault_root, &rel_path, &content, &keys)
+        write_note_inner(&vault_root, &rel_path, &content, &tags, &keys)
     })
 }
 
+/// Save a note's body and tags. `tags` replaces the note's tags wholesale,
+/// the same way `content` replaces its body.
 pub(crate) fn write_note_inner(
     vault_root: &str,
     rel_path: &str,
     content: &str,
+    tags: &[String],
     keys: &SessionKeys,
 ) -> Result<(), String> {
     let path = resolve_rel_path(vault_root, rel_path)?;
+    let tags = clean_tags(tags);
 
     if is_markdown_note(rel_path) {
         // Keep whatever frontmatter is on disk *now*, byte for byte, rather
         // than a copy from when the note was read: another tool may have
-        // changed it since, and the editor never shows it.
+        // changed it since, and the editor never shows it. Only the tags are
+        // Mantle's to change, and only when they actually differ, so saving
+        // an untouched file never reformats its `tags:` lines.
         let existing = fs::read_to_string(&path).unwrap_or_default();
         let (frontmatter, _) = mntl_core::split_markdown_frontmatter(&existing);
-        return fs::write(&path, format!("{frontmatter}{content}"))
-            .map_err(|e| format!("Failed to write note: {e}"));
+        let mut updated = format!("{frontmatter}{content}");
+        if mntl_core::markdown_tags(&existing) != tags {
+            updated = mntl_core::set_markdown_tags(&updated, &tags);
+        }
+        return fs::write(&path, updated).map_err(|e| format!("Failed to write note: {e}"));
     }
 
-    let encoded = mntl_core::encode_unencrypted_note(content).map_err(|e| e.to_string())?;
+    let frontmatter = mntl_core::NoteFrontmatter { tags, ..Default::default() };
+    let encoded = mntl_core::encode_note(&frontmatter, content).map_err(|e| e.to_string())?;
 
     if rel_path.ends_with(EXT_ENCRYPTED) {
         // Re-seal under the profile the file already names. A write never
@@ -396,6 +495,18 @@ pub(crate) fn write_note_inner(
     }
 
     fs::write(&path, encoded).map_err(|e| format!("Failed to write note: {e}"))
+}
+
+/// Tags as the frontend sent them, minus blanks and case-insensitive
+/// duplicates. Deliberately not held to [`mntl_core::normalize_tag`]: a tag
+/// another tool wrote into a Markdown file has to survive a save unchanged.
+pub(crate) fn clean_tags(tags: &[String]) -> Vec<String> {
+    mntl_core::dedupe_tags(
+        tags.iter()
+            .map(|tag| tag.trim())
+            .filter(|tag| !tag.is_empty())
+            .map(str::to_string),
+    )
 }
 
 /// Write `bytes` to `path` via a temp file and a rename, so an interrupted
@@ -799,7 +910,7 @@ mod tests {
         let path = parent.join("My Vault").to_string_lossy().into_owned();
         assert_eq!(create_vault(path.clone()).unwrap(), path);
         assert!(parent.join("My Vault").join(".mantle").join("state.json").is_file());
-        assert!(matches!(scan_vault(path).unwrap(), VaultNode::Folder { children, .. } if children.is_empty()));
+        assert!(matches!(scan_vault_inner(&path, &SessionKeys::default()).unwrap(), VaultNode::Folder { children, .. } if children.is_empty()));
     }
 
     #[test]
@@ -954,19 +1065,77 @@ tags: [x]
 # Old
 ").unwrap();
 
-        assert_eq!(read_note_inner(&root_str, "readme.md", &keys).unwrap(), "# Old
-");
+        assert_eq!(
+            read_note_inner(&root_str, "readme.md", &keys).unwrap(),
+            NoteDocument { content: "# Old\n".into(), tags: vec!["x".into()] }
+        );
 
-        write_note_inner(&root_str, "readme.md", "# New
-", &keys).unwrap();
+        // Unchanged tags leave the frontmatter byte for byte.
+        write_note_inner(&root_str, "readme.md", "# New\n", &["x".into()], &keys).unwrap();
         assert_eq!(
             fs::read_to_string(root.join("readme.md")).unwrap(),
-            "---
-tags: [x]
----
-# New
-"
+            "---\ntags: [x]\n---\n# New\n"
         );
+
+        // Changed tags rewrite only the `tags:` key, in its own style.
+        write_note_inner(&root_str, "readme.md", "# New\n", &["x".into(), "y".into()], &keys).unwrap();
+        assert_eq!(
+            fs::read_to_string(root.join("readme.md")).unwrap(),
+            "---\ntags: [x, y]\n---\n# New\n"
+        );
+    }
+
+    #[test]
+    fn mntl_notes_keep_their_tags_in_the_frontmatter() {
+        let root = temp_dir("mntl-tags");
+        let root_str = root.to_string_lossy().into_owned();
+        let keys = SessionKeys::default();
+        fs::write(root.join("plan.mntl"), "---\nv: 2\n---\nBody").unwrap();
+
+        write_note_inner(&root_str, "plan.mntl", "Body", &["Idea".into(), "idea".into(), " ".into()], &keys)
+            .unwrap();
+        assert_eq!(
+            fs::read_to_string(root.join("plan.mntl")).unwrap(),
+            "---\nv: 2\ntags:\n- Idea\n---\nBody"
+        );
+        assert_eq!(read_note_inner(&root_str, "plan.mntl", &keys).unwrap().tags, vec!["Idea"]);
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn scan_vault_reports_tags_and_hides_those_of_locked_notes() {
+        let root = temp_dir("scan-tags");
+        let root_str = root.to_string_lossy().into_owned();
+        fs::write(root.join("plan.mntl"), "---\nv: 2\ntags:\n- work\n---\nBody").unwrap();
+        fs::write(root.join("readme.md"), "---\ntags: [docs]\n---\nBody").unwrap();
+        fs::write(root.join("bare.md"), "Body").unwrap();
+        let frontmatter = mntl_core::NoteFrontmatter { tags: vec!["private".into()], ..Default::default() };
+        let document = mntl_core::encode_note(&frontmatter, "Body").unwrap();
+        let mk = mntl_core::generate_master_key().unwrap();
+        let blob = mntl_core::encrypt_note(&mk, "diary", document.as_bytes()).unwrap();
+        fs::write(root.join("secret.mntl.enc"), blob).unwrap();
+
+        let tags_of = |keys: &SessionKeys, name: &str| {
+            let VaultNode::Folder { children, .. } = scan_vault_inner(&root_str, keys).unwrap() else {
+                panic!("root should be a folder");
+            };
+            match find_note(&children, name) {
+                VaultNode::Note { tags, .. } => tags.clone(),
+                other => panic!("expected a note, got {other:?}"),
+            }
+        };
+
+        let keys = SessionKeys::default();
+        assert_eq!(tags_of(&keys, "plan"), Some(vec!["work".into()]));
+        assert_eq!(tags_of(&keys, "readme"), Some(vec!["docs".into()]));
+        assert_eq!(tags_of(&keys, "bare"), Some(vec![]));
+        assert_eq!(tags_of(&keys, "secret"), None);
+
+        keys.unlock_for_test(&root_str, "diary", mk).unwrap();
+        assert_eq!(tags_of(&keys, "secret"), Some(vec!["private".into()]));
+
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -977,10 +1146,8 @@ tags: [x]
         fs::write(root.join("todo.markdown"), "- [ ] one
 ").unwrap();
 
-        assert_eq!(read_note_inner(&root_str, "todo.markdown", &keys).unwrap(), "- [ ] one
-");
-        write_note_inner(&root_str, "todo.markdown", "- [x] one
-", &keys).unwrap();
+        assert_eq!(read_note_inner(&root_str, "todo.markdown", &keys).unwrap().content, "- [ ] one\n");
+        write_note_inner(&root_str, "todo.markdown", "- [x] one\n", &[], &keys).unwrap();
         assert_eq!(fs::read_to_string(root.join("todo.markdown")).unwrap(), "- [x] one
 ");
     }
@@ -1132,7 +1299,7 @@ tags: [x]
         write_encrypted(&root.join("secret.mntl.enc"), "my-diary", "# Private");
         fs::write(root.join("todo.mntl"), "---\nv: 2\n---\n# Public").unwrap();
 
-        let tree = scan_vault(root.to_string_lossy().into_owned()).unwrap();
+        let tree = scan_vault_inner(&root.to_string_lossy(), &SessionKeys::default()).unwrap();
         let VaultNode::Folder { children, .. } = &tree else {
             panic!("root should be a folder");
         };
@@ -1168,7 +1335,7 @@ tags: [x]
         fs::write(root.join("truncated.mntl.enc"), b"MEN").unwrap();
         fs::write(root.join("todo.mntl"), "---\nv: 2\n---\n# Public").unwrap();
 
-        let tree = scan_vault(root.to_string_lossy().into_owned()).unwrap();
+        let tree = scan_vault_inner(&root.to_string_lossy(), &SessionKeys::default()).unwrap();
         let VaultNode::Folder { children, .. } = &tree else {
             panic!("root should be a folder");
         };

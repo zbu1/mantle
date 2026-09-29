@@ -21,6 +21,11 @@ import { HoverTooltip } from '../../../shared/hover-tooltip/hover-tooltip';
 export class ExplorerRow {
   readonly label = input.required<string>();
   readonly depth = input(0);
+  /** Left padding at depth 0, and per level of depth. */
+  readonly baseIndent = input(24);
+  readonly indentStep = input(16);
+  /** A heavier label, for rows that carry structure (vault folders) rather than items. */
+  readonly strong = input(false);
   readonly expanded = input(false);
   readonly draggable = input(false);
 

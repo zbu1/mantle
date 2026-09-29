@@ -4,7 +4,7 @@ import { listen } from '@tauri-apps/api/event';
 import { join } from '@tauri-apps/api/path';
 import { open, save } from '@tauri-apps/plugin-dialog';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
-import { flattenVaultNotes, withRenamedNote, VaultFolderNode } from './vault-tree.model';
+import { flattenVaultNotes, withNoteTags, withRenamedNote, VaultFolderNode } from './vault-tree.model';
 import { TabsState } from './tabs-state';
 import { VaultMetaState } from './vault-meta-state';
 import { VaultRootState } from './vault-root-state';
@@ -227,10 +227,12 @@ export class VaultState {
       const [oldPath] = removed;
       const [newPath] = added;
       this.tabsState.renameNoteId(oldPath, newPath, after.get(newPath)!);
-      this.vaultMeta.renameRecent(oldPath, newPath);
+      this.vaultMeta.renameNote(oldPath, newPath);
       return;
     }
 
+    // Favorites are deliberately kept here: a note that vanished outside the
+    // app may just be mid-sync, and its favorite should come back with it.
     for (const relPath of removed) {
       this.tabsState.markMissing(relPath);
       this.vaultMeta.removeRecent(relPath);
@@ -307,6 +309,17 @@ export class VaultState {
     const tree = this.tree();
     if (!tree) return;
     this.tree.set(withRenamedNote(tree, relPath, newRelPath, newName));
+  }
+
+  /**
+   * Optimistically updates a note's tags in the in-memory tree, so the
+   * sidebar's Tags section follows an edit at once. Saving an encrypted note
+   * doesn't wake the filesystem watcher, so no rescan would pick it up.
+   */
+  setNoteTagsInTree(relPath: string, tags: string[]): void {
+    const tree = this.tree();
+    if (!tree) return;
+    this.tree.set(withNoteTags(tree, relPath, tags));
   }
 
   async renameNote(relPath: string, newName: string): Promise<CreatedNote> {

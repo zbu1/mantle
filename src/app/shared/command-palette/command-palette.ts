@@ -35,6 +35,7 @@ import { TabsState } from '../../notes/tabs-state';
 import { VaultMetaState } from '../../notes/vault-meta-state';
 import { VaultRenameState } from '../../notes/vault-rename-state';
 import { VaultState } from '../../notes/vault-state';
+import { flattenVaultNotes } from '../../notes/vault-tree.model';
 import { isTauri } from '../../core/tauri-env';
 import { SectionId, SidebarState } from '../../layout/sidebar/sidebar-state';
 import { CommandPaletteState } from './command-palette-state';
@@ -49,7 +50,6 @@ interface SectionDef {
 const SIDEBAR_SECTIONS: SectionDef[] = [
   { id: 'favorites', label: 'Favorites', icon: 'star' },
   { id: 'recent', label: 'Recent Files', icon: 'clock' },
-  { id: 'workspace', label: 'Vault', icon: 'folders' },
   { id: 'tags', label: 'Tags', icon: 'tags' },
   { id: 'credentials', label: 'Credential Profiles', icon: 'shield-check' },
 ];
@@ -182,6 +182,17 @@ export class CommandPalette {
         keywords: ['close', 'tab'],
         run: () => this.tabsState.closeTab(activeTab.id),
       });
+      const tree = this.vaultState.tree();
+      if (this.vaultMeta.loaded() && tree && flattenVaultNotes(tree).has(activeTab.noteId)) {
+        const favorite = this.vaultMeta.isFavorite(activeTab.noteId);
+        items.push({
+          id: 'toggle-favorite',
+          label: favorite ? 'Remove Note from Favorites' : 'Add Note to Favorites',
+          icon: 'star',
+          keywords: ['favorite', 'favourite', 'star', 'bookmark', 'pin'],
+          run: () => this.vaultMeta.toggleFavorite(activeTab.noteId),
+        });
+      }
     }
 
     if (hasTabs) {

@@ -1,95 +1,87 @@
-<div #rail class="flex items-center gap-0.5">
+<div class="flex h-8 items-center">
+  <app-vault-menu variant="hero" />
+</div>
+
+<div class="mt-1.5 flex items-center gap-1">
+  <label
+    class="flex h-7 min-w-0 flex-1 cursor-text items-center gap-1.5 rounded-md border border-border bg-background/60 px-2 text-xs transition-colors focus-within:border-ring/60 focus-within:bg-background"
+    [class.opacity-50]="!hasVault()">
+    <svg lucideSearch [size]="12" class="shrink-0 text-muted-foreground"></svg>
+    <input #field type="text" placeholder="Filter notes" autocomplete="off" spellcheck="false" aria-label="Filter notes"
+      [disabled]="!hasVault()" [value]="filter()" (input)="onFilterInput(field.value)"
+      (keydown.escape)="onFilterEscape($event, field)"
+      class="min-w-0 flex-1 border-0 bg-transparent p-0 text-foreground outline-none! placeholder:text-muted-foreground/70 focus-visible:shadow-none" />
+    @if (filter()) {
+    <button type="button" aria-label="Clear filter" (click)="clearFilter(field)"
+      class="-mr-1 inline-flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-surface hover:text-foreground">
+      <svg lucideX [size]="11"></svg>
+    </button>
+    }
+  </label>
+
+  <button type="button" title="New Note" aria-label="New Note" [disabled]="!hasVault()" (click)="onNewNote()"
+    class="inline-flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary transition-colors hover:bg-primary hover:text-primary-foreground disabled:pointer-events-none disabled:opacity-40">
+    <svg lucidePlus [size]="15"></svg>
+  </button>
+
   <div class="relative">
-    <button type="button" title="New…" [disabled]="!hasVault()" (click)="toggleMenu('new')"
-      [attr.aria-expanded]="activeMenu() === 'new'"
-      class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-surface hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
-      [class.bg-surface]="activeMenu() === 'new'" [class.text-foreground]="activeMenu() === 'new'">
-      <svg lucidePlus [size]="18"></svg>
+    <button #trigger type="button" title="More" aria-label="More" (click)="toggleMenu()" [attr.aria-expanded]="menuOpen()"
+      class="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-background/60 hover:text-foreground"
+      [class.bg-background/60]="menuOpen()" [class.text-foreground]="menuOpen()">
+      <svg lucideEllipsis [size]="16"></svg>
     </button>
 
-    @if (activeMenu() === 'new') {
-    <app-menu-surface #panel class="absolute left-0 top-full z-50 mt-1 w-60">
-      <app-menu-item label="New Note" [active]="hoveredItem() === 'newNote'"
-        (hovered)="hoveredItem.set('newNote')" (selected)="onNewNote()">
-        <svg menuItemIcon lucideFilePlus [size]="14"></svg>
-      </app-menu-item>
-
-      <app-menu-item label="New Encrypted Note" [active]="hoveredItem() === 'newEncrypted'"
+    @if (menuOpen()) {
+    <app-menu-surface #panel [scrollable]="true" class="absolute right-0 top-full z-50 mt-1 w-60 max-h-[70vh]!">
+      <app-menu-item label="New Encrypted Note" [disabled]="!hasVault()" [active]="hoveredItem() === 'newEncrypted'"
         (hovered)="hoveredItem.set('newEncrypted')" (selected)="onNewEncryptedNote()">
         <svg menuItemIcon lucideLockKeyhole [size]="14"></svg>
       </app-menu-item>
-
-      <app-menu-separator />
-      <app-menu-item label="New Folder" [active]="hoveredItem() === 'newFolder'"
+      <app-menu-item label="New Folder" [disabled]="!hasVault()" [active]="hoveredItem() === 'newFolder'"
         (hovered)="hoveredItem.set('newFolder')" (selected)="onNewFolder()">
         <svg menuItemIcon lucideFolderPlus [size]="14"></svg>
       </app-menu-item>
-    </app-menu-surface>
-    }
-  </div>
 
-  <div class="relative">
-    <button type="button" title="Sort" [disabled]="!hasVault()" (click)="toggleMenu('sort')"
-      [attr.aria-expanded]="activeMenu() === 'sort'"
-      class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-surface hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
-      [class.bg-surface]="activeMenu() === 'sort'" [class.text-foreground]="activeMenu() === 'sort'">
-      <svg lucideArrowDownAZ [size]="17"></svg>
-    </button>
-
-    @if (activeMenu() === 'sort') {
-    <app-menu-surface #panel class="absolute left-0 top-full z-50 mt-1 w-52">
-      <app-menu-item label="Name (A → Z)" [active]="hoveredItem() === 'name-asc'"
+      <app-menu-separator />
+      <div class="px-3 pb-0.5 pt-1 text-[11px] font-medium text-muted-foreground">Sort by</div>
+      <app-menu-item label="Name (A → Z)" [disabled]="!hasVault()" [active]="hoveredItem() === 'name-asc'"
         (hovered)="hoveredItem.set('name-asc')" (selected)="setSortMode('name-asc')">
         <svg menuItemIcon lucideArrowDownAZ [size]="14"></svg>
         @if (sortMode() === 'name-asc') {
         <svg menuItemTrailing lucideCheck [size]="14"></svg>
         }
       </app-menu-item>
-      <app-menu-item label="Name (Z → A)" [active]="hoveredItem() === 'name-desc'"
+      <app-menu-item label="Name (Z → A)" [disabled]="!hasVault()" [active]="hoveredItem() === 'name-desc'"
         (hovered)="hoveredItem.set('name-desc')" (selected)="setSortMode('name-desc')">
         <svg menuItemIcon lucideArrowUpAZ [size]="14"></svg>
         @if (sortMode() === 'name-desc') {
         <svg menuItemTrailing lucideCheck [size]="14"></svg>
         }
       </app-menu-item>
-
-      <app-menu-separator />
-      <app-menu-item label="Date Modified" [active]="hoveredItem() === 'modified'"
+      <app-menu-item label="Date Modified" [disabled]="!hasVault()" [active]="hoveredItem() === 'modified'"
         (hovered)="hoveredItem.set('modified')" (selected)="setSortMode('modified')">
         <svg menuItemIcon lucideClock [size]="14"></svg>
         @if (sortMode() === 'modified') {
         <svg menuItemTrailing lucideCheck [size]="14"></svg>
         }
       </app-menu-item>
-      <app-menu-item label="Date Created" [active]="hoveredItem() === 'created'"
+      <app-menu-item label="Date Created" [disabled]="!hasVault()" [active]="hoveredItem() === 'created'"
         (hovered)="hoveredItem.set('created')" (selected)="setSortMode('created')">
         <svg menuItemIcon lucideCalendarPlus [size]="14"></svg>
         @if (sortMode() === 'created') {
         <svg menuItemTrailing lucideCheck [size]="14"></svg>
         }
       </app-menu-item>
-
-      <app-menu-separator />
-      <app-menu-item label="Manual Order" [active]="hoveredItem() === 'manual'"
+      <app-menu-item label="Manual Order" [disabled]="!hasVault()" [active]="hoveredItem() === 'manual'"
         (hovered)="hoveredItem.set('manual')" (selected)="setSortMode('manual')">
         <svg menuItemIcon lucideListOrdered [size]="14"></svg>
         @if (sortMode() === 'manual') {
         <svg menuItemTrailing lucideCheck [size]="14"></svg>
         }
       </app-menu-item>
-    </app-menu-surface>
-    }
-  </div>
 
-  <div class="relative">
-    <button type="button" title="View" (click)="toggleMenu('view')" [attr.aria-expanded]="activeMenu() === 'view'"
-      class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-surface hover:text-foreground"
-      [class.bg-surface]="activeMenu() === 'view'" [class.text-foreground]="activeMenu() === 'view'">
-      <svg lucideSlidersHorizontal [size]="17"></svg>
-    </button>
-
-    @if (activeMenu() === 'view') {
-    <app-menu-surface #panel class="absolute left-0 top-full z-50 mt-1 w-56">
+      <app-menu-separator />
+      <div class="px-3 pb-0.5 pt-1 text-[11px] font-medium text-muted-foreground">Sections</div>
       <app-menu-item label="Favorites" [active]="hoveredItem() === 'sectionFavorites'"
         (hovered)="hoveredItem.set('sectionFavorites')" (selected)="toggleSection('favorites')">
         <svg menuItemIcon lucideStar [size]="14"></svg>
@@ -104,13 +96,6 @@
         <svg menuItemTrailing lucideCheck [size]="14"></svg>
         }
       </app-menu-item>
-      <app-menu-item label="Vault" [active]="hoveredItem() === 'sectionWorkspace'"
-        (hovered)="hoveredItem.set('sectionWorkspace')" (selected)="toggleSection('workspace')">
-        <svg menuItemIcon lucideFolders [size]="14"></svg>
-        @if (sidebarState.isSectionExpanded('workspace')) {
-        <svg menuItemTrailing lucideCheck [size]="14"></svg>
-        }
-      </app-menu-item>
       <app-menu-item label="Tags" [active]="hoveredItem() === 'sectionTags'"
         (hovered)="hoveredItem.set('sectionTags')" (selected)="toggleSection('tags')">
         <svg menuItemIcon lucideTags [size]="14"></svg>
@@ -120,13 +105,11 @@
       </app-menu-item>
       <app-menu-item label="Credential Profiles" [active]="hoveredItem() === 'sectionCredentials'"
         (hovered)="hoveredItem.set('sectionCredentials')" (selected)="toggleSection('credentials')">
-        <svg menuItemIcon lucideLockKeyhole [size]="14"></svg>
+        <svg menuItemIcon lucideKeyRound [size]="14"></svg>
         @if (sidebarState.isSectionExpanded('credentials')) {
         <svg menuItemTrailing lucideCheck [size]="14"></svg>
         }
       </app-menu-item>
-
-      <app-menu-separator />
       <app-menu-item label="Show File Extensions" [active]="hoveredItem() === 'showExtensions'"
         (hovered)="hoveredItem.set('showExtensions')" (selected)="toggleExtensions()">
         <svg menuItemIcon lucideFileText [size]="14"></svg>
@@ -134,19 +117,8 @@
         <svg menuItemTrailing lucideCheck [size]="14"></svg>
         }
       </app-menu-item>
-    </app-menu-surface>
-    }
-  </div>
 
-  <div class="relative">
-    <button type="button" title="More" (click)="toggleMenu('more')" [attr.aria-expanded]="activeMenu() === 'more'"
-      class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-surface hover:text-foreground"
-      [class.bg-surface]="activeMenu() === 'more'" [class.text-foreground]="activeMenu() === 'more'">
-      <svg lucideEllipsis [size]="18"></svg>
-    </button>
-
-    @if (activeMenu() === 'more') {
-    <app-menu-surface #panel class="absolute right-0 top-full z-50 mt-1 w-60">
+      <app-menu-separator />
       <app-menu-item label="Expand All Folders" [disabled]="!hasVault()" [active]="hoveredItem() === 'expandAll'"
         (hovered)="hoveredItem.set('expandAll')" (selected)="expandAllFolders()">
         <svg menuItemIcon lucideUnfoldVertical [size]="14"></svg>
@@ -155,15 +127,11 @@
         (hovered)="hoveredItem.set('collapseAll')" (selected)="collapseAllFolders()">
         <svg menuItemIcon lucideFoldVertical [size]="14"></svg>
       </app-menu-item>
-
-      <app-menu-separator />
       <app-menu-item label="Reveal Vault in File Explorer" [disabled]="!hasVault()"
         [active]="hoveredItem() === 'revealVault'" (hovered)="hoveredItem.set('revealVault')"
         (selected)="revealVault()">
         <svg menuItemIcon lucideFolderOpen [size]="14"></svg>
       </app-menu-item>
-
-      <app-menu-separator />
       <app-menu-item label="Lock All Profiles" [disabled]="credentialsState.profiles().length === 0"
         [active]="hoveredItem() === 'lockAll'" (hovered)="hoveredItem.set('lockAll')" (selected)="lockAllProfiles()">
         <svg menuItemIcon lucideLockKeyhole [size]="14"></svg>

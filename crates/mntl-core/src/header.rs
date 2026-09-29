@@ -126,6 +126,8 @@ impl EncryptedHeader {
 /// ```text
 /// ---
 /// v: 2
+/// tags:
+/// - reference
 /// ---
 /// # My note
 ///
@@ -134,14 +136,25 @@ impl EncryptedHeader {
 ///
 /// Unlike [`EncryptedHeader`], there is no `credential_profile` here: a
 /// plaintext note isn't encrypted under any credential.
+///
+/// Adding an optional field here needs no [`NOTE_VERSION`] bump: a reader that
+/// doesn't know the field ignores it (serde skips unknown keys), and a note
+/// without it decodes to the field's default.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NoteFrontmatter {
     /// Note format version; must equal [`NOTE_VERSION`] to decode.
     pub v: u8,
+    /// The note's tags, in the order the user added them. Omitted from the
+    /// file when empty. See [`crate::tags`] for what a valid tag is.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
 }
 
 impl Default for NoteFrontmatter {
     fn default() -> Self {
-        Self { v: NOTE_VERSION }
+        Self {
+            v: NOTE_VERSION,
+            tags: Vec::new(),
+        }
     }
 }

@@ -93,6 +93,63 @@ describe('NotesState', () => {
     expect(writeCalls[0][1]).toMatchObject({ relPath: 'daily-standup', content: 'v3' });
   });
 
+  describe('tags', () => {
+    it('loads a note with its tags', async () => {
+      const state = TestBed.inject(NotesState);
+      state.ensureLoaded('daily-standup');
+      await flushMicrotasks();
+
+      expect(state.getNote('daily-standup')?.tags).toEqual(FIXTURE_NOTES[0].tags);
+    });
+
+    it('saves tag edits with the same debounce as content, alongside it', async () => {
+      const state = TestBed.inject(NotesState);
+      state.ensureLoaded('daily-standup');
+      await flushMicrotasks();
+
+      invoke.mockClear();
+      state.updateTags('daily-standup', ['work', 'urgent', 'idea']);
+      state.updateContent('daily-standup', 'edited');
+      jest.advanceTimersByTime(1000);
+      await flushMicrotasks();
+
+      const writes = invoke.mock.calls.filter(([cmd]) => cmd === 'write_note');
+      expect(writes).toHaveLength(1);
+      expect(writes[0][1]).toMatchObject({ content: 'edited', tags: ['work', 'urgent', 'idea'] });
+    });
+
+    it('does not save when the tags are unchanged', async () => {
+      const state = TestBed.inject(NotesState);
+      state.ensureLoaded('daily-standup');
+      await flushMicrotasks();
+
+      invoke.mockClear();
+      state.updateTags('daily-standup', [...FIXTURE_NOTES[0].tags]);
+      jest.advanceTimersByTime(1000);
+      await flushMicrotasks();
+
+      expect(invoke.mock.calls.filter(([cmd]) => cmd === 'write_note')).toHaveLength(0);
+    });
+
+    it('retagLoaded mirrors a vault-wide rename, merging duplicates, without writing', async () => {
+      const state = TestBed.inject(NotesState);
+      state.ensureLoaded('daily-standup');
+      state.ensureLoaded('architecture-notes');
+      await flushMicrotasks();
+
+      invoke.mockClear();
+      state.retagLoaded('URGENT', 'work');
+      expect(state.getNote('daily-standup')?.tags).toEqual(['work']);
+
+      state.retagLoaded('work', null);
+      expect(state.getNote('architecture-notes')?.tags).toEqual([]);
+
+      jest.advanceTimersByTime(1000);
+      await flushMicrotasks();
+      expect(invoke.mock.calls.filter(([cmd]) => cmd === 'write_note')).toHaveLength(0);
+    });
+  });
+
   describe('titleFromRelPath', () => {
     it('strips the whole compound extension of an encrypted note', () => {
       // `.mntl.enc` has to be tried first: stripping `.mntl` alone would

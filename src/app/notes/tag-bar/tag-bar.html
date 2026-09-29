@@ -1,0 +1,58 @@
+<!-- Hidden until the note loads: there's nothing to tag while it's loading, locked or failed. -->
+@if (loaded()) {
+<div class="group/tags mb-4 flex min-h-6 flex-wrap items-center gap-1.5 text-xs" role="list" aria-label="Tags">
+  @for (tag of tags(); track tag) {
+  <span role="listitem"
+    class="group/chip inline-flex h-6 items-center rounded-md border border-border bg-surface/50 pr-0.5 text-foreground/80 transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-foreground">
+    <button type="button" title="Show in sidebar" (click)="reveal(tag)"
+      class="inline-flex h-full items-center rounded-l-md pl-2 pr-0.5 font-medium tracking-tight">
+      <span class="mr-px font-normal text-muted-foreground/60 transition-colors group-hover/chip:text-primary">#</span>{{ tag }}
+    </button>
+    <button type="button" [attr.aria-label]="'Remove tag ' + tag" (click)="remove(tag)"
+      class="inline-flex size-4.5 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover/chip:opacity-100">
+      <svg lucideX [size]="11"></svg>
+    </button>
+  </span>
+  }
+
+  @if (adding()) {
+  <span class="relative inline-flex h-6 items-center rounded-md border border-primary/50 bg-background pl-2 pr-1.5 ring-2 ring-primary/10">
+    <span class="mr-px text-primary">#</span>
+    <input #input type="text" autocomplete="off" spellcheck="false" placeholder="tag"
+      aria-label="New tag" aria-autocomplete="list" [attr.aria-invalid]="error() ? true : null"
+      (input)="onInput(input)" (keydown)="onKeydown($event, input)" (blur)="onBlur()"
+      [style.width.ch]="draft().length + 2 > 6 ? draft().length + 2 : 6"
+      class="min-w-0 border-0 bg-transparent p-0 font-medium tracking-tight text-foreground outline-none! placeholder:font-normal placeholder:text-muted-foreground/50 focus-visible:shadow-none" />
+
+    @if (suggestions().length > 0 || error()) {
+    <!-- mousedown is cancelled so picking a row doesn't blur the input first. -->
+    <app-menu-surface class="absolute left-0 top-full z-20 mt-1.5" (mousedown)="$event.preventDefault()">
+      @if (error(); as message) {
+      <div class="px-3 py-1.5 text-xs text-destructive">{{ message }}</div>
+      }
+      @for (suggestion of suggestions(); track suggestion.tag; let i = $index) {
+      <app-menu-item [label]="suggestion.create ? 'Create #' + suggestion.tag : suggestion.tag"
+        [active]="i === activeIndex()" (hovered)="activeIndex.set(i)" (selected)="add(suggestion.tag)">
+        <span menuItemIcon class="contents">
+          @if (suggestion.create) {
+          <svg lucidePlus [size]="13" class="text-primary"></svg>
+          } @else {
+          <svg lucideHash [size]="13" class="text-muted-foreground"></svg>
+          }
+        </span>
+        @if (!suggestion.create) {
+        <span menuItemTrailing class="tabular-nums text-muted-foreground">{{ suggestion.count }}</span>
+        }
+      </app-menu-item>
+      }
+    </app-menu-surface>
+    }
+  </span>
+  } @else {
+  <button type="button" (click)="startAdding()" [class]="addButtonClass()">
+    <svg lucidePlus [size]="12"></svg>
+    {{ tags().length === 0 ? 'Add tag' : 'Tag' }}
+  </button>
+  }
+</div>
+}

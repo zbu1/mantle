@@ -65,15 +65,20 @@ fn shred(path: &Path) -> Result<(), String> {
 /// Read a plaintext source note as a `.mntl` document, ready to encrypt or to
 /// write out as a `.mntl` file.
 ///
-/// A `.md` file is re-encoded as one: its body is kept and its own YAML
-/// frontmatter dropped, since none of it means anything to a `.mntl` note.
+/// A `.md` file is re-encoded as one: its body and tags are kept, and the
+/// rest of its own YAML frontmatter dropped, since none of that means
+/// anything to a `.mntl` note.
 fn read_plaintext_document(source: &Path, rel_path: &str) -> Result<Zeroizing<String>, String> {
     let raw = Zeroizing::new(
         fs::read_to_string(source).map_err(|e| format!("Failed to read note: {e}"))?,
     );
     if is_markdown_note(rel_path) {
         let (_, body) = mntl_core::split_markdown_frontmatter(&raw);
-        return mntl_core::encode_unencrypted_note(body)
+        let frontmatter = mntl_core::NoteFrontmatter {
+            tags: mntl_core::markdown_tags(&raw),
+            ..Default::default()
+        };
+        return mntl_core::encode_note(&frontmatter, body)
             .map(Zeroizing::new)
             .map_err(|e| e.to_string());
     }
@@ -420,7 +425,7 @@ mod tests {
 
         // Readable through the normal note-reading path while unlocked.
         assert_eq!(
-            read_note_inner(&root_str, "secret.mntl.enc", &keys).unwrap(),
+            read_note_inner(&root_str, "secret.mntl.enc", &keys).unwrap().content,
             BODY
         );
 
@@ -428,7 +433,7 @@ mod tests {
             decrypt_note_inner(&root_str, "secret.mntl.enc", &keys).unwrap();
         assert_eq!(decrypted.rel_path, "secret.mntl");
         assert_eq!(
-            read_note_inner(&root_str, "secret.mntl", &keys).unwrap(),
+            read_note_inner(&root_str, "secret.mntl", &keys).unwrap().content,
             BODY
         );
         assert!(!root.join("secret.mntl.enc").exists());
@@ -449,17 +454,14 @@ tags: [x]
         let encrypted = encrypt_note_inner(&root_str, "secret.md", "my-diary", &keys).unwrap();
         assert_eq!(encrypted.rel_path, "secret.mntl.enc");
         assert!(!root.join("secret.md").exists());
-        assert_eq!(read_note_inner(&root_str, "secret.mntl.enc", &keys).unwrap(), BODY);
+        assert_eq!(read_note_inner(&root_str, "secret.mntl.enc", &keys).unwrap().content, BODY);
     }
 
     #[test]
-    fn converting_markdown_writes_a_mntl_note_without_its_frontmatter() {
+    fn converting_markdown_writes_a_mntl_note_keeping_only_its_tags() {
         let root = temp_dir("convert-markdown");
         let root_str = root.to_string_lossy().into_owned();
-        fs::write(root.join("readme.markdown"), format!("---
-tags: [x]
----
-{BODY}")).unwrap();
+        fs::write(root.join("readme.markdown"), format!("---\ntitle: Readme\ntags: [x]\n---\n{BODY}")).unwrap();
 
         let converted = convert_markdown_inner(&root_str, "readme.markdown").unwrap();
         assert_eq!(converted.rel_path, "readme.mntl");
@@ -467,7 +469,7 @@ tags: [x]
         assert!(!root.join("readme.markdown").exists());
         assert_eq!(
             fs::read_to_string(root.join("readme.mntl")).unwrap(),
-            mntl_core::encode_unencrypted_note(BODY).unwrap()
+            format!("---\nv: 2\ntags:\n- x\n---\n{BODY}")
         );
     }
 
@@ -576,10 +578,10 @@ tags: [x]
         let before = fs::read(root.join("secret.mntl.enc")).unwrap();
         let before_header = mntl_core::extract_encrypted_header(&before).unwrap();
 
-        write_note_inner(&root_str, "secret.mntl.enc", "# Edited", &keys).unwrap();
+        write_note_inner(&root_str, "secret.mntl.enc", "# Edited", &[], &keys).unwrap();
 
         assert_eq!(
-            read_note_inner(&root_str, "secret.mntl.enc", &keys).unwrap(),
+            read_note_inner(&root_str, "secret.mntl.enc", &keys).unwrap().content,
             "# Edited"
         );
 
@@ -607,7 +609,7 @@ tags: [x]
         let before = fs::read(root.join("secret.mntl.enc")).unwrap();
 
         keys.lock_one(&root_str, "my-diary").unwrap();
-        let err = write_note_inner(&root_str, "secret.mntl.enc", "# Edited", &keys).unwrap_err();
+        let err = write_note_inner(&root_str, "secret.mntl.enc", "# Edited", &[], &keys).unwrap_err();
 
         assert_eq!(err, format!("{LOCKED_ERR_PREFIX}my-diary"));
         assert_eq!(fs::read(root.join("secret.mntl.enc")).unwrap(), before);
@@ -629,7 +631,7 @@ tags: [x]
         let header = mntl_core::extract_encrypted_header(&blob).unwrap();
         assert_eq!(header.credential_profile, "work");
         assert_eq!(
-            read_note_inner(&root_str, "secret.mntl.enc", &keys).unwrap(),
+            read_note_inner(&root_str, "secret.mntl.enc", &keys).unwrap().content,
             BODY
         );
 
@@ -675,7 +677,7 @@ tags: [x]
         assert_eq!(created.name, "Journal");
         assert!(!root.join("Work").join("Journal.mntl").exists());
         assert_eq!(
-            read_note_inner(&root_str, "Work/Journal.mntl.enc", &keys).unwrap(),
+            read_note_inner(&root_str, "Work/Journal.mntl.enc", &keys).unwrap().content,
             ""
         );
 

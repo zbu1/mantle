@@ -1,3 +1,16 @@
+@if (variant() === 'hero') {
+<button #trigger type="button" title="Switch vault" (click)="toggle()" [attr.aria-expanded]="open()"
+  class="group/vault -mx-1.5 flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 text-left hover:bg-background/60"
+  [class.bg-background/60]="open()">
+  <!-- The vault's mark: an ember facet, the one piece of brand color at rest in the sidebar. -->
+  <svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true" class="shrink-0">
+    <path d="M6 0.5 L11.5 6 L6 11.5 L0.5 6 Z" class="fill-primary" />
+    <path d="M6 0.5 L11.5 6 L6 6 Z" class="fill-white/25" />
+  </svg>
+  <span class="min-w-0 flex-1 truncate text-[13px] font-semibold tracking-tight text-foreground">{{ vaultName() ?? 'No Vault' }}</span>
+  <svg lucideChevronsUpDown [size]="13" class="shrink-0 text-muted-foreground/70 group-hover/vault:text-foreground"></svg>
+</button>
+} @else {
 <button #trigger type="button" title="Switch vault" (click)="toggle()" [attr.aria-expanded]="open()"
   class="inline-flex h-8 shrink-0 items-center gap-1.5 overflow-hidden rounded-md border border-border bg-black/5 px-2 text-xs text-muted-foreground hover:bg-background hover:text-foreground"
   [class.bg-background]="open()" [class.text-foreground]="open()">
@@ -5,6 +18,7 @@
   <span class="max-w-32 truncate text-left">{{ vaultName() ?? 'No Vault' }}</span>
   <svg lucideChevronsUpDown [size]="12" class="shrink-0 text-muted-foreground"></svg>
 </button>
+}
 
 @if (open()) {
 <app-menu-surface #panel class="absolute left-0 top-full z-50 mt-1 w-64">

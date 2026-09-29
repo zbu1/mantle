@@ -2,11 +2,11 @@
   <div role="button" tabindex="0" [attr.draggable]="draggable() ? 'true' : null" (dragstart)="onDragStart($event)"
     (contextmenu)="onContextMenu($event)" (click)="toggle.emit()" (keydown.enter)="toggle.emit()"
     (keydown.space)="onSpaceKey($event)" [attr.aria-expanded]="expanded()"
-    [style.padding-left.px]="36 + depth() * 16" class="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left">
+    [style.padding-left.px]="baseIndent() + depth() * indentStep()" class="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left">
     <svg lucideChevronRight [size]="12" class="shrink-0 transition-transform duration-200"
       [class.rotate-90]="expanded()"></svg>
     <ng-content select="[explorerIcon]" />
-    <span class="min-w-0 truncate">{{ label() }}</span>
+    <span class="min-w-0 truncate" [class.font-semibold]="strong()" [class.text-foreground]="strong()">{{ label() }}</span>
     <ng-content select="[explorerLabelTrailing]" />
   </div>
   <ng-content select="[explorerTrailing]" />

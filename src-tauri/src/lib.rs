@@ -1,6 +1,7 @@
 mod credentials;
 mod logging;
 mod notes_crypto;
+mod tags;
 mod vault;
 mod vault_meta;
 mod watcher;
@@ -58,6 +59,8 @@ pub fn run() {
             notes_crypto::move_note_to_profile,
             notes_crypto::create_encrypted_note,
             notes_crypto::convert_markdown_to_note,
+            tags::rename_tag,
+            tags::remove_tag,
             watcher::start_vault_watch,
             watcher::stop_vault_watch,
         ])

@@ -1,18 +1,20 @@
 import { Injectable, computed, effect, signal } from '@angular/core';
 
-export type SectionId = 'favorites' | 'recent' | 'workspace' | 'tags' | 'credentials';
+/**
+ * The sidebar's secondary sections, stacked below the vault tree. The tree
+ * itself isn't a section: it's always shown and can't be collapsed.
+ */
+export type SectionId = 'favorites' | 'recent' | 'tags' | 'credentials';
 
 /** Every sidebar section in display order, for menus that list them. */
 export const SIDEBAR_SECTIONS: readonly { id: SectionId; label: string }[] = [
   { id: 'favorites', label: 'Favorites' },
   { id: 'recent', label: 'Recent Files' },
-  { id: 'workspace', label: 'Vault' },
   { id: 'tags', label: 'Tags' },
   { id: 'credentials', label: 'Credential Profiles' },
 ];
 
-/** Sections that can't be hidden — the vault tree is the sidebar's core. */
-const ALWAYS_VISIBLE: ReadonlySet<SectionId> = new Set(['workspace']);
+const SECTION_IDS: ReadonlySet<string> = new Set(SIDEBAR_SECTIONS.map((s) => s.id));
 
 interface PersistedSidebarState {
   width: number;
@@ -36,7 +38,7 @@ const DEFAULT_STATE: PersistedSidebarState = {
   collapsed: false,
   // `readFromStorage` spreads these under whatever is persisted, so adding a
   // section here back-fills existing users without a storage version bump.
-  sections: { favorites: true, recent: true, workspace: true, tags: true, credentials: true },
+  sections: { favorites: true, recent: true, tags: true, credentials: true },
   hidden: [],
 };
 
@@ -52,9 +54,13 @@ function readFromStorage(): PersistedSidebarState {
     return {
       width: clamp(Number(parsed.width) || DEFAULT_WIDTH, MIN_WIDTH, MAX_WIDTH),
       collapsed: Boolean(parsed.collapsed),
-      sections: { ...DEFAULT_STATE.sections, ...(parsed.sections ?? {}) },
+      // Picked key by key: older versions also stored a `workspace` entry for
+      // the vault tree, back when it was a collapsible section.
+      sections: Object.fromEntries(
+        SIDEBAR_SECTIONS.map(({ id }) => [id, typeof parsed.sections?.[id] === 'boolean' ? parsed.sections[id] : DEFAULT_STATE.sections[id]]),
+      ) as Record<SectionId, boolean>,
       hidden: Array.isArray(parsed.hidden)
-        ? SIDEBAR_SECTIONS.map((s) => s.id).filter((id) => parsed.hidden.includes(id) && !ALWAYS_VISIBLE.has(id))
+        ? SIDEBAR_SECTIONS.map((s) => s.id).filter((id) => SECTION_IDS.has(id) && parsed.hidden.includes(id))
         : [],
     };
   } catch {
@@ -122,13 +128,7 @@ export class SidebarState {
     return !this.hiddenSections().includes(id);
   }
 
-  /** Whether the section can be hidden at all (the Vault can't). */
-  canHideSection(id: SectionId): boolean {
-    return !ALWAYS_VISIBLE.has(id);
-  }
-
   toggleSectionVisibility(id: SectionId): void {
-    if (!this.canHideSection(id)) return;
     this.hiddenSections.update((hidden) => (hidden.includes(id) ? hidden.filter((h) => h !== id) : [...hidden, id]));
   }
 }
