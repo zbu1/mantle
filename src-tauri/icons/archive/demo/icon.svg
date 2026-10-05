@@ -1,0 +1,50 @@
+<!-- Demo app icon: an isometric cube of strata. Gently waving bands wrap both side faces,
+     warming from basalt at the top to ember at the bottom; light from the top-left, so the
+     top face is lightest and the right face a shade darker than the left.
+     Render with `pnpm tauri icon src-tauri/icons/demo/icon.svg -o src-tauri/icons/demo -p 32 -p 128 -p 512`. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="top" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#54473f" />
+      <stop offset="1" stop-color="#42372f" />
+    </linearGradient>
+    <!-- Each side face shades slightly darker toward its bottom. -->
+    <linearGradient id="fade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#000" stop-opacity="0" />
+      <stop offset="1" stop-color="#000" stop-opacity="0.12" />
+    </linearGradient>
+    <!-- A side face in its own unskewed coordinates: 332 wide, 380 tall. -->
+    <clipPath id="face">
+      <rect width="332" height="380" />
+    </clipPath>
+    <!-- One wavy boundary, one wave per face; the right face continues it from the left's end. -->
+    <path id="stratum" d="M-400 0 c 55 -14 111 -14 166 0 s 111 14 166 0 s 111 -14 166 0 s 111 14 166 0 s 111 -14 166 0 s 111 14 166 0 s 111 -14 166 0 s 111 14 166 0 V 600 H -400 Z" />
+  </defs>
+
+  <!-- Left face (lit). -->
+  <g transform="matrix(1 0.5783 0 1 180 322)">
+    <g clip-path="url(#face)">
+      <rect width="332" height="380" fill="#3a312b" />
+      <use href="#stratum" y="125" fill="#5c3524" />
+      <use href="#stratum" y="215" fill="#9e4521" />
+      <use href="#stratum" y="300" fill="#e0703a" />
+      <rect width="332" height="380" fill="url(#fade)" />
+    </g>
+  </g>
+
+  <!-- Right face (shade). -->
+  <g transform="matrix(1 -0.5783 0 1 512 514)">
+    <g clip-path="url(#face)">
+      <rect width="332" height="380" fill="#2a231f" />
+      <use href="#stratum" x="-332" y="125" fill="#46281b" />
+      <use href="#stratum" x="-332" y="215" fill="#803719" />
+      <use href="#stratum" x="-332" y="300" fill="#c25a2b" />
+      <rect width="332" height="380" fill="url(#fade)" />
+    </g>
+  </g>
+
+  <!-- Top face, with a faint highlight where it meets the sides. -->
+  <polygon points="512,130 844,322 512,514 180,322" fill="url(#top)" />
+  <polyline points="180,322 512,514 844,322" fill="none" stroke="#fff" stroke-opacity="0.08"
+            stroke-width="4" stroke-linejoin="round" />
+</svg>

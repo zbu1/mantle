@@ -1,0 +1,53 @@
+<!-- Demo app icon: a tall isometric block of strata. Uneven, wavy
+     bands wrap both side faces, warming from basalt at the top to ember at the bottom;
+     light from the top-left, so the right face is a shade darker than the left.
+     Render with `pnpm tauri icon src-tauri/icons/demo2/icon.svg -o src-tauri/icons/demo2 -p 32 -p 128 -p 512`. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="top" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#54473f" />
+      <stop offset="1" stop-color="#42372f" />
+    </linearGradient>
+    <!-- Each side face shades slightly darker toward its bottom. -->
+    <linearGradient id="fade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#000" stop-opacity="0" />
+      <stop offset="1" stop-color="#000" stop-opacity="0.12" />
+    </linearGradient>
+    <!-- A side face in its own unskewed coordinates: 332 wide, 430 tall. -->
+    <clipPath id="face">
+      <rect width="332" height="430" />
+    </clipPath>
+    <!-- Band boundaries across both faces unfolded (left face 0-332, right 332-664), each with
+         its own thickness and wave so the strata look laid down rather than drawn. -->
+    <path id="b1" d="M-10 125 C 50 80, 110 80, 170 120 S 280 170, 332 135 S 440 80, 500 115 S 620 175, 680 125 V 600 H -10 Z" />
+    <path id="b2" d="M-10 255 C 60 300, 130 290, 190 250 S 290 205, 332 235 S 430 295, 510 260 S 620 210, 680 250 V 600 H -10 Z" />
+    <path id="b3" d="M-10 355 C 70 320, 140 325, 200 360 S 300 395, 332 375 S 460 320, 540 350 S 640 390, 680 360 V 600 H -10 Z" />
+  </defs>
+
+  <!-- Left face (lit). -->
+  <g transform="matrix(1 0.5783 0 1 180 297)">
+    <g clip-path="url(#face)">
+      <rect width="332" height="430" fill="#3a312b" />
+      <use href="#b1" fill="#5c3524" />
+      <use href="#b2" fill="#9e4521" />
+      <use href="#b3" fill="#e0703a" />
+      <rect width="332" height="430" fill="url(#fade)" />
+    </g>
+  </g>
+
+  <!-- Right face (shade). -->
+  <g transform="matrix(1 -0.5783 0 1 512 489)">
+    <g clip-path="url(#face)">
+      <rect width="332" height="430" fill="#2a231f" />
+      <use href="#b1" x="-332" fill="#46281b" />
+      <use href="#b2" x="-332" fill="#803719" />
+      <use href="#b3" x="-332" fill="#c25a2b" />
+      <rect width="332" height="430" fill="url(#fade)" />
+    </g>
+  </g>
+
+  <!-- Top face, with a faint highlight where it meets the sides. -->
+  <polygon points="512,105 844,297 512,489 180,297" fill="url(#top)" />
+  <polyline points="180,297 512,489 844,297" fill="none" stroke="#fff" stroke-opacity="0.08"
+            stroke-width="4" stroke-linejoin="round" />
+</svg>
