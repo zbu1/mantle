@@ -1,4 +1,4 @@
-<button #button type="button" [title]="suppressNativeTitle() ? null : label()" (click)="onClick($event)" (mousedown)="onMouseDown($event)" (auxclick)="onAuxClick($event)" (contextmenu)="onContextMenu($event)" (blur)="onBlur()"
+<button #button type="button" [attr.title]="suppressNativeTitle() ? null : label()" (click)="onClick($event)" (mousedown)="onMouseDown($event)" (auxclick)="onAuxClick($event)" (contextmenu)="onContextMenu($event)" (blur)="onBlur()"
   [attr.aria-current]="active() ? 'page' : null" [class]="buttonClass()"
   [style.padding-left.px]="collapsed() ? null : baseIndent() + indent()">
   <span class="shrink-0 text-muted-foreground empty:hidden"><ng-content select="[sidebarItemIcon]" /></span>

@@ -50,7 +50,6 @@ import { VaultRenameState } from '../../../notes/vault-rename-state';
 import { VaultState } from '../../../notes/vault-state';
 import { isTauri } from '../../../core/tauri-env';
 import { SectionId, SidebarState } from '../../sidebar/sidebar-state';
-import { VaultMenu } from '../../vault-menu/vault-menu';
 
 type MenuCategory = 'file' | 'edit' | 'view' | 'help';
 
@@ -70,7 +69,6 @@ type MenuCategory = 'file' | 'edit' | 'view' | 'help';
     MenuSurface,
     MenuItem,
     MenuSeparator,
-    VaultMenu,
     LucideMenu,
     LucideCheck,
     LucideFilePlus,

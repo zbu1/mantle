@@ -1,6 +1,7 @@
 @if (asFolder(); as folder) {
 <div (dragenter)="onFolderDragOver(folder, $event)" (dragover)="onFolderDragOver(folder, $event)" (drop)="onFolderDrop(folder, $event)"
-  [class.bg-primary/10]="dragState.hoveredDir() === folder.relPath" class="rounded-md">
+  #folderRow [class.bg-primary/10]="flashing() || dragState.hoveredDir() === folder.relPath"
+  class="rounded-md transition-colors">
   @if (renaming()) {
   <div [style.padding-left.px]="indentOf(depth())" class="flex w-full items-center gap-1.5 rounded-md py-1 pr-2">
     <svg lucideChevronRight [size]="12" class="shrink-0" [class.rotate-90]="isExpanded()"></svg>

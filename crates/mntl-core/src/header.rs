@@ -148,6 +148,11 @@ pub struct NoteFrontmatter {
     /// file when empty. See [`crate::tags`] for what a valid tag is.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
+    /// Whether the note is a favorite. Only encrypted notes use this, so
+    /// which of them are favorites stays sealed; a plaintext note's favorite
+    /// lives in the vault's `.mantle/state.json` instead. Omitted when false.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub favorite: bool,
 }
 
 impl Default for NoteFrontmatter {
@@ -155,6 +160,7 @@ impl Default for NoteFrontmatter {
         Self {
             v: NOTE_VERSION,
             tags: Vec::new(),
+            favorite: false,
         }
     }
 }

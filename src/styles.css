@@ -28,17 +28,13 @@
   outline: none;
 }
 
-*:focus-visible,
+/* Text fields and editor content show the caret (and a border tint) rather than a focus ring. */
+*:focus-visible:not(textarea, .ProseMirror, input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"])),
 .focus-ring-forced {
   outline: 2px solid var(--ring);
   outline-offset: 0;
   border-radius: 4px;
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 25%, transparent);
-}
-
-/* Editor content shows the caret rather than a focus ring. */
-.ProseMirror:focus-visible {
-  box-shadow: none;
 }
 
 ::selection {
@@ -164,6 +160,18 @@
 
 .ProseMirror p {
   margin: 0 0 0.5em;
+}
+
+.ProseMirror img.note-image {
+  display: inline-block;
+  max-width: 100%;
+  border-radius: 6px;
+  vertical-align: bottom;
+}
+
+.ProseMirror img.ProseMirror-selectednode {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 
 .ProseMirror h1,

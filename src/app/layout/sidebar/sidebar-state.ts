@@ -116,6 +116,23 @@ export class SidebarState {
     this.collapsed.set(value);
   }
 
+  /**
+   * The vault folder the tree should expand, scroll to and highlight. A fresh
+   * object each time, so revealing the same folder twice still reacts.
+   */
+  readonly folderRevealRequest = signal<{ relPath: string } | null>(null);
+
+  /** Opens the sidebar on `relPath` in the vault tree, e.g. from the editor's breadcrumb. */
+  revealFolder(relPath: string): void {
+    this.collapsed.set(false);
+    const request = { relPath };
+    this.folderRevealRequest.set(request);
+    // The folder's row consumes the request; drop it if none does (the folder vanished).
+    setTimeout(() => {
+      if (this.folderRevealRequest() === request) this.folderRevealRequest.set(null);
+    }, 1000);
+  }
+
   toggleSection(id: SectionId): void {
     this.sections.update((s) => ({ ...s, [id]: !s[id] }));
   }

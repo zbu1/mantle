@@ -269,8 +269,9 @@ describe('Sidebar', () => {
 
   describe('Favorites section', () => {
     function note(relPath: string): VaultNoteNode {
-      const name = relPath.split('/').pop()!.replace(/\.mntl$/, '');
-      return { type: 'note', name, relPath, encrypted: false, profile: null, tags: [] };
+      const name = relPath.split('/').pop()!.replace(/\.mntl(\.enc)?$/, '');
+      const encrypted = relPath.endsWith('.enc');
+      return { type: 'note', name, relPath, encrypted, profile: encrypted ? 'p' : null, tags: encrypted ? null : [] };
     }
 
     /** Opens `/vault` containing `inTree` (flat, folders implied by relPath), whose metadata lists `favorites`. */
@@ -300,6 +301,12 @@ describe('Sidebar', () => {
       const fixture = await setup(['a.mntl', 'b.mntl'], ['b.mntl', 'gone.mntl', 'a.mntl']);
 
       expect(rowTexts(fixture)).toEqual(['b', 'a']);
+    });
+
+    it('hides the favorites of locked encrypted notes', async () => {
+      const fixture = await setup(['a.mntl', 'secret.mntl.enc'], ['secret.mntl.enc', 'a.mntl']);
+
+      expect(rowTexts(fixture)).toEqual(['a']);
     });
 
     it('shows the parent folder only for favorites that share a name', async () => {

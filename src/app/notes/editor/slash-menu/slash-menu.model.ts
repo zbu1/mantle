@@ -8,6 +8,7 @@ import {
   toggleCodeBlock,
   insertHorizontalRule,
 } from '../prosemirror/editor-commands';
+import { pickImage } from '../prosemirror/plugins/image-plugin';
 
 export type SlashCommandIcon =
   | 'h1'
@@ -18,7 +19,8 @@ export type SlashCommandIcon =
   | 'task-list'
   | 'blockquote'
   | 'code-block'
-  | 'divider';
+  | 'divider'
+  | 'image';
 
 export interface SlashCommandItem {
   id: string;
@@ -91,6 +93,13 @@ export const SLASH_COMMAND_ITEMS: SlashCommandItem[] = [
     icon: 'divider',
     keywords: ['divider', 'hr', 'horizontal', 'rule', 'line'],
     run: (view) => insertHorizontalRule(view),
+  },
+  {
+    id: 'image',
+    label: 'Image',
+    icon: 'image',
+    keywords: ['image', 'picture', 'photo', 'img'],
+    run: (view) => void pickImage(view),
   },
 ];
 

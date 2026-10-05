@@ -41,6 +41,12 @@ export interface VaultNoteNode {
    * profile was locked at scan time, or an unparseable file.
    */
   tags: string[] | null;
+  /**
+   * Whether this encrypted note is a favorite — sealed inside the note, so
+   * only known while its profile is unlocked. Plaintext notes' favorites live
+   * in `VaultMetaState` instead; use `FavoritesState` to ask either way.
+   */
+  favorite?: boolean;
 }
 
 export type VaultNode = VaultFolderNode | VaultNoteNode;
@@ -88,10 +94,14 @@ export function withRenamedNote(root: VaultFolderNode, relPath: string, newRelPa
   return rename(root) as VaultFolderNode;
 }
 
-/** Returns a copy of `root` with the note at `relPath` given `tags`. No-op (same reference) if not found. */
-export function withNoteTags(root: VaultFolderNode, relPath: string, tags: string[]): VaultFolderNode {
+/** Returns a copy of `root` with `fields` set on the note at `relPath`. No-op (same reference) if not found. */
+export function withNoteFields(
+  root: VaultFolderNode,
+  relPath: string,
+  fields: Partial<Pick<VaultNoteNode, 'tags' | 'favorite'>>,
+): VaultFolderNode {
   const retag = (node: VaultNode): VaultNode => {
-    if (node.type === 'note') return node.relPath === relPath ? { ...node, tags } : node;
+    if (node.type === 'note') return node.relPath === relPath ? { ...node, ...fields } : node;
     const children = node.children.map(retag);
     return children.some((child, i) => child !== node.children[i]) ? { ...node, children } : node;
   };

@@ -3,6 +3,7 @@ import {
   LucideArrowLeft,
   LucideArrowRight,
   LucideChevronDown,
+  LucideChevronRight,
   LucideEllipsis,
   LucideExpand,
   LucideFileInput,
@@ -20,6 +21,7 @@ import { NotesState, titleFromRelPath } from '../../../notes/notes-state';
 import { CredentialsState } from '../../../notes/credentials-state';
 import { EncryptionPanelState } from '../../../notes/encryption-panel/encryption-panel-state';
 import { VaultState } from '../../../notes/vault-state';
+import { FavoritesState } from '../../../notes/favorites-state';
 import { VaultMetaState } from '../../../notes/vault-meta-state';
 import { NoteEditor } from '../../../notes/editor/note-editor';
 import { TagBar } from '../../../notes/tag-bar/tag-bar';
@@ -28,6 +30,7 @@ import { ContextMenuItem } from '../../../shared/context-menu/context-menu.model
 import { DialogState } from '../../../shared/dialog/dialog-state';
 import { VaultNoteNode, flattenEncryptedNotes, flattenVaultNotes, markdownExtensionOf } from '../../../notes/vault-tree.model';
 import { MarkdownNoticeState } from '../../../notes/markdown-notice-state';
+import { SidebarState } from '../../sidebar/sidebar-state';
 import { NoteEncryptionActions } from '../../../notes/note-encryption-actions';
 
 const RENAME_DEBOUNCE_MS = 1000;
@@ -47,6 +50,7 @@ const RENAME_DEBOUNCE_MS = 1000;
     LucideFileInput,
     LucideX,
     LucideChevronDown,
+    LucideChevronRight,
     LucideTriangleAlert,
     LucideRefreshCw,
     LucideFolderOpen,
@@ -65,6 +69,8 @@ export class ContentArea {
   private readonly encryptionActions = inject(NoteEncryptionActions);
   protected readonly markdownNotice = inject(MarkdownNoticeState);
   private readonly vaultMeta = inject(VaultMetaState);
+  private readonly favorites = inject(FavoritesState);
+  protected readonly sidebarState = inject(SidebarState);
 
   private readonly contentRoot = viewChild<ElementRef<HTMLElement>>('contentRoot');
   private readonly encryptionButton = viewChild<ElementRef<HTMLButtonElement>>('encryptionButton');
@@ -122,12 +128,12 @@ export class ContentArea {
 
   protected readonly activeIsFavorite = computed(() => {
     const relPath = this.favoritableNoteId();
-    return relPath !== null && this.vaultMeta.isFavorite(relPath);
+    return relPath !== null && this.favorites.isFavorite(relPath);
   });
 
   protected toggleActiveFavorite(): void {
     const relPath = this.favoritableNoteId();
-    if (relPath !== null) this.vaultMeta.toggleFavorite(relPath);
+    if (relPath !== null) this.favorites.toggle(relPath);
   }
 
   @HostListener('document:keydown', ['$event'])
@@ -212,10 +218,10 @@ export class ContentArea {
     this.tabsState.goForward();
   }
 
-  protected notePath(tab: NoteTab): string {
-    const segments = tab.noteId.split('/');
-    segments.pop();
-    return segments.length ? `${segments.join(' / ')} / ${tab.title}` : tab.title;
+  /** The folders above the note, outermost first, each with its vault-relative path. */
+  protected folderCrumbs(tab: NoteTab): { name: string; relPath: string }[] {
+    const segments = tab.noteId.split('/').slice(0, -1);
+    return segments.map((name, i) => ({ name, relPath: segments.slice(0, i + 1).join('/') }));
   }
 
   /** Reflects each keystroke into the tab title and sidebar entry right away; the on-disk rename is debounced. */

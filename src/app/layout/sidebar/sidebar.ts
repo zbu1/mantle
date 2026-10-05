@@ -15,6 +15,7 @@ import { COLLAPSE_THRESHOLD, SIDEBAR_SECTIONS, SidebarState } from './sidebar-st
 import { NotesState } from '../../notes/notes-state';
 import { TabsState } from '../../notes/tabs-state';
 import { VaultState } from '../../notes/vault-state';
+import { FavoritesState } from '../../notes/favorites-state';
 import { VaultMetaState } from '../../notes/vault-meta-state';
 import { formatRelativeTime } from '../../notes/relative-time';
 import { VaultClipboardState } from '../../notes/vault-clipboard-state';
@@ -46,7 +47,6 @@ interface RecentRow {
 
 interface FavoriteRow {
   note: VaultNoteNode;
-  locked: boolean;
   /** Parent folder shown next to the name, set only when another favorite shares the name. */
   folder: string | null;
 }
@@ -72,6 +72,7 @@ export class Sidebar {
   private readonly encryptionActions = inject(NoteEncryptionActions);
   private readonly newEncryptedNoteState = inject(NewEncryptedNoteState);
   private readonly vaultMeta = inject(VaultMetaState);
+  private readonly favorites = inject(FavoritesState);
   protected readonly tagsState = inject(TagsState);
 
   /** Text in the header's filter field; the tree shows only notes whose name contains it. Session-only. */
@@ -112,21 +113,13 @@ export class Sidebar {
     () => this.showAllRecents() && this.recentRows().length > Sidebar.COLLAPSED_RECENT_COUNT,
   );
 
-  /**
-   * Favorites whose note is in the vault, in display order. A favorite whose
-   * file is missing (e.g. removed outside the app) is hidden, not dropped.
-   */
+  /** Favorites in display order — see `FavoritesState.notes`. */
   protected readonly favoriteRows = computed<FavoriteRow[]>(() => {
-    const tree = this.vaultState.tree();
-    if (!tree) return [];
-    const notesByPath = new Map(flattenAllNotes(tree).map((note) => [note.relPath, note]));
-    const unlocked = this.credentialsState.unlockedIds();
-    const notes = this.vaultMeta.favorites().flatMap((relPath) => notesByPath.get(relPath) ?? []);
+    const notes = this.favorites.notes();
     const nameCounts = new Map<string, number>();
     for (const note of notes) nameCounts.set(note.name, (nameCounts.get(note.name) ?? 0) + 1);
     return notes.map((note) => ({
       note,
-      locked: isNoteLocked(note, unlocked),
       folder: nameCounts.get(note.name)! > 1 ? dirOf(note.relPath) || '/' : null,
     }));
   });
@@ -298,13 +291,13 @@ export class Sidebar {
         });
         items.push({ kind: 'separator' });
       }
-      const allFavorites = [...selected].every((relPath) => this.vaultMeta.isFavorite(relPath));
+      const allFavorites = [...selected].every((relPath) => this.favorites.isFavorite(relPath));
       items.push({
         kind: 'item',
         label: allFavorites ? `Remove ${selected.size} Notes from Favorites` : `Add ${selected.size} Notes to Favorites`,
         icon: allFavorites ? 'unfavorite' : 'favorite',
         action: () =>
-          allFavorites ? this.vaultMeta.removeFavorites([...selected]) : this.vaultMeta.addFavorites([...selected]),
+          allFavorites ? this.favorites.remove([...selected]) : this.favorites.add([...selected]),
       });
       items.push({ kind: 'separator' });
       items.push({
@@ -413,12 +406,12 @@ export class Sidebar {
   }
 
   private favoriteMenuItem(relPath: string): ContextMenuItem {
-    const favorite = this.vaultMeta.isFavorite(relPath);
+    const favorite = this.favorites.isFavorite(relPath);
     return {
       kind: 'item',
       label: favorite ? 'Remove from Favorites' : 'Add to Favorites',
       icon: favorite ? 'unfavorite' : 'favorite',
-      action: () => this.vaultMeta.toggleFavorite(relPath),
+      action: () => this.favorites.toggle(relPath),
     };
   }
 
@@ -430,7 +423,7 @@ export class Sidebar {
       { kind: 'separator' },
       { kind: 'item', label: 'Show in File Explorer', icon: 'reveal', action: () => void this.vaultState.revealInFileExplorer(note.relPath) },
       { kind: 'separator' },
-      { kind: 'item', label: 'Remove from Favorites', icon: 'unfavorite', action: () => this.vaultMeta.removeFavorites([note.relPath]) },
+      { kind: 'item', label: 'Remove from Favorites', icon: 'unfavorite', action: () => this.favorites.remove([note.relPath]) },
     ];
     this.contextMenuState.open(event, items);
   }
@@ -472,13 +465,13 @@ export class Sidebar {
     const before = rows[index]?.note.relPath ?? null;
     const reference = event.dataTransfer?.getData(NOTE_REFERENCE_DRAG_MIME);
     if (reference) {
-      this.vaultMeta.placeFavorites([reference], before);
+      this.favorites.place([reference], before);
       return;
     }
     const raw = event.dataTransfer?.getData(VAULT_NOTE_DRAG_MIME);
     if (!raw) return;
     try {
-      this.vaultMeta.placeFavorites(JSON.parse(raw) as string[], before);
+      this.favorites.place(JSON.parse(raw) as string[], before);
     } catch {
       // malformed drag payload — ignore
     }

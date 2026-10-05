@@ -10,6 +10,7 @@
 //! [`crate::logging::logged`] — never interpolate a password, key, or
 //! decrypted note content into one.
 
+use crate::attachments::reseal_images;
 use crate::credentials::SessionKeys;
 use crate::logging::logged;
 use crate::vault::{
@@ -139,6 +140,9 @@ fn encrypt_note_inner(
         }
 
         let document = read_plaintext_document(&source, rel_path)?;
+        // Its images get sealed copies too; the plaintext originals stay, as
+        // other notes may show them.
+        let document = reseal_images(vault_root, rel_path, &document, Some((profile_id, &mk)), keys)?;
 
         let blob =
             mntl_core::encrypt_note(&mk, profile_id, document.as_bytes()).map_err(|e| e.to_string())?;
@@ -259,8 +263,20 @@ fn decrypt_note_inner(
         let document = mntl_core::decrypt_note(&mk, &blob).map_err(|e| e.to_string())?;
         let document =
             std::str::from_utf8(&document).map_err(|_| "Decrypted note is not UTF-8".to_string())?;
-        mntl_core::extract_unencrypted_header(document)
+        let (mut frontmatter, body) = mntl_core::decode_note(document)
             .map_err(|e| format!("Decrypted content is not a valid note: {e}"))?;
+        let body = Zeroizing::new(body);
+        // A plaintext note's favorite lives in `.mantle/state.json`, where the
+        // frontend moves it; a stale sealed flag would come back on re-encrypting.
+        let cleared;
+        let document = if frontmatter.favorite {
+            frontmatter.favorite = false;
+            cleared = Zeroizing::new(mntl_core::encode_note(&frontmatter, &body).map_err(|e| e.to_string())?);
+            cleared.as_str()
+        } else {
+            document
+        };
+        let document = reseal_images(vault_root, rel_path, document, None, keys)?;
 
         write_atomic(&dest, document.as_bytes())?;
         fs::remove_file(&source).map_err(|e| format!("Failed to remove the encrypted note: {e}"))?;
@@ -318,7 +334,11 @@ fn move_note_inner(
         }
 
         let document = mntl_core::decrypt_note(&source_key, &blob).map_err(|e| e.to_string())?;
-        let resealed = mntl_core::encrypt_note(&destination_key, profile_id, &document)
+        let document =
+            std::str::from_utf8(&document).map_err(|_| "Decrypted note is not UTF-8".to_string())?;
+        let document =
+            reseal_images(vault_root, rel_path, document, Some((profile_id, &destination_key)), keys)?;
+        let resealed = mntl_core::encrypt_note(&destination_key, profile_id, document.as_bytes())
             .map_err(|e| e.to_string())?;
 
         write_atomic(&path, &resealed)
@@ -437,6 +457,24 @@ mod tests {
             BODY
         );
         assert!(!root.join("secret.mntl.enc").exists());
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn decrypting_a_favorite_clears_its_sealed_flag() {
+        let root = temp_dir("decrypt-favorite");
+        let root_str = root.to_string_lossy().into_owned();
+        let keys = unlocked(&root_str, &["my-diary"]);
+        write_plain(&root.join("secret.mntl"), BODY);
+        encrypt_note_inner(&root_str, "secret.mntl", "my-diary", &keys).unwrap();
+        crate::vault::set_note_favorite_inner(&root_str, "secret.mntl.enc", true, &keys).unwrap();
+
+        decrypt_note_inner(&root_str, "secret.mntl.enc", &keys).unwrap();
+        let plaintext = fs::read_to_string(root.join("secret.mntl")).unwrap();
+        let (frontmatter, body) = mntl_core::decode_note(&plaintext).unwrap();
+        assert!(!frontmatter.favorite);
+        assert_eq!(body, BODY);
 
         let _ = fs::remove_dir_all(&root);
     }
@@ -696,6 +734,45 @@ tags: [x]
 
         keys.lock_all().unwrap();
         assert!(create_encrypted_note_inner(&root_str, "", "Other", "my-diary", &keys).is_err());
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn images_follow_a_note_into_and_out_of_its_profiles() {
+        let root = temp_dir("images");
+        let root_str = root.to_string_lossy().into_owned();
+        let keys = unlocked(&root_str, &["my-diary", "work"]);
+        fs::create_dir_all(root.join("attachments")).unwrap();
+        fs::write(root.join("attachments/cat.png"), b"meow").unwrap();
+        write_plain(&root.join("secret.mntl"), "![cat](attachments/cat.png) ![[cat.png|200]] ![](https://x/y.png)");
+
+        let src_of = |content: &str, nth: usize| {
+            let ranges = crate::attachments::image_sources(content);
+            content[ranges[nth].clone()].to_string()
+        };
+
+        encrypt_note_inner(&root_str, "secret.mntl", "my-diary", &keys).unwrap();
+        let content = read_note_inner(&root_str, "secret.mntl.enc", &keys).unwrap().content;
+        let sealed = src_of(&content, 0);
+        assert!(sealed.starts_with("attachments/") && sealed.ends_with(".png.enc"), "{content}");
+        assert_eq!(src_of(&content, 1), sealed, "one copy per image");
+        assert_eq!(src_of(&content, 2), "https://x/y.png");
+        assert!(content.contains("|200]]"));
+        assert!(root.join("attachments/cat.png").is_file(), "the original stays");
+
+        move_note_inner(&root_str, "secret.mntl.enc", "work", &keys).unwrap();
+        let content = read_note_inner(&root_str, "secret.mntl.enc", &keys).unwrap().content;
+        let moved = src_of(&content, 0);
+        assert_ne!(moved, sealed);
+        let header = mntl_core::extract_encrypted_header(&fs::read(root.join(&moved)).unwrap()).unwrap();
+        assert_eq!(header.credential_profile, "work");
+
+        decrypt_note_inner(&root_str, "secret.mntl.enc", &keys).unwrap();
+        let content = read_note_inner(&root_str, "secret.mntl", &keys).unwrap().content;
+        let plain = src_of(&content, 0);
+        assert!(plain.ends_with(".png") && !plain.ends_with(".enc"), "{content}");
+        assert_eq!(fs::read(root.join(&plain)).unwrap(), b"meow");
 
         let _ = fs::remove_dir_all(&root);
     }

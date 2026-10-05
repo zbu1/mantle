@@ -8,7 +8,14 @@
 
 @if (!sidebarState.collapsed()) {
   @if (!open()) {
-  <app-vault-menu />
+  <button type="button" title="Back" aria-label="Back" [disabled]="!tabsState.canGoBack()" (click)="goBack()"
+    class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-foreground hover:bg-background disabled:pointer-events-none disabled:opacity-40">
+    <svg lucideArrowLeft [size]="14"></svg>
+  </button>
+  <button type="button" title="Forward" aria-label="Forward" [disabled]="!tabsState.canGoForward()" (click)="goForward()"
+    class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-foreground hover:bg-background disabled:pointer-events-none disabled:opacity-40">
+    <svg lucideArrowRight [size]="14"></svg>
+  </button>
   } @else {
   <div #menuBar class="flex items-center gap-0.5">
     <div class="relative">

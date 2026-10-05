@@ -15,7 +15,14 @@
       <svg lucideExpand [size]="16"></svg>
     </button>
     <span class="h-4 w-px shrink-0 bg-border"></span>
-    <span class="truncate text-xs text-muted-foreground">{{ notePath(tab) }}</span>
+    <nav aria-label="Note location" class="flex min-w-0 items-center text-xs text-muted-foreground">
+      @for (crumb of folderCrumbs(tab); track crumb.relPath) {
+      <button type="button" [title]="'Show ' + crumb.relPath + ' in sidebar'" (click)="sidebarState.revealFolder(crumb.relPath)"
+        class="min-w-0 max-w-32 truncate rounded px-1.5 py-0.5 hover:bg-surface hover:text-foreground">{{ crumb.name }}</button>
+      <svg lucideChevronRight [size]="12" class="shrink-0 opacity-50"></svg>
+      }
+      <span class="min-w-0 truncate px-1.5 font-medium text-foreground">{{ tab.title }}</span>
+    </nav>
     <button #encryptionButton type="button" title="Encryption" (click)="onEncryptionClick()"
       [class.bg-surface]="isEncryptionPanelOpen()" [class.text-foreground]="isEncryptionPanelOpen()"
       class="inline-flex h-7 shrink-0 items-center gap-1 rounded px-1.5 text-muted-foreground hover:bg-surface hover:text-foreground">

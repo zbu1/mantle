@@ -99,6 +99,10 @@ pub enum VaultNode {
         /// encrypted note whose profile is locked (its tags are sealed inside
         /// the ciphertext), or a file that can't be read or parsed.
         tags: Option<Vec<String>>,
+        /// Whether this encrypted note is a favorite, sealed in its
+        /// frontmatter. Always false for a locked note and for plaintext
+        /// notes, whose favorites live in `.mantle/state.json`.
+        favorite: bool,
     },
 }
 
@@ -190,24 +194,39 @@ fn read_frontmatter_prefix(path: &Path) -> Option<String> {
     }
 }
 
-/// The tags of the note at `path`, for a vault scan: read from the
-/// frontmatter of a plaintext note, or by decrypting an encrypted one whose
-/// profile is unlocked. `None` when they can't be known right now; like
-/// [`read_profile_id`], a scan never fails over one unreadable note.
+/// The tags of the note at `path`, for a vault scan, and whether it's a sealed
+/// favorite: read from the frontmatter of a plaintext note, or by decrypting
+/// an encrypted one whose profile is unlocked. Tags are `None` when they can't
+/// be known right now; like [`read_profile_id`], a scan never fails over one
+/// unreadable note.
 fn read_note_tags(
     path: &Path,
     file_name: &str,
     profile: Option<&str>,
     vault_root: &str,
     keys: &SessionKeys,
-) -> Option<Vec<String>> {
+) -> (Option<Vec<String>>, bool) {
     if file_name.ends_with(EXT_ENCRYPTED) {
-        let mk = keys.get(vault_root, profile?).ok()??;
-        let blob = fs::read(path).ok()?;
-        let document = mntl_core::decrypt_note(&mk, &blob).ok()?;
-        let document = std::str::from_utf8(&document).ok()?;
-        return mntl_core::extract_unencrypted_header(document).ok().map(|h| h.tags);
+        return read_sealed_frontmatter(path, profile, vault_root, keys)
+            .map_or((None, false), |h| (Some(h.tags), h.favorite));
     }
+    (read_plaintext_tags(path, file_name), false)
+}
+
+fn read_sealed_frontmatter(
+    path: &Path,
+    profile: Option<&str>,
+    vault_root: &str,
+    keys: &SessionKeys,
+) -> Option<mntl_core::NoteFrontmatter> {
+    let mk = keys.get(vault_root, profile?).ok()??;
+    let blob = fs::read(path).ok()?;
+    let document = mntl_core::decrypt_note(&mk, &blob).ok()?;
+    let document = std::str::from_utf8(&document).ok()?;
+    mntl_core::extract_unencrypted_header(document).ok()
+}
+
+fn read_plaintext_tags(path: &Path, file_name: &str) -> Option<Vec<String>> {
 
     let Some(prefix) = read_frontmatter_prefix(path) else {
         // A Markdown file needs no frontmatter; it just has no tags.
@@ -251,13 +270,15 @@ fn scan_dir(
                 } else {
                     None
                 };
-                let tags = read_note_tags(&entry.path(), &name, profile.as_deref(), vault_root, keys);
+                let (tags, favorite) =
+                    read_note_tags(&entry.path(), &name, profile.as_deref(), vault_root, keys);
                 notes.push(VaultNode::Note {
                     name: title,
                     rel_path: to_slash(&child_rel),
                     encrypted,
                     profile,
                     tags,
+                    favorite,
                 });
             }
         }
@@ -474,27 +495,82 @@ pub(crate) fn write_note_inner(
         return fs::write(&path, updated).map_err(|e| format!("Failed to write note: {e}"));
     }
 
-    let frontmatter = mntl_core::NoteFrontmatter { tags, ..Default::default() };
-    let encoded = mntl_core::encode_note(&frontmatter, content).map_err(|e| e.to_string())?;
-
     if rel_path.ends_with(EXT_ENCRYPTED) {
-        // Re-seal under the profile the file already names. A write never
-        // re-homes a note to a different profile — that is
-        // `notes_crypto::move_note_to_profile`'s job, and it has to re-encrypt
-        // rather than just relabel, since the header is the AAD.
-        //
-        // Read only the framing + header, not the (potentially large)
-        // ciphertext we are about to replace wholesale.
-        let existing = read_header_prefix(&path)?;
-        let (profile_id, mk) = master_key_for(vault_root, &existing, keys)?;
-        // `encrypt_note` generates a fresh content key and nonce on every
-        // call, so nothing from the previous version of the file is reused.
-        let blob =
-            mntl_core::encrypt_note(&mk, &profile_id, encoded.as_bytes()).map_err(|e| e.to_string())?;
-        return write_atomic(&path, &blob);
+        // Decrypting the old version, not just reading its header, is what
+        // keeps the note's sealed favorite flag across a save.
+        return reseal_note(vault_root, &path, keys, |frontmatter, body| {
+            frontmatter.tags = tags;
+            *body = content.to_string();
+        });
     }
 
+    let frontmatter = mntl_core::NoteFrontmatter { tags, ..Default::default() };
+    let encoded = mntl_core::encode_note(&frontmatter, content).map_err(|e| e.to_string())?;
     fs::write(&path, encoded).map_err(|e| format!("Failed to write note: {e}"))
+}
+
+/// Serializes read-modify-write cycles on encrypted notes, so a save and a
+/// favorite toggle on the same note can't each overwrite the other's change.
+// ponytail: one vault-wide lock; per-note locks if saves ever contend.
+static RESEAL_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Decrypt the encrypted note at `path`, let `edit` change its frontmatter
+/// and body, and seal the result again under the profile the file already
+/// names.
+///
+/// A write never re-homes a note to a different profile — that is
+/// `notes_crypto::move_note_to_profile`'s job, and it has to re-encrypt
+/// rather than just relabel, since the header is the AAD.
+fn reseal_note(
+    vault_root: &str,
+    path: &Path,
+    keys: &SessionKeys,
+    edit: impl FnOnce(&mut mntl_core::NoteFrontmatter, &mut String),
+) -> Result<(), String> {
+    let _guard = RESEAL_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let blob = fs::read(path).map_err(|e| format!("Failed to read note: {e}"))?;
+    let (profile_id, mk) = master_key_for(vault_root, &blob, keys)?;
+    let document = mntl_core::decrypt_note(&mk, &blob).map_err(|e| e.to_string())?;
+    let document =
+        std::str::from_utf8(&document).map_err(|_| "Decrypted note is not UTF-8".to_string())?;
+    let (mut frontmatter, body) = mntl_core::decode_note(document).map_err(|e| e.to_string())?;
+    let mut body = zeroize::Zeroizing::new(body);
+    edit(&mut frontmatter, &mut body);
+    let encoded = zeroize::Zeroizing::new(
+        mntl_core::encode_note(&frontmatter, &body).map_err(|e| e.to_string())?,
+    );
+    // `encrypt_note` generates a fresh content key and nonce on every call,
+    // so nothing from the previous version of the file is reused.
+    let blob =
+        mntl_core::encrypt_note(&mk, &profile_id, encoded.as_bytes()).map_err(|e| e.to_string())?;
+    write_atomic(path, &blob)
+}
+
+/// Mark an encrypted note as a favorite, or not. The flag is sealed in the
+/// note itself, so a locked vault doesn't reveal which notes are favorites.
+#[tauri::command]
+pub fn set_note_favorite(
+    vault_root: String,
+    rel_path: String,
+    favorite: bool,
+    keys: State<SessionKeys>,
+) -> Result<(), String> {
+    logged("set_note_favorite", || {
+        set_note_favorite_inner(&vault_root, &rel_path, favorite, &keys)
+    })
+}
+
+pub(crate) fn set_note_favorite_inner(
+    vault_root: &str,
+    rel_path: &str,
+    favorite: bool,
+    keys: &SessionKeys,
+) -> Result<(), String> {
+    if !rel_path.ends_with(EXT_ENCRYPTED) {
+        return Err("Only an encrypted note keeps its favorite in the note".to_string());
+    }
+    let path = resolve_rel_path(vault_root, rel_path)?;
+    reseal_note(vault_root, &path, keys, |frontmatter, _| frontmatter.favorite = favorite)
 }
 
 /// Tags as the frontend sent them, minus blanks and case-insensitive
@@ -1134,6 +1210,43 @@ tags: [x]
 
         keys.unlock_for_test(&root_str, "diary", mk).unwrap();
         assert_eq!(tags_of(&keys, "secret"), Some(vec!["private".into()]));
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_encrypted_favorite_is_sealed_kept_across_saves_and_hidden_while_locked() {
+        let root = temp_dir("sealed-favorite");
+        let root_str = root.to_string_lossy().into_owned();
+        let document = mntl_core::encode_unencrypted_note("Body").unwrap();
+        let mk = mntl_core::MasterKey::generate().unwrap();
+        let blob = mntl_core::encrypt_note(&mk, "diary", document.as_bytes()).unwrap();
+        fs::write(root.join("secret.mntl.enc"), blob).unwrap();
+
+        let favorite_in = |keys: &SessionKeys| {
+            let VaultNode::Folder { children, .. } = scan_vault_inner(&root_str, keys).unwrap() else {
+                panic!("root should be a folder");
+            };
+            match find_note(&children, "secret") {
+                VaultNode::Note { favorite, .. } => *favorite,
+                other => panic!("expected a note, got {other:?}"),
+            }
+        };
+
+        let unlocked = SessionKeys::default();
+        unlocked.unlock_for_test(&root_str, "diary", mk).unwrap();
+        assert!(!favorite_in(&unlocked));
+        set_note_favorite_inner(&root_str, "secret.mntl.enc", true, &unlocked).unwrap();
+        assert!(favorite_in(&unlocked));
+
+        write_note_inner(&root_str, "secret.mntl.enc", "Edited", &["t".into()], &unlocked).unwrap();
+        assert!(favorite_in(&unlocked), "a save must not drop the favorite");
+        let saved = read_note_inner(&root_str, "secret.mntl.enc", &unlocked).unwrap();
+        assert_eq!(saved, NoteDocument { content: "Edited".into(), tags: vec!["t".into()] });
+
+        assert!(!favorite_in(&SessionKeys::default()), "a locked note reveals nothing");
+        assert!(set_note_favorite_inner(&root_str, "secret.mntl.enc", false, &SessionKeys::default()).is_err());
+        assert!(set_note_favorite_inner(&root_str, "plain.mntl", true, &unlocked).is_err());
 
         let _ = fs::remove_dir_all(&root);
     }

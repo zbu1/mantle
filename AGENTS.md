@@ -27,6 +27,12 @@ Angular 22 (frontend, signals-based, no NgModules).
   profiles. `src-tauri/src/notes_crypto.rs` converts notes between the
   plaintext and encrypted formats and moves them between profiles.
   `src-tauri/src/tags.rs` renames or removes a tag across the whole vault.
+  `src-tauri/src/attachments.rs` stores images in the vault's `attachments/`
+  folder (content-hashed for plaintext notes, `<random>.<ext>.enc` sealed in
+  the note envelope for encrypted ones) and serves them to the editor through
+  the `mantle://` protocol, decrypting in memory. Encrypting, decrypting or
+  re-homing a note writes new copies of its images and re-points its links;
+  attachments are never modified or deleted once written.
 - **`crates/mntl-core`**: standalone Rust crate (Cargo workspace member,
   independent of Tauri) implementing the `.mntl` note format — plaintext
   Markdown with a YAML frontmatter header — and the `.mntl.enc` encrypted
@@ -83,6 +89,12 @@ Things to know before touching this code:
   `mantle:locked:<profile-id>` when it isn't.
 - **Locking must flush pending writes first** — `NotesState` debounces saves by
   a second, and a pending write still needs the key.
+- **An encrypted note's favorite is sealed in the note** (`NoteFrontmatter::favorite`,
+  set by `set_note_favorite`), not in `.mantle/state.json`, so a locked vault
+  doesn't reveal which notes are favorites. Saves decrypt the old version to
+  keep the flag (`reseal_note`); decrypting a note clears it.
+  `FavoritesState` routes each favorite to the right place and moves any
+  `.mntl.enc` path found in `state.json` into the note once it's unlocked.
 - Encrypted-note filenames are deliberately plaintext on disk for now.
 - The design gives at-rest confidentiality of the vault directory; it does not
   resist an attacker who can read a running Mantle process's memory.
@@ -102,7 +114,7 @@ Package manager is **pnpm** (see `pnpm-lock.yaml`), not npm.
 
 - Frontend tests use Jest with `jest-preset-angular` (config in `jest.config.ts`, setup in `setup-jest.ts`).
 - Test files live next to the code they test (e.g. `header.spec.ts` next to `header.ts`).
-- Rust: `#[cfg(test)]` unit tests in `src-tauri/src/vault.rs` (path traversal, note classification, compound `.mntl.enc` extension handling, scanning), `src-tauri/src/vault_meta.rs` (default-on-missing, round trip, forward-compatible parsing), `src-tauri/src/credentials.rs` (slugs, registry, unlock), `src-tauri/src/notes_crypto.rs` (encrypt/decrypt conversion), and `src-tauri/src/tags.rs` (vault-wide rename/remove); `crates/mntl-core/tests/crypto_tests.rs` covers the key hierarchy and the envelope format, and `crates/mntl-core/src/tags.rs` has unit tests for tag validation and Markdown frontmatter editing.
+- Rust: `#[cfg(test)]` unit tests in `src-tauri/src/vault.rs` (path traversal, note classification, compound `.mntl.enc` extension handling, scanning), `src-tauri/src/vault_meta.rs` (default-on-missing, round trip, forward-compatible parsing), `src-tauri/src/credentials.rs` (slugs, registry, unlock), `src-tauri/src/notes_crypto.rs` (encrypt/decrypt conversion), `src-tauri/src/tags.rs` (vault-wide rename/remove), and `src-tauri/src/attachments.rs` (image storage, link scanning, path resolution); `crates/mntl-core/tests/crypto_tests.rs` covers the key hierarchy and the envelope format, and `crates/mntl-core/src/tags.rs` has unit tests for tag validation and Markdown frontmatter editing.
 - Rust tests that need an unlocked profile use `SessionKeys::unlock_for_test` and cheap `KdfParams`, rather than paying for a production-cost Argon2id derivation per test.
 
 ## Conventions

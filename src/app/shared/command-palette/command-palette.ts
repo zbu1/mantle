@@ -32,6 +32,7 @@ import { SettingsModalState } from '../settings/settings-modal-state';
 import { CredentialsState } from '../../notes/credentials-state';
 import { NotesState } from '../../notes/notes-state';
 import { TabsState } from '../../notes/tabs-state';
+import { FavoritesState } from '../../notes/favorites-state';
 import { VaultMetaState } from '../../notes/vault-meta-state';
 import { VaultRenameState } from '../../notes/vault-rename-state';
 import { VaultState } from '../../notes/vault-state';
@@ -108,6 +109,7 @@ export class CommandPalette {
   private readonly quickSwitcherState = inject(QuickSwitcherState);
   private readonly dialogState = inject(DialogState);
   private readonly vaultMeta = inject(VaultMetaState);
+  private readonly favorites = inject(FavoritesState);
 
   protected readonly query = this.state.query;
   protected readonly selectedIndex = signal(0);
@@ -184,13 +186,13 @@ export class CommandPalette {
       });
       const tree = this.vaultState.tree();
       if (this.vaultMeta.loaded() && tree && flattenVaultNotes(tree).has(activeTab.noteId)) {
-        const favorite = this.vaultMeta.isFavorite(activeTab.noteId);
+        const favorite = this.favorites.isFavorite(activeTab.noteId);
         items.push({
           id: 'toggle-favorite',
           label: favorite ? 'Remove Note from Favorites' : 'Add Note to Favorites',
           icon: 'star',
           keywords: ['favorite', 'favourite', 'star', 'bookmark', 'pin'],
-          run: () => this.vaultMeta.toggleFavorite(activeTab.noteId),
+          run: () => this.favorites.toggle(activeTab.noteId),
         });
       }
     }

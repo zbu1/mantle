@@ -1,4 +1,4 @@
-import { Component, ElementRef, computed, effect, inject, input, output, signal, viewChild } from '@angular/core';
+import { Component, DestroyRef, ElementRef, computed, effect, inject, input, output, signal, untracked, viewChild } from '@angular/core';
 import { LucideChevronRight, LucideLock, LucideLockOpen } from '@lucide/angular';
 import {
   VAULT_FOLDER_DRAG_MIME,
@@ -20,6 +20,10 @@ import { SidebarItemButton } from '../sidebar-item-button/sidebar-item-button';
 import { ExplorerRow } from '../explorer-row/explorer-row';
 import { ExplorerBody } from '../explorer-body/explorer-body';
 import { HoverTooltip } from '../../../shared/hover-tooltip/hover-tooltip';
+import { SidebarState } from '../sidebar-state';
+
+/** How long a revealed folder stays highlighted. */
+const REVEAL_FLASH_MS = 1400;
 
 // Created once at module load (rather than per-dragstart) so it's already
 // decoded by the time a drag begins — Chromium falls back to a generic
@@ -80,6 +84,7 @@ export class VaultTreeNode {
   protected readonly renameState = inject(VaultRenameState);
   protected readonly credentialsState = inject(CredentialsState);
   private readonly tabsState = inject(TabsState);
+  private readonly sidebarState = inject(SidebarState);
 
   /** Left padding of a folder row at depth 0, and per level. Tighter than the secondary sections: the tree is the body. */
   protected readonly BASE_INDENT = 8;
@@ -99,7 +104,34 @@ export class VaultTreeNode {
 
   private readonly renameInputRef = viewChild<ElementRef<HTMLInputElement>>('renameInput');
 
+  /** Briefly true after the folder is revealed, e.g. from the editor's breadcrumb. */
+  protected readonly flashing = signal(false);
+  private readonly folderRow = viewChild<ElementRef<HTMLElement>>('folderRow');
+
   constructor() {
+    let flashTimer: ReturnType<typeof setTimeout> | undefined;
+    inject(DestroyRef).onDestroy(() => clearTimeout(flashTimer));
+
+    // Ancestors of the revealed folder open up; the folder itself consumes the
+    // request, opens, scrolls into view and flashes.
+    effect(() => {
+      const request = this.sidebarState.folderRevealRequest();
+      const folder = this.asFolder();
+      if (!request || !folder) return;
+      if (request.relPath.startsWith(folder.relPath + '/')) {
+        untracked(() => this.expanded.set(true));
+      } else if (request.relPath === folder.relPath) {
+        untracked(() => {
+          this.sidebarState.folderRevealRequest.set(null);
+          this.expanded.set(true);
+          this.flashing.set(true);
+          clearTimeout(flashTimer);
+          flashTimer = setTimeout(() => this.flashing.set(false), REVEAL_FLASH_MS);
+          setTimeout(() => this.folderRow()?.nativeElement.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+        });
+      }
+    });
+
     // Focus + select the rename input as soon as it's rendered.
     effect(() => {
       const el = this.renameInputRef()?.nativeElement;

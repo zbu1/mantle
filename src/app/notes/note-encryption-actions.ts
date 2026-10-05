@@ -4,6 +4,7 @@ import { formatError, logError, logInfo } from '../core/logger';
 import { ContextMenuItem } from '../shared/context-menu/context-menu.model';
 import { DialogState } from '../shared/dialog/dialog-state';
 import { CredentialsState } from './credentials-state';
+import { FavoritesState } from './favorites-state';
 import { CreatedNote, VaultState } from './vault-state';
 import { NoteEncryptionModalState } from './note-encryption-modal/note-encryption-modal-state';
 import { NotesState } from './notes-state';
@@ -31,6 +32,7 @@ export class NoteEncryptionActions {
   private readonly notesState = inject(NotesState);
   private readonly tabsState = inject(TabsState);
   private readonly vaultMeta = inject(VaultMetaState);
+  private readonly favorites = inject(FavoritesState);
   private readonly dialogState = inject(DialogState);
   private readonly modalState = inject(NoteEncryptionModalState);
 
@@ -149,6 +151,8 @@ export class NoteEncryptionActions {
     }
 
     await this.notesState.flushPending([note.relPath]);
+    // Decrypting clears the sealed flag; a plaintext note's favorite lives in state.json.
+    const wasFavorite = this.favorites.isFavorite(note.relPath);
 
     try {
       const created = await invoke<CreatedNote>('decrypt_note_to_plaintext', {
@@ -156,6 +160,7 @@ export class NoteEncryptionActions {
         relPath: note.relPath,
       });
       this.retarget(note.relPath, created);
+      if (wasFavorite) this.vaultMeta.addFavorites([created.relPath]);
       logInfo(`Decrypted "${note.relPath}" to plaintext`);
       await this.vaultState.refresh();
       return true;

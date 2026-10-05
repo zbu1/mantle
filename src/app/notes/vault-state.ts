@@ -4,7 +4,7 @@ import { listen } from '@tauri-apps/api/event';
 import { join } from '@tauri-apps/api/path';
 import { open, save } from '@tauri-apps/plugin-dialog';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
-import { flattenVaultNotes, withNoteTags, withRenamedNote, VaultFolderNode } from './vault-tree.model';
+import { flattenVaultNotes, withNoteFields, withRenamedNote, VaultFolderNode } from './vault-tree.model';
 import { TabsState } from './tabs-state';
 import { VaultMetaState } from './vault-meta-state';
 import { VaultRootState } from './vault-root-state';
@@ -319,7 +319,14 @@ export class VaultState {
   setNoteTagsInTree(relPath: string, tags: string[]): void {
     const tree = this.tree();
     if (!tree) return;
-    this.tree.set(withNoteTags(tree, relPath, tags));
+    this.tree.set(withNoteFields(tree, relPath, { tags }));
+  }
+
+  /** Like `setNoteTagsInTree`, for an encrypted note's sealed favorite flag. */
+  setNoteFavoriteInTree(relPath: string, favorite: boolean): void {
+    const tree = this.tree();
+    if (!tree) return;
+    this.tree.set(withNoteFields(tree, relPath, { favorite }));
   }
 
   async renameNote(relPath: string, newName: string): Promise<CreatedNote> {

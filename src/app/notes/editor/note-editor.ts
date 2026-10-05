@@ -18,8 +18,11 @@ import { baseKeymap, chainCommands, joinTextblockBackward, toggleMark } from 'pr
 import { splitListItem, sinkListItem, liftListItem } from 'prosemirror-schema-list';
 import { undoInputRule } from 'prosemirror-inputrules';
 import { gapCursor } from 'prosemirror-gapcursor';
+import { convertFileSrc, invoke } from '@tauri-apps/api/core';
+import { open } from '@tauri-apps/plugin-dialog';
 
 import { NotesState } from '../notes-state';
+import { VaultRootState } from '../vault-root-state';
 import { EditorFocusState } from './editor-focus-state';
 import { schema } from './prosemirror/schema';
 import { parseMarkdown, serializeMarkdown } from './prosemirror/markdown-converter';
@@ -29,6 +32,8 @@ import { trailingParagraphPlugin } from './prosemirror/plugins/trailing-paragrap
 import { demoteEmptyLeadingBlock } from './prosemirror/commands/demote-empty-leading-block';
 import { liftListItemAtStart } from './prosemirror/commands/lift-list-item-at-start';
 import { TaskItemView } from './prosemirror/nodeviews/task-item-view';
+import { ImageView } from './prosemirror/nodeviews/image-view';
+import { ImageContext, imagePlugin } from './prosemirror/plugins/image-plugin';
 
 import { SlashMenu } from './slash-menu/slash-menu';
 import { SlashMenuState } from './slash-menu/slash-menu-state';
@@ -88,6 +93,7 @@ export class NoteEditor {
   private readonly editorFocus = inject(EditorFocusState);
   private readonly slashMenuState = inject(SlashMenuState);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly vaultRoot = inject(VaultRootState).path;
 
   readonly noteId = input.required<string>();
 
@@ -118,6 +124,7 @@ export class NoteEditor {
           buildEditorKeymap(),
           gapCursor(),
           trailingParagraphPlugin(),
+          imagePlugin(this.imageContext()),
         ],
       });
 
@@ -125,6 +132,7 @@ export class NoteEditor {
         state,
         nodeViews: {
           task_item: (node, nodeView, getPos) => new TaskItemView(node, nodeView, getPos),
+          image: (node, nodeView) => new ImageView(node, nodeView),
         },
         // Only affects plain-text pastes; HTML clipboard content still goes
         // through the default DOM parser.
@@ -154,11 +162,52 @@ export class NoteEditor {
     this.destroyRef.onDestroy(() => this.editorView?.destroy());
   }
 
+  /**
+   * Stores images in the open note's vault and loads them back through the
+   * `mantle://` protocol (`attachments.rs`), which decrypts sealed ones.
+   */
+  private imageContext(): ImageContext {
+    const args = () => ({ vaultRoot: this.vaultRoot() ?? '', noteRelPath: this.noteId() });
+    return {
+      save: async (file) => {
+        // A data URL is the cheapest way to get base64 out of a File.
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(file);
+        });
+        const ext = file.type.slice('image/'.length).replace('+xml', '');
+        return invoke<string>('save_attachment', { ...args(), data: dataUrl.slice(dataUrl.indexOf(',') + 1), ext });
+      },
+      pick: async () => {
+        const sourcePath = await open({
+          multiple: false,
+          filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'bmp'] }],
+        });
+        return sourcePath ? invoke<string>('import_attachment', { ...args(), sourcePath }) : null;
+      },
+      url: (src) => {
+        if (/^[a-z][a-z0-9+.-]*:/i.test(src)) return src; // http:, data:, …
+        const { vaultRoot, noteRelPath } = args();
+        const query = new URLSearchParams({ vault: vaultRoot, note: noteRelPath, src });
+        // URLSearchParams writes a space as `+`, which the protocol doesn't decode.
+        return `${convertFileSrc('', 'mantle')}?${query.toString().replace(/\+/g, '%20')}`;
+      },
+    };
+  }
+
   private applyIfReady(id: string): void {
     const view = this.editorView;
     if (!view) return;
     const entry = this.notesState.entry(id);
-    if (!entry || entry.status !== 'loaded' || id === this.lastAppliedNoteId) return;
+    if (!entry || entry.status !== 'loaded') {
+      // Reloaded (e.g. its images were re-pointed by moving it to another
+      // profile), so apply the content again once it arrives.
+      if (id === this.lastAppliedNoteId) this.lastAppliedNoteId = undefined;
+      return;
+    }
+    if (id === this.lastAppliedNoteId) return;
 
     const newDoc = parseMarkdown(entry.note.content);
     const tr = view.state.tr.replaceWith(0, view.state.doc.content.size, newDoc);

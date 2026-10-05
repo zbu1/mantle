@@ -68,6 +68,33 @@ const baseNodes = OrderedMap.from<NodeSpec>({
       return ['br'];
     },
   },
+  image: {
+    inline: true,
+    group: 'inline',
+    draggable: true,
+    attrs: {
+      src: {},
+      alt: { default: null },
+      title: { default: null },
+      // Obsidian's `![[src|size]]` embed: `embed` keeps that syntax on save,
+      // `size` is its "300" or "300x200".
+      embed: { default: false },
+      size: { default: null },
+    },
+    parseDOM: [
+      {
+        tag: 'img[src]',
+        getAttrs: (dom: string | Node) => {
+          const el = dom as HTMLElement;
+          return { src: el.getAttribute('src'), alt: el.getAttribute('alt'), title: el.getAttribute('title') };
+        },
+      },
+    ],
+    toDOM(node: PMNode) {
+      const { src, alt, title } = node.attrs;
+      return ['img', { src, alt, title }];
+    },
+  },
   task_list: {
     content: 'task_item+',
     group: 'block',

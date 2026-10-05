@@ -148,6 +148,16 @@ fn test_note_roundtrip_with_master_key() {
 }
 
 #[test]
+fn test_envelope_seals_arbitrary_binary() {
+    // Image attachments reuse the note envelope with raw bytes as the payload.
+    let mk = test_mk();
+    let image: Vec<u8> = (0..=255u8).cycle().take(4096).collect();
+
+    let blob = encrypt_note(&mk, "my-diary", &image).unwrap();
+    assert_eq!(&decrypt_note(&mk, &blob).unwrap()[..], &image[..]);
+}
+
+#[test]
 fn test_decrypt_with_wrong_master_key_is_key_wrap_error() {
     let blob = encrypt_note(&test_mk(), "my-diary", b"payload").unwrap();
 

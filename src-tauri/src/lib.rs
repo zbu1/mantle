@@ -1,3 +1,4 @@
+mod attachments;
 mod credentials;
 mod logging;
 mod notes_crypto;
@@ -29,11 +30,13 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(watcher::WatcherState::default())
         .manage(credentials::SessionKeys::default())
+        .register_asynchronous_uri_scheme_protocol("mantle", attachments::protocol)
         .invoke_handler(tauri::generate_handler![
             vault::scan_vault,
             vault::create_vault,
             vault::read_note,
             vault::write_note,
+            vault::set_note_favorite,
             vault::create_note,
             vault::create_folder,
             vault::delete_note,
@@ -59,6 +62,8 @@ pub fn run() {
             notes_crypto::move_note_to_profile,
             notes_crypto::create_encrypted_note,
             notes_crypto::convert_markdown_to_note,
+            attachments::save_attachment,
+            attachments::import_attachment,
             tags::rename_tag,
             tags::remove_tag,
             watcher::start_vault_watch,

@@ -10,6 +10,20 @@ import { schema } from './schema';
 const md = markdownIt('commonmark', { html: false });
 md.enable('strikethrough');
 
+/** Obsidian `![[photo.png|300]]` image embeds; embeds of anything else (notes) stay text. */
+const IMAGE_EMBED = /^!\[\[([^\]|\n]+\.(?:png|jpe?g|gif|webp|svg|avif|bmp))(?:\|([^\]\n]*))?\]\]/i;
+md.inline.ruler.before('image', 'image_embed', (state, silent) => {
+  const match = IMAGE_EMBED.exec(state.src.slice(state.pos));
+  if (!match) return false;
+  if (!silent) {
+    const token = state.push('image_embed', '', 0);
+    token.attrs = [['src', match[1]]];
+    token.meta = { size: match[2] || null };
+  }
+  state.pos += match[0].length;
+  return true;
+});
+
 export const markdownParser = new MarkdownParser(schema, md, {
   blockquote: { block: 'blockquote' },
   paragraph: { block: 'paragraph' },
@@ -31,6 +45,18 @@ export const markdownParser = new MarkdownParser(schema, md, {
   },
   hr: { node: 'horizontal_rule' },
   hardbreak: { node: 'hard_break' },
+  image: {
+    node: 'image',
+    getAttrs: (tok) => ({
+      src: tok.attrGet('src'),
+      title: tok.attrGet('title') || null,
+      alt: tok.children?.[0]?.content || null,
+    }),
+  },
+  image_embed: {
+    node: 'image',
+    getAttrs: (tok) => ({ src: tok.attrGet('src'), embed: true, size: tok.meta.size }),
+  },
 
   em: { mark: 'em' },
   strong: { mark: 'strong' },
@@ -54,6 +80,11 @@ export const markdownSerializer = new MarkdownSerializer(
     task_item(state, node) {
       state.write(node.attrs['checked'] ? '[x] ' : '[ ] ');
       state.renderContent(node);
+    },
+    image(state, node, parent, index) {
+      const { src, size } = node.attrs;
+      if (node.attrs['embed']) state.write(`![[${src}${size ? `|${size}` : ''}]]`);
+      else defaultMarkdownSerializer.nodes['image'](state, node, parent, index);
     },
     horizontal_rule(state, node) {
       state.write(node.attrs['markup'] || '---');

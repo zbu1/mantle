@@ -1,6 +1,6 @@
 <aside class="relative mb-2 flex shrink-0 flex-col rounded-xl bg-background text-foreground"
   [class.shadow-card]="!state.collapsed()"
-  [class.mr-1]="!state.collapsed()" [class.border]="!state.collapsed()" [class.border-border]="!state.collapsed()"
+  [class.mr-1]="!state.collapsed()" [class.border]="!state.collapsed()" [class.border-input]="!state.collapsed()"
   [style.width.px]="state.effectiveWidth()"
   [style.transition]="state.resizing() ? 'none' : 'width 200ms ease-out'">
   @if (!state.collapsed()) {
@@ -52,11 +52,7 @@
           }
           <app-sidebar-item-button [label]="row.note.name" (clicked)="onOpenNote(row.note)"
             (middleClicked)="onOpenNoteInBackground(row.note)" (contextMenu)="onFavoriteContextMenu($event, row)">
-            @if (row.locked) {
-            <svg sidebarItemIcon lucideLock [size]="13" class="shrink-0"></svg>
-            } @else {
             <svg sidebarItemIcon lucideFileText [size]="14" class="shrink-0"></svg>
-            }
             @if (row.folder; as folder) {
             <span sidebarItemTrailing class="max-w-[45%] shrink-0 truncate text-xs text-muted-foreground">{{ folder }}</span>
             }

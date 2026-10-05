@@ -144,7 +144,9 @@ pub fn derive_kek_with_params(
 ///
 /// `plaintext` is expected to be a complete `.mntl` document — frontmatter and
 /// body, as produced by [`encode_unencrypted_note`] — so that everything about
-/// a note except which profile owns it is sealed inside the ciphertext.
+/// a note except which profile owns it is sealed inside the ciphertext. The
+/// same envelope also seals image attachments, with the raw image bytes as
+/// the payload.
 ///
 /// Returns the serialized `.mntl.enc` binary envelope.
 ///

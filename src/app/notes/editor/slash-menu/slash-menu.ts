@@ -4,6 +4,7 @@ import {
   LucideHeading1,
   LucideHeading2,
   LucideHeading3,
+  LucideImage,
   LucideList,
   LucideListOrdered,
   LucideListTodo,
@@ -29,6 +30,7 @@ import { SlashCommandItem } from './slash-menu.model';
     LucideQuote,
     LucideCode2,
     LucideMinus,
+    LucideImage,
   ],
   templateUrl: './slash-menu.html',
 })
