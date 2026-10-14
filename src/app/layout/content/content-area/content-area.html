@@ -40,8 +40,9 @@
     </button>
     }
     <span class="flex-1"></span>
-    @if (!activeIsFile()) {
-    <span class="shrink-0 text-xs text-muted-foreground">0 words · 0 characters</span>
+    @if (noteEditor(); as editor) {
+    <span class="shrink-0 text-xs text-muted-foreground">{{ editor.textStats().words }} {{ editor.textStats().words === 1 ? 'word' : 'words' }}
+      · {{ editor.textStats().characters }} {{ editor.textStats().characters === 1 ? 'character' : 'characters' }}</span>
     }
     @if (favoritableNoteId()) {
     <button type="button" [title]="(activeIsFavorite() ? 'Remove from Favorites' : 'Add to Favorites') + ' (Ctrl+Shift+B)'"
@@ -76,11 +77,11 @@
     </div>
   </div>
   } @else if (activeTab(); as tab) {
+  @if (activeIsFile()) {
+  <!-- No title: the breadcrumb names the file, and the image gets the whole area. -->
+  <app-file-preview [relPath]="tab.noteId" class="mx-6 mb-6" />
+  } @else {
   <div class="mx-auto max-w-4xl px-6 pb-6 h-full min-w-0 w-full">
-    @if (activeIsFile()) {
-    <h1 class="mb-2 truncate text-2xl font-semibold tracking-tight text-foreground">{{ tab.title }}</h1>
-    <app-file-preview [relPath]="tab.noteId" />
-    } @else {
     <input #titleInput type="text" [value]="tab.title" (input)="onTitleInput(tab, titleInput.value)"
       (keydown)="onTitleKeydown($event, tab, titleInput)" (blur)="onTitleBlur(tab)"
       class="mb-2 w-full min-w-0 truncate border-0 bg-transparent p-0 text-2xl font-semibold tracking-tight text-foreground outline-none! focus-visible:shadow-none" />
@@ -134,8 +135,8 @@
     }
     <app-note-editor [noteId]="tab.noteId" class="block h-full" />
     }
-    }
   </div>
+  }
   } @else {
   <div class="flex flex-1 flex-col items-center justify-center gap-4 px-6 pb-16 text-center">
     <!-- Strata: layered waves that warm from border-gray to ember. -->

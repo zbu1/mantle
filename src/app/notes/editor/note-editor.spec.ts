@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideZonelessChangeDetection } from '@angular/core';
 import type { EditorView } from 'prosemirror-view';
-import { NoteEditor } from './note-editor';
+import { NoteEditor, countText } from './note-editor';
 import { NotesState } from '../notes-state';
 import { EditorFocusState } from './editor-focus-state';
 import { VaultState } from '../vault-state';
@@ -117,5 +117,13 @@ describe('NoteEditor', () => {
 
     expect(fixture.nativeElement.querySelector('.ProseMirror')).not.toBe(document.activeElement);
     fixture.nativeElement.remove();
+  });
+});
+
+describe('countText', () => {
+  it('counts the rendered text, not the Markdown, and skips whitespace in characters', () => {
+    expect(countText(parseMarkdown('**bold** and *it*'))).toEqual({ words: 3, characters: 9 });
+    expect(countText(parseMarkdown('# One\n\ntwo\n\n```\nthree four\n```'))).toEqual({ words: 4, characters: 15 });
+    expect(countText(parseMarkdown(''))).toEqual({ words: 0, characters: 0 });
   });
 });

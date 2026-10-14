@@ -6,13 +6,14 @@ import {
   computed,
   effect,
   inject,
+  signal,
   input,
   untracked,
   viewChild,
 } from '@angular/core';
 import { EditorState, Command } from 'prosemirror-state';
 import { EditorView } from 'prosemirror-view';
-import { Slice } from 'prosemirror-model';
+import { Node as ProseMirrorNode, Slice } from 'prosemirror-model';
 import { history, undo, redo } from 'prosemirror-history';
 import { keymap } from 'prosemirror-keymap';
 import { baseKeymap, chainCommands, joinTextblockBackward, toggleMark } from 'prosemirror-commands';
@@ -95,6 +96,19 @@ function buildEditorKeymap() {
   return keymap(keys);
 }
 
+/**
+ * Counts what the editor shows rather than the Markdown behind it, so
+ * `**bold**` is 1 word and 4 characters. Characters exclude whitespace.
+ */
+export function countText(doc: ProseMirrorNode): { words: number; characters: number } {
+  // Spaces between blocks and around leaves (images, hard breaks) keep words apart.
+  const text = doc.textBetween(0, doc.content.size, ' ', ' ');
+  return {
+    words: text.split(/\s+/).filter(Boolean).length,
+    characters: [...text.replace(/\s+/g, '')].length,
+  };
+}
+
 @Component({
   selector: 'app-note-editor',
   imports: [SlashMenu],
@@ -119,6 +133,9 @@ export class NoteEditor {
 
   private editorView: EditorView | undefined;
   private lastAppliedNoteId: string | undefined;
+
+  /** Words and non-whitespace characters of the rendered text, for the content area's toolbar. */
+  readonly textStats = signal({ words: 0, characters: 0 });
 
   protected readonly entryStatus = computed(() => this.notesState.entry(this.noteId())?.status);
 
@@ -159,6 +176,7 @@ export class NoteEditor {
           view.updateState(newState);
 
           if (tr.docChanged) {
+            this.textStats.set(countText(newState.doc));
             const markdown = serializeMarkdown(newState.doc);
             this.notesState.updateContent(this.noteId(), markdown);
           }

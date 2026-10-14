@@ -14,7 +14,7 @@ import { VaultState } from '../vault-state';
   template: `
     @if (isImage() && !failed()) {
       <img [src]="url()" [alt]="relPath()" (error)="failed.set(true)"
-        class="mx-auto mt-2 max-h-[calc(100vh-12rem)] max-w-full rounded-md object-contain" />
+        class="absolute inset-0 m-auto max-h-full max-w-full rounded-md object-contain" />
     } @else {
       <div class="flex flex-col items-center justify-center gap-3 py-16 text-center">
         <svg lucideFileQuestion [size]="32" class="text-muted-foreground"></svg>
@@ -43,6 +43,9 @@ import { VaultState } from '../vault-state';
       </div>
     }
   `,
+  // Fills what's left of the content area; the image is centered in it,
+  // scaled down to fit but never up past its own size.
+  host: { class: 'relative block min-h-0 flex-1' },
 })
 export class FilePreview {
   readonly relPath = input.required<string>();

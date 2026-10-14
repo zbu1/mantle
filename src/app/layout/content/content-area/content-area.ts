@@ -81,6 +81,7 @@ export class ContentArea {
   protected readonly sidebarState = inject(SidebarState);
 
   private readonly contentRoot = viewChild<ElementRef<HTMLElement>>('contentRoot');
+  protected readonly noteEditor = viewChild(NoteEditor);
   private readonly encryptionButton = viewChild<ElementRef<HTMLButtonElement>>('encryptionButton');
   private readonly pendingRenames = new Map<string, ReturnType<typeof setTimeout>>();
 
