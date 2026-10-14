@@ -176,7 +176,10 @@
 
 .ProseMirror h1,
 .ProseMirror h2,
-.ProseMirror h3 {
+.ProseMirror h3,
+.ProseMirror h4,
+.ProseMirror h5,
+.ProseMirror h6 {
   color: var(--foreground);
   font-weight: 600;
   letter-spacing: -0.01em;
@@ -194,6 +197,20 @@
 
 .ProseMirror h3 {
   font-size: 1.1em;
+}
+
+.ProseMirror h4 {
+  font-size: 1em;
+}
+
+/* h5 and h6 step down by weight and tone rather than below body size. */
+.ProseMirror h5 {
+  font-size: 0.95em;
+}
+
+.ProseMirror h6 {
+  font-size: 0.95em;
+  color: var(--muted-foreground);
 }
 
 .ProseMirror ul,

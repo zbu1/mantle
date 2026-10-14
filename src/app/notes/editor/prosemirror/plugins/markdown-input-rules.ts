@@ -50,7 +50,7 @@ function markInputRule(
   );
 }
 
-const headingRule = textblockTypeInputRule(/^(#{1,3})\s$/, schema.nodes['heading'], (match) => ({
+const headingRule = textblockTypeInputRule(/^(#{1,6})\s$/, schema.nodes['heading'], (match) => ({
   level: match[1].length,
 }));
 

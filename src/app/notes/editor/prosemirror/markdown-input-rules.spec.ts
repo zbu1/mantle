@@ -74,6 +74,7 @@ describe('markdown input rules', () => {
       ['# ', 1],
       ['## ', 2],
       ['### ', 3],
+      ['###### ', 6],
     ])('converts "%s" into a heading of level %i', async (input, level) => {
       const { view } = await setup();
       type(view, input);
@@ -83,13 +84,13 @@ describe('markdown input rules', () => {
       expect(block.attrs['level']).toBe(level);
     });
 
-    it('leaves "#### " as literal text, since the schema caps headings at h3', async () => {
+    it('leaves "####### " as literal text, since Markdown caps headings at h6', async () => {
       const { view } = await setup();
-      type(view, '#### ');
+      type(view, '####### ');
 
       const block = view.state.doc.firstChild!;
       expect(block.type).toBe(schema.nodes['paragraph']);
-      expect(block.textContent).toBe('#### ');
+      expect(block.textContent).toBe('####### ');
     });
 
     it('keeps heading styling for text typed after the conversion', async () => {

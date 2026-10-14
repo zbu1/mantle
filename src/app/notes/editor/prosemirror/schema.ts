@@ -35,11 +35,7 @@ const baseNodes = OrderedMap.from<NodeSpec>({
     content: 'inline*',
     group: 'block',
     defining: true,
-    parseDOM: [
-      { tag: 'h1', attrs: { level: 1 } },
-      { tag: 'h2', attrs: { level: 2 } },
-      { tag: 'h3', attrs: { level: 3 } },
-    ],
+    parseDOM: [1, 2, 3, 4, 5, 6].map((level) => ({ tag: `h${level}`, attrs: { level } })),
     toDOM(node: PMNode) {
       return ['h' + node.attrs['level'], 0];
     },
