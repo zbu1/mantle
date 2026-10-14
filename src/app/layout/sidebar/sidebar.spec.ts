@@ -2,6 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideZonelessChangeDetection } from '@angular/core';
 import { installTauriMock } from '../../../testing/tauri-mock';
 import { TabsState } from '../../notes/tabs-state';
+import { VaultSelectionState } from '../../notes/vault-selection-state';
 import { NewEncryptedNoteState } from '../../notes/new-encrypted-note/new-encrypted-note-state';
 import { VaultMetaState } from '../../notes/vault-meta-state';
 import { VaultRootState } from '../../notes/vault-root-state';
@@ -453,9 +454,9 @@ describe('Sidebar', () => {
     }
 
     function notePaths(fixture: ComponentFixture<Sidebar>): string[] {
-      return [...fixture.nativeElement.querySelectorAll('[data-vault-tree] [data-note-path]')].map(
-        (el) => (el as HTMLElement).dataset['notePath']!,
-      );
+      return [...fixture.nativeElement.querySelectorAll('[data-vault-tree] [data-tree-path]')]
+        .map((el) => (el as HTMLElement).dataset['treePath']!)
+        .filter((path) => path.endsWith('.mntl'));
     }
 
     function filter(fixture: ComponentFixture<Sidebar>, value: string): void {
@@ -486,6 +487,30 @@ describe('Sidebar', () => {
       const current = [...fixture.nativeElement.querySelectorAll('[data-vault-tree] [aria-current="page"]')];
       expect(current).toHaveLength(1);
       expect((current[0] as HTMLElement).textContent).toContain('todo');
+    });
+
+    function pressCtrlA(target: Element): void {
+      target.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', ctrlKey: true, bubbles: true }));
+    }
+
+    it('ctrl-click selects a folder without toggling it', async () => {
+      const fixture = await setup();
+      const folderRow = fixture.nativeElement.querySelector('[data-tree-path="Work"] [role="button"]') as HTMLElement;
+      folderRow.dispatchEvent(new MouseEvent('click', { ctrlKey: true, bubbles: true }));
+      fixture.detectChanges();
+      expect([...TestBed.inject(VaultSelectionState).selected()]).toEqual(['Work']);
+      expect(folderRow.getAttribute('aria-expanded')).toBe('true');
+    });
+
+    it('Ctrl+A selects the direct children of the focused item’s folder, or of the root', async () => {
+      const fixture = await setup();
+      const selection = TestBed.inject(VaultSelectionState);
+
+      pressCtrlA(fixture.nativeElement.querySelector('[data-vault-tree]'));
+      expect([...selection.selected()]).toEqual(['Work', 'todo.mntl']);
+
+      pressCtrlA(fixture.nativeElement.querySelector('[data-tree-path="Work/standup.mntl"] button'));
+      expect([...selection.selected()]).toEqual(['Work/Roadmap.mntl', 'Work/standup.mntl']);
     });
   });
 

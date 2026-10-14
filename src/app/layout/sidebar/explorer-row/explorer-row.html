@@ -1,6 +1,6 @@
-<div [appHoverTooltip]="label()" class="group/row flex w-full items-center gap-1.5 rounded-md py-1 pr-2 text-xs text-foreground/80 hover:bg-surface hover:text-foreground">
+<div [appHoverTooltip]="label()" [class.bg-foreground/6]="selected()" class="group/row flex w-full items-center gap-1.5 rounded-md py-1 pr-2 text-xs text-foreground/80 hover:bg-surface hover:text-foreground">
   <div role="button" tabindex="0" [attr.draggable]="draggable() ? 'true' : null" (dragstart)="onDragStart($event)"
-    (contextmenu)="onContextMenu($event)" (click)="toggle.emit()" (keydown.enter)="toggle.emit()"
+    (contextmenu)="onContextMenu($event)" (click)="toggle.emit($event)" (keydown.enter)="toggle.emit($event)"
     (keydown.space)="onSpaceKey($event)" [attr.aria-expanded]="expanded()"
     [style.padding-left.px]="baseIndent() + depth() * indentStep()" class="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left">
     <svg lucideChevronRight [size]="12" class="shrink-0 transition-transform duration-200"

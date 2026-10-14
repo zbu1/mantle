@@ -157,6 +157,24 @@ export function flattenVaultNotes(root: VaultFolderNode): Map<string, string> {
   return notes;
 }
 
+/** Every node under `root` (notes, folders and files, not `root` itself) by relPath. */
+export function flattenTreeNodes(root: VaultFolderNode): Map<string, VaultNode> {
+  const nodes = new Map<string, VaultNode>();
+  const visit = (folder: VaultFolderNode): void => {
+    for (const child of folder.children) {
+      nodes.set(child.relPath, child);
+      if (child.type === 'folder') visit(child);
+    }
+  };
+  visit(root);
+  return nodes;
+}
+
+/** `relPaths` minus any path inside another of them — a folder carries its contents along. */
+export function topmostPaths(relPaths: readonly string[]): string[] {
+  return relPaths.filter((path) => !relPaths.some((other) => path.startsWith(`${other}/`)));
+}
+
 /**
  * Every `.mntl.enc` note in the tree, in traversal order.
  *

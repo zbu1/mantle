@@ -28,8 +28,11 @@ export class ExplorerRow {
   readonly strong = input(false);
   readonly expanded = input(false);
   readonly draggable = input(false);
+  /** Part of a multi-selection in the vault tree: the same faint fill as a selected note. */
+  readonly selected = input(false);
 
-  readonly toggle = output<void>();
+  /** Click, Enter or Space on the row; the vault tree reads click modifiers off the event. */
+  readonly toggle = output<Event>();
   readonly headerContextMenu = output<MouseEvent>();
   readonly headerDragStart = output<DragEvent>();
 
@@ -44,6 +47,6 @@ export class ExplorerRow {
   /** Space normally scrolls the page; the row's own role="button" needs it to toggle instead. */
   protected onSpaceKey(event: Event): void {
     event.preventDefault();
-    this.toggle.emit();
+    this.toggle.emit(event);
   }
 }

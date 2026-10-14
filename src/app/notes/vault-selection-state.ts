@@ -1,12 +1,20 @@
 import { Injectable, signal } from '@angular/core';
 
-/** Tracks which notes are selected in the vault explorer tree (plain click, ctrl/cmd-click, shift-click range). */
+/**
+ * Tracks which items — notes, folders and files — are selected in the vault
+ * explorer tree (plain click, ctrl/cmd-click, shift-click range, Ctrl+A).
+ */
 @Injectable({ providedIn: 'root' })
 export class VaultSelectionState {
   readonly selected = signal<ReadonlySet<string>>(new Set());
 
-  /** Range anchor for shift-click; the last note explicitly clicked (plain or ctrl/cmd). */
+  /** Range anchor for shift-click; the last item explicitly clicked (plain or ctrl/cmd). */
   private anchor: string | null = null;
+
+  /** Replaces the selection with `relPaths` (e.g. Ctrl+A), keeping the range anchor. */
+  selectAll(relPaths: readonly string[]): void {
+    this.selected.set(new Set(relPaths));
+  }
 
   isSelected(relPath: string): boolean {
     return this.selected().has(relPath);

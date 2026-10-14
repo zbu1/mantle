@@ -179,6 +179,25 @@ export class VaultTreeNode {
     this.expanded.update((v) => !v);
   }
 
+  /** A plain click still opens/closes the folder; ctrl/cmd- and shift-clicks select it. */
+  protected onFolderToggle(folder: VaultFolderNode, event: Event): void {
+    if (!(event instanceof MouseEvent && this.selectWithModifiers(folder.relPath, event))) this.toggleExpanded();
+  }
+
+  protected onFileClick(file: VaultFileNode, event: MouseEvent): void {
+    if (this.selectWithModifiers(file.relPath, event)) return;
+    this.selectionState.selectOnly(file.relPath);
+    this.openFile.emit(file);
+  }
+
+  /** Shift-click selects a range, ctrl/cmd-click toggles one item. False for a plain click. */
+  private selectWithModifiers(relPath: string, event: MouseEvent): boolean {
+    if (event.shiftKey) this.selectionState.selectRange(relPath, this.visibleTreePaths());
+    else if (event.ctrlKey || event.metaKey) this.selectionState.toggle(relPath);
+    else return false;
+    return true;
+  }
+
   /** True when this note is encrypted *and* its profile isn't unlocked. */
   protected isLocked(note: VaultNoteNode): boolean {
     return isNoteLocked(note, this.unlockedProfiles());
@@ -204,14 +223,7 @@ export class VaultTreeNode {
       this.lockedClicked.emit(note);
       return;
     }
-    if (event.shiftKey) {
-      this.selectionState.selectRange(note.relPath, this.visibleNotePaths());
-      return;
-    }
-    if (event.ctrlKey || event.metaKey) {
-      this.selectionState.toggle(note.relPath);
-      return;
-    }
+    if (this.selectWithModifiers(note.relPath, event)) return;
     this.selectionState.selectOnly(note.relPath);
     this.openNote.emit(note);
   }
@@ -223,17 +235,19 @@ export class VaultTreeNode {
     this.noteContextMenu.emit({ event, note });
   }
 
-  private visibleNotePaths(): string[] {
-    return Array.from(document.querySelectorAll<HTMLElement>('[data-vault-tree] [data-note-path]'))
-      .map((el) => el.dataset['notePath'])
+  private visibleTreePaths(): string[] {
+    return Array.from(document.querySelectorAll<HTMLElement>('[data-vault-tree] [data-tree-path]'))
+      .map((el) => el.dataset['treePath'])
       .filter((path): path is string => !!path);
   }
 
   // Encrypted notes are draggable whether or not they're unlocked: moving a
   // note is a plain filesystem rename that never touches its contents.
-  protected onNoteDragStart(note: VaultNoteNode, event: DragEvent): void {
-    if (!this.selectionState.isSelected(note.relPath)) {
-      this.selectionState.selectOnly(note.relPath);
+  // Dragging any selected item (note, folder or file) drags the whole selection.
+  protected onItemDragStart(relPath: string, event: DragEvent): void {
+    event.stopPropagation();
+    if (!this.selectionState.isSelected(relPath)) {
+      this.selectionState.selectOnly(relPath);
     }
     const selected = [...this.selectionState.selected()];
     event.dataTransfer?.setData(VAULT_NOTE_DRAG_MIME, JSON.stringify(selected));
@@ -260,10 +274,16 @@ export class VaultTreeNode {
     else this.dragState.hover(folder.relPath, folder.name);
   }
 
-  /** True if every currently-dragged note already lives directly in `folder`, making a drop there a no-op. */
+  /**
+   * True if a drop of the dragged selection on `folder` would do nothing: every
+   * item already lives directly in it, or it is (inside) a dragged folder.
+   */
   private isDraggingIntoOwnFolder(folder: VaultFolderNode): boolean {
     const selected = this.selectionState.selected();
     if (selected.size === 0) return false;
+    for (const relPath of selected) {
+      if (folder.relPath === relPath || folder.relPath.startsWith(`${relPath}/`)) return true;
+    }
     for (const relPath of selected) {
       if (dirOf(relPath) !== folder.relPath) return false;
     }
@@ -303,6 +323,10 @@ export class VaultTreeNode {
   }
 
   protected onFolderDragStart(folder: VaultFolderNode, event: DragEvent): void {
+    if (this.selectionState.isSelected(folder.relPath) && this.selectionState.selected().size > 1) {
+      this.onItemDragStart(folder.relPath, event);
+      return;
+    }
     event.stopPropagation();
     event.dataTransfer?.setData(VAULT_FOLDER_DRAG_MIME, folder.relPath);
     if (event.dataTransfer) {

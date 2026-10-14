@@ -88,7 +88,7 @@ describe('VaultTreeNode', () => {
     // Moving or renaming a note is a plain filesystem rename that never reads
     // its contents, so there's no reason a locked note can't be reorganized.
     render(note());
-    const wrapper = fixture.nativeElement.querySelector('[data-note-path]') as HTMLElement;
+    const wrapper = fixture.nativeElement.querySelector('[data-tree-path]') as HTMLElement;
     expect(wrapper.getAttribute('draggable')).toBe('true');
   });
 });

@@ -25,7 +25,10 @@ import { VaultRenameState } from '../../notes/vault-rename-state';
 import { VaultSelectionState } from '../../notes/vault-selection-state';
 import {
   filterVaultTree,
+  findFolder,
   flattenAllNotes,
+  flattenTreeNodes,
+  topmostPaths,
   dirOf,
   flattenVaultNotes,
   isNoteLocked,
@@ -35,6 +38,7 @@ import {
   VAULT_NOTE_DRAG_MIME,
   VaultFileNode,
   VaultFolderNode,
+  VaultNode,
   VaultNoteNode,
 } from '../../notes/vault-tree.model';
 import { ContextMenuState } from '../../shared/context-menu/context-menu-state';
@@ -84,6 +88,12 @@ export class Sidebar {
   protected readonly visibleTree = computed(() => {
     const tree = this.vaultState.tree();
     return tree ? filterVaultTree(tree, this.filterQuery()) : null;
+  });
+
+  /** Every tree node by relPath, for telling what kind of item a selected path is. */
+  private readonly nodesByPath = computed(() => {
+    const tree = this.vaultState.tree();
+    return tree ? flattenTreeNodes(tree) : new Map<string, VaultNode>();
   });
 
   /** Whether any secondary section is shown, i.e. whether the stack below the tree renders at all. */
@@ -148,10 +158,9 @@ export class Sidebar {
       });
     });
 
-    // Drop selected notes that no longer exist once the tree changes (deleted/moved externally).
+    // Drop selected items that no longer exist once the tree changes (deleted/moved externally).
     effect(() => {
-      const tree = this.vaultState.tree();
-      const validPaths = tree ? flattenVaultNotes(tree) : new Map<string, string>();
+      const validPaths = this.nodesByPath();
       for (const relPath of this.selectionState.selected()) {
         if (!validPaths.has(relPath)) this.selectionState.remove(relPath);
       }
@@ -173,7 +182,7 @@ export class Sidebar {
     }
   }
 
-  /** Creates a new folder in `relDir` (vault root by default); if notes are selected, moves them into it. */
+  /** Creates a new folder in `relDir` (vault root by default); if items are selected, moves them into it. */
   protected async onNewFolder(relDir = ''): Promise<void> {
     const base = 'New Folder';
     const selectedNotes = [...this.selectionState.selected()];
@@ -278,6 +287,7 @@ export class Sidebar {
 
   protected onFileContextMenu(payload: { event: MouseEvent; file: VaultFileNode }): void {
     const { event, file } = payload;
+    if (this.openSelectionMenu(event, file.relPath)) return;
     const items: ContextMenuItem[] = [
       { kind: 'item', label: 'Open', icon: 'open', action: () => this.onOpenFile(file) },
       {
@@ -326,37 +336,7 @@ export class Sidebar {
 
   protected onNoteContextMenu(payload: { event: MouseEvent; note: VaultNoteNode }): void {
     const { event, note } = payload;
-    const selected = this.selectionState.selected();
-    if (selected.size > 1 && selected.has(note.relPath)) {
-      const items: ContextMenuItem[] = [];
-      if ([...selected].some((relPath) => relPath.includes('/'))) {
-        items.push({
-          kind: 'item',
-          label: `Move ${selected.size} Notes to Root`,
-          icon: 'move-to-root',
-          action: () => void this.onNotesDropped({ relPaths: [...selected], destRelDir: '' }),
-        });
-        items.push({ kind: 'separator' });
-      }
-      const allFavorites = [...selected].every((relPath) => this.favorites.isFavorite(relPath));
-      items.push({
-        kind: 'item',
-        label: allFavorites ? `Remove ${selected.size} Notes from Favorites` : `Add ${selected.size} Notes to Favorites`,
-        icon: allFavorites ? 'unfavorite' : 'favorite',
-        action: () =>
-          allFavorites ? this.favorites.remove([...selected]) : this.favorites.add([...selected]),
-      });
-      items.push({ kind: 'separator' });
-      items.push({
-        kind: 'item',
-        label: `Delete ${selected.size} Notes`,
-        icon: 'delete',
-        danger: true,
-        action: () => void this.deleteSelectedNotes(),
-      });
-      this.contextMenuState.open(event, items);
-      return;
-    }
+    if (this.openSelectionMenu(event, note.relPath)) return;
     const items: ContextMenuItem[] = [
       { kind: 'item', label: 'Open', icon: 'open', action: () => this.onOpenNote(note) },
       { kind: 'item', label: 'Open in New Tab', icon: 'open-new-tab', action: () => this.onOpenNoteInBackground(note) },
@@ -387,8 +367,44 @@ export class Sidebar {
     this.contextMenuState.open(event, items);
   }
 
+  /**
+   * The menu for a right-click on an item that's part of a multi-selection —
+   * notes, folders and files alike. Returns false (opening nothing) otherwise.
+   */
+  private openSelectionMenu(event: MouseEvent, relPath: string): boolean {
+    const selected = [...this.selectionState.selected()];
+    if (selected.length < 2 || !selected.includes(relPath)) return false;
+    const nodes = this.nodesByPath();
+    const allNotes = selected.every((path) => nodes.get(path)?.type === 'note');
+    const what = `${selected.length} ${allNotes ? 'Notes' : 'Items'}`;
+    const items: ContextMenuItem[] = [];
+    if (selected.some((path) => path.includes('/'))) {
+      items.push({
+        kind: 'item',
+        label: `Move ${what} to Root`,
+        icon: 'move-to-root',
+        action: () => void this.onNotesDropped({ relPaths: selected, destRelDir: '' }),
+      });
+      items.push({ kind: 'separator' });
+    }
+    if (allNotes) {
+      const allFavorites = selected.every((path) => this.favorites.isFavorite(path));
+      items.push({
+        kind: 'item',
+        label: allFavorites ? `Remove ${what} from Favorites` : `Add ${what} to Favorites`,
+        icon: allFavorites ? 'unfavorite' : 'favorite',
+        action: () => (allFavorites ? this.favorites.remove(selected) : this.favorites.add(selected)),
+      });
+      items.push({ kind: 'separator' });
+    }
+    items.push({ kind: 'item', label: `Delete ${what}`, icon: 'delete', danger: true, action: () => void this.deleteSelection() });
+    this.contextMenuState.open(event, items);
+    return true;
+  }
+
   protected onFolderContextMenu(payload: { event: MouseEvent; folder: VaultFolderNode }): void {
     const { event, folder } = payload;
+    if (this.openSelectionMenu(event, folder.relPath)) return;
     const items: ContextMenuItem[] = [
       { kind: 'item', label: 'New Note', icon: 'new-note', action: () => void this.onNewNote(folder.relPath) },
       {
@@ -580,15 +596,29 @@ export class Sidebar {
     }
   }
 
-  /** Moves dropped notes into `destRelDir`, skipping any already there to avoid an accidental rename-collision. */
+  /**
+   * Moves dropped tree items (notes, folders, files) into `destRelDir`,
+   * skipping any already there to avoid an accidental rename-collision, and
+   * any folder that would land inside itself.
+   */
   protected async onNotesDropped(payload: { relPaths: string[]; destRelDir: string }): Promise<void> {
     const { relPaths, destRelDir } = payload;
-    for (const relPath of relPaths) {
+    const nodes = this.nodesByPath();
+    for (const relPath of topmostPaths(relPaths)) {
       if (dirOf(relPath) === destRelDir) continue;
-      const moved = await this.vaultState.moveNote(relPath, destRelDir);
-      this.notesState.renameNoteId(relPath, moved.relPath);
-      this.tabsState.renameNoteId(relPath, moved.relPath, moved.name);
-      this.vaultMeta.renameNote(relPath, moved.relPath);
+      const type = nodes.get(relPath)?.type;
+      if (type === 'folder') {
+        if (destRelDir === relPath || destRelDir.startsWith(`${relPath}/`)) continue;
+        await this.onFolderDropped({ relPath, destRelDir });
+      } else if (type === 'file') {
+        const moved = await this.vaultState.moveFile(relPath, destRelDir);
+        this.tabsState.renameNoteId(relPath, moved.relPath, moved.name);
+      } else {
+        const moved = await this.vaultState.moveNote(relPath, destRelDir);
+        this.notesState.renameNoteId(relPath, moved.relPath);
+        this.tabsState.renameNoteId(relPath, moved.relPath, moved.name);
+        this.vaultMeta.renameNote(relPath, moved.relPath);
+      }
     }
     this.selectionState.clear();
   }
@@ -673,12 +703,7 @@ export class Sidebar {
     });
     if (!confirmed) return;
     try {
-      await this.vaultState.deleteFolder(folder.relPath);
-      // Files in it too, not just notes: their preview tabs would show nothing.
-      for (const tab of this.tabsState.tabs().filter((t) => t.noteId.startsWith(`${folder.relPath}/`))) {
-        this.tabsState.closeTab(tab.id);
-      }
-      for (const relPath of affectedNotePaths) this.vaultMeta.forgetNote(relPath);
+      await this.removeFolder(folder);
     } catch (err) {
       await this.dialogState.alert(String(err), { title: 'Delete Failed', tone: 'error' });
       return;
@@ -686,19 +711,42 @@ export class Sidebar {
     await this.attachments.delete(attachments);
   }
 
-  private async deleteSelectedNotes(): Promise<void> {
-    const relPaths = [...this.selectionState.selected()];
-    const { confirmed, attachments } = await this.attachments.confirmDeleteNotes(relPaths, {
-      title: 'Delete Notes',
-      message: `Move ${relPaths.length} notes to the system trash?`,
+  /** Trashes a folder and closes and forgets everything that was in it. */
+  private async removeFolder(folder: VaultFolderNode): Promise<void> {
+    await this.vaultState.deleteFolder(folder.relPath);
+    // Files in it too, not just notes: their preview tabs would show nothing.
+    for (const tab of this.tabsState.tabs().filter((t) => t.noteId.startsWith(`${folder.relPath}/`))) {
+      this.tabsState.closeTab(tab.id);
+    }
+    for (const relPath of flattenVaultNotes(folder).keys()) this.vaultMeta.forgetNote(relPath);
+  }
+
+  /** Deletes every selected item: notes, folders (with their contents) and files. */
+  private async deleteSelection(): Promise<void> {
+    const nodes = this.nodesByPath();
+    const items = topmostPaths([...this.selectionState.selected()]).flatMap((path) => nodes.get(path) ?? []);
+    const notePaths = items.flatMap((node) =>
+      node.type === 'folder' ? [...flattenVaultNotes(node).keys()] : node.type === 'note' ? [node.relPath] : [],
+    );
+    const allNotes = items.every((node) => node.type === 'note');
+    const { confirmed, attachments } = await this.attachments.confirmDeleteNotes(notePaths, {
+      title: allNotes ? 'Delete Notes' : 'Delete Items',
+      message: allNotes
+        ? `Move ${items.length} notes to the system trash?`
+        : `Move ${items.length} items, and everything inside the selected folders, to the system trash?`,
       scope: 'notes',
     });
     if (!confirmed) return;
     try {
-      for (const relPath of relPaths) {
-        await this.vaultState.deleteNote(relPath);
-        this.tabsState.closeByNoteId(relPath);
-        this.vaultMeta.forgetNote(relPath);
+      for (const node of items) {
+        if (node.type === 'folder') {
+          await this.removeFolder(node);
+          continue;
+        }
+        // `delete_note` trashes whatever path it's given, files included.
+        await this.vaultState.deleteNote(node.relPath);
+        this.tabsState.closeByNoteId(node.relPath);
+        if (node.type === 'note') this.vaultMeta.forgetNote(node.relPath);
       }
     } catch (err) {
       // Attachments only go along once every note they belonged to has.
@@ -708,6 +756,21 @@ export class Sidebar {
       this.selectionState.clear();
     }
     await this.attachments.delete(attachments);
+  }
+
+  /**
+   * Ctrl/Cmd+A in the tree: select every direct child of the folder holding
+   * the focused item (the vault root when nothing in the tree is focused).
+   */
+  protected onTreeKeydown(event: KeyboardEvent): void {
+    if (event.key.toLowerCase() !== 'a' || !(event.ctrlKey || event.metaKey) || event.shiftKey || event.altKey) return;
+    const target = event.target as HTMLElement;
+    if (target.closest('input, textarea')) return;
+    event.preventDefault();
+    const focused = target.closest<HTMLElement>('[data-tree-path]')?.dataset['treePath'];
+    const tree = this.visibleTree();
+    const folder = tree && findFolder(tree, focused ? dirOf(focused) : '');
+    if (folder) this.selectionState.selectAll(folder.children.map((child) => child.relPath));
   }
 
   private async pasteInto(destRelDir: string): Promise<void> {

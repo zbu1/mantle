@@ -438,6 +438,11 @@ export class VaultState {
     });
   }
 
+  /** Moves a file that isn't a note; `move_folder` is a plain rename that keeps the name as-is. */
+  async moveFile(sourceRelPath: string, destRelDir: string): Promise<CreatedFolder> {
+    return this.moveFolder(sourceRelPath, destRelDir);
+  }
+
   /** Reveals `relPath` (or the vault root, if empty) in the OS file explorer. */
   async revealInFileExplorer(relPath: string): Promise<void> {
     const root = this.rootPath();

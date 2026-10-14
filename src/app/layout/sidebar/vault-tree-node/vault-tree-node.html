@@ -1,5 +1,5 @@
 @if (asFolder(); as folder) {
-<div (dragenter)="onFolderDragOver(folder, $event)" (dragover)="onFolderDragOver(folder, $event)" (drop)="onFolderDrop(folder, $event)"
+<div [attr.data-tree-path]="folder.relPath" (dragenter)="onFolderDragOver(folder, $event)" (dragover)="onFolderDragOver(folder, $event)" (drop)="onFolderDrop(folder, $event)"
   #folderRow [class.bg-primary/10]="flashing() || dragState.hoveredDir() === folder.relPath"
   class="rounded-md transition-colors">
   @if (renaming()) {
@@ -11,8 +11,8 @@
   </div>
   } @else {
   <app-explorer-row [label]="folder.name" [depth]="depth()" [baseIndent]="BASE_INDENT" [indentStep]="INDENT_STEP"
-    [strong]="true" [expanded]="isExpanded()" [draggable]="true"
-    (toggle)="toggleExpanded()" (headerDragStart)="onFolderDragStart(folder, $event)"
+    [strong]="true" [expanded]="isExpanded()" [draggable]="true" [selected]="selectionState.isSelected(folder.relPath)"
+    (toggle)="onFolderToggle(folder, $event)" (headerDragStart)="onFolderDragStart(folder, $event)"
     (headerContextMenu)="folderContextMenu.emit({ event: $event, folder })" />
   }
   <app-explorer-body [expanded]="isExpanded()">
@@ -34,7 +34,7 @@
   </app-explorer-body>
 </div>
 } @else if (asNote(); as note) {
-<div [attr.data-note-path]="note.relPath" [draggable]="!renaming()" (dragstart)="onNoteDragStart(note, $event)">
+<div [attr.data-tree-path]="note.relPath" [draggable]="!renaming()" (dragstart)="onItemDragStart(note.relPath, $event)">
   @if (renaming()) {
   <div [style.padding-left.px]="noteIndentOf(depth()) - 5" class="flex items-center py-1 pr-2">
     <input #renameInput type="text" [value]="note.name" (keydown)="onRenameKeydown($event)"
@@ -62,8 +62,9 @@
   }
 </div>
 } @else if (asFile(); as file) {
-<app-sidebar-item-button [label]="fileLabel(file).name" [labelSuffix]="fileLabel(file).ext"
+<app-sidebar-item-button [attr.data-tree-path]="file.relPath" draggable="true" (dragstart)="onItemDragStart(file.relPath, $event)"
+  [label]="fileLabel(file).name" [labelSuffix]="fileLabel(file).ext" [selected]="selectionState.isSelected(file.relPath)"
   [active]="file.relPath === activeNoteId()" [baseIndent]="0" [indent]="noteIndentOf(depth())" [highlight]="filter()"
   [suppressNativeTitle]="true" [appHoverTooltip]="file.name" appHoverTooltipSublabel="File in the vault"
-  (clicked)="openFile.emit(file)" (contextMenu)="fileContextMenu.emit({ event: $event, file })" />
+  (clicked)="onFileClick(file, $event)" (contextMenu)="fileContextMenu.emit({ event: $event, file })" />
 }
