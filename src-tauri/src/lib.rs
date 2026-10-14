@@ -34,6 +34,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             vault::scan_vault,
             vault::create_vault,
+            vault::move_vault,
             vault::read_note,
             vault::write_note,
             vault::set_note_favorite,

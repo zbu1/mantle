@@ -1,9 +1,8 @@
 import { Component, ElementRef, HostListener, computed, effect, inject, input, signal, viewChild } from '@angular/core';
-import { LucideCheck, LucideChevronsUpDown, LucideFolderOpen, LucideFolderPlus, LucideFolders, LucideSettings } from '@lucide/angular';
+import { LucideCheck, LucideChevronsUpDown, LucideFolderOpen, LucideFolderPlus, LucideFolders, LucideLibrary } from '@lucide/angular';
 import { MenuItem } from '../../shared/menu/menu-item';
 import { MenuSeparator } from '../../shared/menu/menu-separator';
 import { MenuSurface } from '../../shared/menu/menu-surface';
-import { SettingsModalState } from '../../shared/settings/settings-modal-state';
 import { VaultState, vaultNameFromPath } from '../../notes/vault-state';
 
 interface RecentVault {
@@ -15,14 +14,14 @@ interface RecentVault {
 /**
  * The workspace/vault switcher: a button showing the current vault's name
  * that opens a menu anchored to itself (not the click position) for switching
- * vaults, opening another one, or reaching settings.
+ * vaults, opening another one, or managing them on the welcome screen.
  *
  * Two looks for one menu: `compact` in the top bar alongside the editor tabs,
  * and `hero`, the vault's title at the top of the sidebar.
  */
 @Component({
   selector: 'app-vault-menu',
-  imports: [MenuSurface, MenuItem, MenuSeparator, LucideFolders, LucideChevronsUpDown, LucideCheck, LucideFolderOpen, LucideFolderPlus, LucideSettings],
+  imports: [MenuSurface, MenuItem, MenuSeparator, LucideFolders, LucideChevronsUpDown, LucideCheck, LucideFolderOpen, LucideFolderPlus, LucideLibrary],
   templateUrl: './vault-menu.html',
   host: {
     class: 'relative inline-flex min-w-0',
@@ -34,7 +33,6 @@ export class VaultMenu {
   readonly variant = input<'compact' | 'hero'>('compact');
 
   private readonly vaultState = inject(VaultState);
-  private readonly settingsModalState = inject(SettingsModalState);
 
   protected readonly open = signal(false);
 
@@ -85,9 +83,9 @@ export class VaultMenu {
     await this.vaultState.createVault();
   }
 
-  protected openSettings(): void {
+  protected manageVaults(): void {
     this.close();
-    this.settingsModalState.open();
+    this.vaultState.managing.set(true);
   }
 
   private close(): void {

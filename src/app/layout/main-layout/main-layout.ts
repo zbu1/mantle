@@ -16,6 +16,7 @@ import { EncryptionPanel } from '../../notes/encryption-panel/encryption-panel';
 import { NewEncryptedNote } from '../../notes/new-encrypted-note/new-encrypted-note';
 import { NoteEncryptionModal } from '../../notes/note-encryption-modal/note-encryption-modal';
 import { VaultRootState } from '../../notes/vault-root-state';
+import { VaultState } from '../../notes/vault-state';
 
 @Component({
   selector: 'app-main-layout',
@@ -40,6 +41,7 @@ import { VaultRootState } from '../../notes/vault-root-state';
 })
 export class MainLayout {
   protected readonly vaultRoot = inject(VaultRootState);
+  protected readonly vaultState = inject(VaultState);
   private readonly hoverTooltipState = inject(HoverTooltipState);
   // Only rendered while a vault is open — the welcome screen replaces it otherwise.
   private readonly editorBoundary = viewChild<ElementRef<HTMLElement>>('editorBoundary');

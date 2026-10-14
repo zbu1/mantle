@@ -1,5 +1,5 @@
 <div class="frame flex h-screen flex-col text-foreground">
-  @if (vaultRoot.isOpen()) {
+  @if (vaultRoot.isOpen() && !vaultState.managing()) {
   <app-header />
   <div class="flex flex-1 overflow-hidden">
     <app-icon-rail />

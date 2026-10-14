@@ -1,6 +1,8 @@
 import { TestBed } from '@angular/core/testing';
 import { provideZonelessChangeDetection } from '@angular/core';
 import { VaultState } from '../../notes/vault-state';
+import { ContextMenuState } from '../../shared/context-menu/context-menu-state';
+import { DialogState } from '../../shared/dialog/dialog-state';
 import { Welcome } from './welcome';
 
 describe('Welcome', () => {
@@ -75,5 +77,31 @@ describe('Welcome', () => {
 
     expect(create).not.toHaveBeenCalled();
     input.remove();
+  });
+
+  it('removes a vault from recents through its menu', () => {
+    localStorage.setItem('mantle.vault.recent.v1', JSON.stringify(['/home/me/Journal', '/home/me/Work']));
+    const fixture = render();
+    fixture.nativeElement.querySelector('[data-welcome-vault-menu]').click();
+    const items = TestBed.inject(ContextMenuState).menu()!.items;
+    const remove = items.find((item) => item.kind === 'item' && item.label === 'Remove from Recents');
+    if (remove?.kind === 'item') remove.action();
+    expect(TestBed.inject(VaultState).recentVaults()).toEqual(['/home/me/Work']);
+  });
+
+  it('clears recents only once confirmed', async () => {
+    localStorage.setItem('mantle.vault.recent.v1', JSON.stringify(['/home/me/Journal']));
+    const confirm = jest.spyOn(TestBed.inject(DialogState), 'confirm').mockResolvedValueOnce(false);
+    const fixture = render();
+    const clear = () => fixture.nativeElement.querySelector('[data-welcome-clear]').click();
+
+    clear();
+    await Promise.resolve();
+    expect(TestBed.inject(VaultState).recentVaults()).toHaveLength(1);
+
+    confirm.mockResolvedValueOnce(true);
+    clear();
+    await Promise.resolve();
+    expect(TestBed.inject(VaultState).recentVaults()).toEqual([]);
   });
 });

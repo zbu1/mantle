@@ -47,9 +47,9 @@
   </app-menu-item>
 
   <app-menu-separator />
-  <app-menu-item label="Settings" [active]="hoveredKey() === 'settings'"
-    (hovered)="hoveredKey.set('settings')" (selected)="openSettings()">
-    <svg menuItemIcon lucideSettings [size]="14"></svg>
+  <app-menu-item label="Manage Vaults…" [active]="hoveredKey() === 'manage'"
+    (hovered)="hoveredKey.set('manage')" (selected)="manageVaults()">
+    <svg menuItemIcon lucideLibrary [size]="14"></svg>
   </app-menu-item>
 </app-menu-surface>
 }

@@ -52,6 +52,9 @@ export class VaultState {
   /** Most-recently-opened vault paths, newest first, for the sidebar vault switcher. */
   readonly recentVaults = signal<string[]>(readStoredRecents());
 
+  /** True while the welcome screen is shown over an open vault ("Manage Vaults"). Cleared when the vault changes. */
+  readonly managing = signal(false);
+
   /** Baseline from the last scan, used to detect externally-added/removed notes. Reset across vault switches. */
   private previousRoot: string | null = null;
   private previousNotes: Map<string, string> | null = null;
@@ -68,6 +71,7 @@ export class VaultState {
     effect(() => {
       const path = this.rootPath();
       if (path) this.rememberRecentVault(path);
+      untracked(() => this.managing.set(false));
     });
 
     effect(() => {
@@ -172,6 +176,43 @@ export class VaultState {
     this.previousRoot = null;
     this.previousNotes = null;
     this.tabsState.closeAllTabs();
+  }
+
+  /** Forgets `path` from the recent-vaults list; the folder itself is untouched. */
+  removeRecentVault(path: string): void {
+    this.recentVaults.update((paths) => paths.filter((p) => p !== path));
+  }
+
+  clearRecentVaults(): void {
+    this.recentVaults.set([]);
+  }
+
+  /**
+   * Renames or moves the vault folder at `from` to `to`, keeping its place in
+   * the recent list. Moving the open vault reopens it at `to`; callers must
+   * flush pending writes (and drop unlocked keys, which belong to the old
+   * path) first. Returns false, with `error` set, if the move failed.
+   */
+  async moveVault(from: string, to: string): Promise<boolean> {
+    const isOpen = from === this.rootPath();
+    this.error.set(null);
+    // The watcher holds a handle on the vault folder, which can block renaming it on Windows.
+    if (isOpen) await invoke('stop_vault_watch').catch(() => {});
+    try {
+      const moved = await invoke<string>('move_vault', { from, to });
+      logInfo(`Moved vault "${from}" to "${moved}"`);
+      this.recentVaults.update((paths) => paths.map((p) => (p === from ? moved : p)));
+      if (isOpen) {
+        this.rootPath.set(moved);
+        await this.refresh();
+      }
+      return true;
+    } catch (err) {
+      logError(`Failed to move vault "${from}" to "${to}": ${formatError(err)}`);
+      this.error.set(formatError(err));
+      if (isOpen) void invoke('start_vault_watch', { vaultRoot: from }).catch(() => {});
+      return false;
+    }
   }
 
   private recordPendingRecent(): void {

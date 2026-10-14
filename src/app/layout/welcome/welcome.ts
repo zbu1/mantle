@@ -1,6 +1,12 @@
 import { Component, ElementRef, HostListener, computed, inject, signal } from '@angular/core';
-import { LucideArrowRight, LucideFolderOpen, LucideFolderPlus } from '@lucide/angular';
+import { dirname, join } from '@tauri-apps/api/path';
+import { save } from '@tauri-apps/plugin-dialog';
+import { revealItemInDir } from '@tauri-apps/plugin-opener';
+import { LucideArrowLeft, LucideArrowRight, LucideEllipsis, LucideFolderOpen, LucideFolderPlus } from '@lucide/angular';
+import { CredentialsState } from '../../notes/credentials-state';
 import { VaultState, vaultNameFromPath } from '../../notes/vault-state';
+import { ContextMenuState } from '../../shared/context-menu/context-menu-state';
+import { DialogState } from '../../shared/dialog/dialog-state';
 import { WindowControls } from '../window-controls/window-controls';
 
 interface RecentVault {
@@ -117,16 +123,21 @@ const STRATA: StrataLayer[] = Array.from({ length: STRATA_COUNT }, (_, layer) =>
  * Fullscreen landing shown in place of the whole workspace (header, sidebar
  * and editor) while no vault is open: create a vault, open a folder, or jump
  * back into a recent one. `N`, `O` and `1`–`8` do the same from the keyboard.
+ * Also shown over an open vault as "Manage Vaults" (`VaultState.managing`),
+ * where `Esc` goes back to the vault.
  */
 @Component({
   selector: 'app-welcome',
-  imports: [WindowControls, LucideFolderPlus, LucideFolderOpen, LucideArrowRight],
+  imports: [WindowControls, LucideFolderPlus, LucideFolderOpen, LucideArrowRight, LucideArrowLeft, LucideEllipsis],
   templateUrl: './welcome.html',
   host: { class: 'relative flex min-h-0 flex-1 flex-col overflow-hidden' },
 })
 export class Welcome {
   protected readonly vaultState = inject(VaultState);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly credentials = inject(CredentialsState);
+  private readonly contextMenu = inject(ContextMenuState);
+  private readonly dialog = inject(DialogState);
 
   protected readonly strata = STRATA;
   protected readonly strataViewBox = `0 0 ${STRATA_WIDTH} ${STRATA_HEIGHT}`;
@@ -138,6 +149,9 @@ export class Welcome {
 
   /** True while a native dialog from this screen is up, so a double press doesn't stack a second one. */
   protected readonly busy = signal(false);
+
+  /** Path of the recent vault whose name is being edited inline, if any. */
+  protected readonly renaming = signal<string | null>(null);
 
   protected readonly recentVaults = computed<RecentVault[]>(() =>
     this.vaultState.recentVaults().map((path, i) => ({
@@ -156,7 +170,68 @@ export class Welcome {
   }
 
   protected openRecent(path: string): Promise<void> {
+    // Picking the vault that's already open just goes back to it.
+    this.vaultState.managing.set(false);
     return this.vaultState.switchVault(path);
+  }
+
+  protected openMenu(event: MouseEvent, path: string): void {
+    this.contextMenu.open(event, [
+      { kind: 'item', label: 'Reveal in File Explorer', icon: 'reveal', action: () => void revealItemInDir(path) },
+      { kind: 'item', label: 'Rename', icon: 'rename', action: () => this.startRename(path) },
+      { kind: 'item', label: 'Move…', icon: 'move-to-root', action: () => void this.moveVault(path) },
+      { kind: 'separator' },
+      {
+        kind: 'item',
+        label: 'Remove from Recents',
+        icon: 'delete',
+        danger: true,
+        action: () => this.vaultState.removeRecentVault(path),
+      },
+    ]);
+  }
+
+  private startRename(path: string): void {
+    this.renaming.set(path);
+    // `autofocus` only applies on page load, so focus the input once it renders.
+    setTimeout(() => this.host.nativeElement.querySelector<HTMLInputElement>('[data-welcome-rename]')?.focus());
+  }
+
+  /** Commits an inline rename. Enter and blur both land here, so it only runs once per edit. */
+  protected async commitRename(path: string, name: string): Promise<void> {
+    if (this.renaming() !== path) return;
+    this.renaming.set(null);
+    name = name.trim();
+    if (!name || name === vaultNameFromPath(path)) return;
+    await this.run(async () => {
+      await this.move(path, await join(await dirname(path), name));
+    });
+  }
+
+  private moveVault(path: string): Promise<void> {
+    return this.run(async () => {
+      const to = await save({ title: 'Move Vault', defaultPath: path });
+      if (to) await this.move(path, to);
+    });
+  }
+
+  private async move(from: string, to: string): Promise<void> {
+    // Unlocked keys are tied to the vault's path, and pending saves need them.
+    if (from === this.vaultState.rootPath()) await this.credentials.lockAll();
+    await this.vaultState.moveVault(from, to);
+  }
+
+  protected async clearRecents(): Promise<void> {
+    const confirmed = await this.dialog.confirm('The vault folders stay on disk; only this list is cleared.', {
+      title: 'Clear recent vaults?',
+      tone: 'warning',
+      confirmLabel: 'Clear',
+    });
+    if (confirmed) this.vaultState.clearRecentVaults();
+  }
+
+  protected back(): void {
+    this.vaultState.managing.set(false);
   }
 
   private async run(action: () => Promise<void>): Promise<void> {
@@ -176,9 +251,13 @@ export class Welcome {
     // say, the command palette or a settings field layered on top of it.
     const target = event.target;
     if (target !== document.body && !(target instanceof Node && this.host.nativeElement.contains(target))) return;
+    if (target instanceof HTMLInputElement) return;
 
     const key = event.key.toLowerCase();
-    if (key === 'n') {
+    if (key === 'escape' && this.vaultState.managing()) {
+      event.preventDefault();
+      this.back();
+    } else if (key === 'n') {
       event.preventDefault();
       void this.createVault();
     } else if (key === 'o') {

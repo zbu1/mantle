@@ -345,24 +345,47 @@ pub(crate) fn resolve_rel_path(vault_root: &str, rel_path: &str) -> Result<PathB
 pub fn create_vault(path: String) -> Result<String, String> {
     logged("create_vault", || {
         let dir = PathBuf::from(&path);
-        let name = dir
-            .file_name()
-            .and_then(|n| n.to_str())
-            .ok_or("Invalid vault name")?;
-        if name.is_empty() || name.contains(':') || name.starts_with('.') {
-            return Err("Invalid vault name".to_string());
-        }
-        let parent = dir.parent().filter(|p| !p.as_os_str().is_empty()).ok_or("Invalid vault location")?;
-        if !parent.is_dir() {
-            return Err("The folder to create the vault in does not exist".to_string());
-        }
-        if dir.exists() {
-            return Err(format!("A file or folder named \"{name}\" already exists in this location"));
-        }
+        check_new_vault_path(&dir)?;
         fs::create_dir(&dir).map_err(|e| format!("Failed to create vault folder: {e}"))?;
         crate::vault_meta::write_vault_meta(&path, &crate::vault_meta::VaultMeta::default())?;
         Ok(path)
     })
+}
+
+/// Renames or moves the vault directory `from` to `to`, returning `to`.
+///
+/// `to` is checked like a new vault's path: its parent must exist and it must
+/// not. A plain `fs::rename`, so moving to another drive fails rather than
+/// copying.
+#[tauri::command]
+pub fn move_vault(from: String, to: String) -> Result<String, String> {
+    logged("move_vault", || {
+        if !Path::new(&from).is_dir() {
+            return Err("The vault folder no longer exists".to_string());
+        }
+        check_new_vault_path(Path::new(&to))?;
+        fs::rename(&from, &to).map_err(|e| format!("Failed to move vault folder: {e}"))?;
+        Ok(to)
+    })
+}
+
+/// Checks that `dir` is a valid place for a vault folder that doesn't exist yet.
+fn check_new_vault_path(dir: &Path) -> Result<(), String> {
+    let name = dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or("Invalid vault name")?;
+    if name.is_empty() || name.contains(':') || name.starts_with('.') {
+        return Err("Invalid vault name".to_string());
+    }
+    let parent = dir.parent().filter(|p| !p.as_os_str().is_empty()).ok_or("Invalid vault location")?;
+    if !parent.is_dir() {
+        return Err("The folder to put the vault in does not exist".to_string());
+    }
+    if dir.exists() {
+        return Err(format!("A file or folder named \"{name}\" already exists in this location"));
+    }
+    Ok(())
 }
 
 /// Lists the vault's folders and notes, with each note's tags.
@@ -996,6 +1019,20 @@ mod tests {
         assert!(create_vault(parent.join("taken").to_string_lossy().into_owned()).is_err());
         assert!(create_vault(parent.join("missing").join("vault").to_string_lossy().into_owned()).is_err());
         assert!(create_vault(parent.join(".hidden").to_string_lossy().into_owned()).is_err());
+    }
+
+    #[test]
+    fn move_vault_renames_the_folder_and_rejects_collisions() {
+        let parent = temp_dir("move-vault");
+        let from = parent.join("A").to_string_lossy().into_owned();
+        let to = parent.join("B").to_string_lossy().into_owned();
+        create_vault(from.clone()).unwrap();
+        fs::create_dir(parent.join("taken")).unwrap();
+        assert!(move_vault(from.clone(), parent.join("taken").to_string_lossy().into_owned()).is_err());
+        assert_eq!(move_vault(from.clone(), to.clone()).unwrap(), to);
+        assert!(!Path::new(&from).exists());
+        assert!(parent.join("B").join(".mantle").join("state.json").is_file());
+        assert!(move_vault(from, parent.join("C").to_string_lossy().into_owned()).is_err());
     }
 
     #[test]
