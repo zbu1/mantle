@@ -12,4 +12,8 @@
   }
   }
   <app-slash-menu #slashMenu />
+  @if (languagePicker(); as picker) {
+  <app-code-language-picker [anchor]="picker.anchor" [current]="picker.current" (picked)="onLanguagePicked($event)"
+    (closed)="languagePicker.set(null)" />
+  }
 </div>

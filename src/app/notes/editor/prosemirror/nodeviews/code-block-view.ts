@@ -1,0 +1,91 @@
+import { Node as PMNode } from 'prosemirror-model';
+import { EditorView, NodeView, ViewMutationRecord } from 'prosemirror-view';
+import { fenceLanguage, languageName } from '../code-languages';
+import { codeBlockContext } from '../plugins/code-block-plugin';
+
+const COPY_ICON =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';
+const CHECK_ICON =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+
+const BUTTON = 'rounded px-1.5 py-0.5 text-[11px] leading-4 text-muted-foreground hover:bg-background hover:text-foreground';
+
+/**
+ * A code block with its language in the top-right corner — a button that
+ * opens the language picker — and, on hover, a copy button beside it.
+ */
+export class CodeBlockView implements NodeView {
+  readonly dom: HTMLElement;
+  readonly contentDOM: HTMLElement;
+  private readonly toolbar: HTMLElement;
+  private readonly label: HTMLButtonElement;
+  private copiedTimer: ReturnType<typeof setTimeout> | undefined;
+
+  constructor(
+    private node: PMNode,
+    private readonly view: EditorView,
+    private readonly getPos: () => number | undefined,
+  ) {
+    this.dom = document.createElement('div');
+    this.dom.className = 'code-block group/code relative';
+
+    this.toolbar = document.createElement('div');
+    this.toolbar.contentEditable = 'false';
+    this.toolbar.className = 'flex items-center justify-end gap-0.5 px-1.5 pt-1.5';
+
+    const copy = document.createElement('button');
+    copy.type = 'button';
+    copy.title = 'Copy code';
+    copy.setAttribute('aria-label', 'Copy code');
+    copy.innerHTML = COPY_ICON;
+    copy.className = `${BUTTON} opacity-0 group-hover/code:opacity-100 focus-visible:opacity-100`;
+    copy.addEventListener('click', () => {
+      void navigator.clipboard.writeText(this.node.textContent);
+      copy.innerHTML = CHECK_ICON;
+      clearTimeout(this.copiedTimer);
+      this.copiedTimer = setTimeout(() => (copy.innerHTML = COPY_ICON), 1200);
+    });
+
+    this.label = document.createElement('button');
+    this.label.type = 'button';
+    this.label.title = 'Change language';
+    this.label.className = BUTTON;
+    this.label.addEventListener('click', () => {
+      const pos = this.getPos();
+      if (pos !== undefined) codeBlockContext(this.view)?.pickLanguage(this.view, pos, this.label);
+    });
+
+    this.toolbar.append(copy, this.label);
+    const pre = document.createElement('pre');
+    this.contentDOM = document.createElement('code');
+    pre.append(this.contentDOM);
+    this.dom.append(this.toolbar, pre);
+    this.render();
+  }
+
+  private render(): void {
+    const params: string = this.node.attrs['params'];
+    // An unknown language still shows what the fence says, so it doesn't read as lost.
+    this.label.textContent = languageName(params) ?? (fenceLanguage(params) || 'Plain text');
+  }
+
+  update(node: PMNode): boolean {
+    if (node.type !== this.node.type) return false;
+    this.node = node;
+    this.render();
+    return true;
+  }
+
+  /** The toolbar's clicks are its own, not the editor's. */
+  stopEvent(event: Event): boolean {
+    return event.target instanceof Node && this.toolbar.contains(event.target);
+  }
+
+  ignoreMutation(mutation: ViewMutationRecord): boolean {
+    return mutation.type !== 'selection' && this.toolbar.contains(mutation.target);
+  }
+
+  destroy(): void {
+    clearTimeout(this.copiedTimer);
+  }
+}

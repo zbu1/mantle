@@ -21,7 +21,9 @@ export type ContextMenuIcon =
   | 'check'
   | 'lock'
   | 'unlock'
-  | 'convert';
+  | 'convert'
+  | 'code'
+  | 'paragraph';
 
 export interface ContextMenuAction {
   kind: 'item';
@@ -39,4 +41,15 @@ export interface ContextMenuSeparator {
   kind: 'separator';
 }
 
-export type ContextMenuItem = ContextMenuAction | ContextMenuSeparator;
+/** A row that opens a nested menu beside it (on hover, click, or ArrowRight). One level deep. */
+export interface ContextMenuSubmenu {
+  kind: 'submenu';
+  label: string;
+  icon?: ContextMenuIcon;
+  items: ContextMenuFlatItem[];
+}
+
+/** A row of a menu without submenus, such as a submenu itself. */
+export type ContextMenuFlatItem = ContextMenuAction | ContextMenuSeparator;
+
+export type ContextMenuItem = ContextMenuFlatItem | ContextMenuSubmenu;

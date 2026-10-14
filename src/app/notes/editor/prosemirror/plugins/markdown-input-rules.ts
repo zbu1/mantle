@@ -54,10 +54,12 @@ const headingRule = textblockTypeInputRule(/^(#{1,3})\s$/, schema.nodes['heading
   level: match[1].length,
 }));
 
-// The language of a fence can't be captured here — Enter never reaches
-// handleTextInput. Fences parsed from saved/pasted markdown keep their
-// `params` attr via the markdown parser.
-const codeFenceRule = textblockTypeInputRule(/^```$/, schema.nodes['code_block']);
+// ```lang then Space. Enter never reaches handleTextInput, so ```lang then
+// Enter is `codeFenceOnEnter` in the keymap instead. Waiting for one of the two
+// (rather than converting on the third backtick) is what lets a language be typed.
+const codeFenceRule = textblockTypeInputRule(/^```([^\s`]*)\s$/, schema.nodes['code_block'], (match) => ({
+  params: match[1],
+}));
 
 /**
  * Inserts the rule *before* the current textblock rather than replacing it, so

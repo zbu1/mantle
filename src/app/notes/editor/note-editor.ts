@@ -48,6 +48,16 @@ import {
   removeImage,
 } from './prosemirror/plugins/image-plugin';
 
+import { CodeLanguagePicker } from './code-language-picker/code-language-picker';
+import { CODE_LANGUAGES, languageId } from './prosemirror/code-languages';
+import { CodeBlockView } from './prosemirror/nodeviews/code-block-view';
+import {
+  codeBlockPlugin,
+  codeBlockToParagraph,
+  codeFenceOnEnter,
+  indentCodeLines,
+  setCodeBlockLanguage,
+} from './prosemirror/plugins/code-block-plugin';
 import { SlashMenu } from './slash-menu/slash-menu';
 import { SlashMenuState } from './slash-menu/slash-menu-state';
 
@@ -61,15 +71,18 @@ function buildEditorKeymap() {
     'Mod-i': (state, dispatch, view) => toggleMark(schema.marks['em'])(state, dispatch, view),
     'Mod-`': (state, dispatch, view) => toggleMark(schema.marks['code'])(state, dispatch, view),
     Enter: chainCommands(
+      codeFenceOnEnter,
       splitListItem(schema.nodes['list_item']),
       splitListItem(schema.nodes['task_item']),
       baseKeymap['Enter']
     ),
     Tab: chainCommands(
+      indentCodeLines(false),
       sinkListItem(schema.nodes['list_item']),
       sinkListItem(schema.nodes['task_item'])
     ),
     'Shift-Tab': chainCommands(
+      indentCodeLines(true),
       liftListItem(schema.nodes['list_item']),
       liftListItem(schema.nodes['task_item'])
     ),
@@ -111,7 +124,7 @@ export function countText(doc: ProseMirrorNode): { words: number; characters: nu
 
 @Component({
   selector: 'app-note-editor',
-  imports: [SlashMenu],
+  imports: [SlashMenu, CodeLanguagePicker],
   templateUrl: './note-editor.html',
 })
 export class NoteEditor {
@@ -137,6 +150,9 @@ export class NoteEditor {
   /** Words and non-whitespace characters of the rendered text, for the content area's toolbar. */
   readonly textStats = signal({ words: 0, characters: 0 });
 
+  /** The code block whose language picker is open, and the label it drops down from. */
+  protected readonly languagePicker = signal<{ view: EditorView; pos: number; anchor: HTMLElement; current: string } | null>(null);
+
   protected readonly entryStatus = computed(() => this.notesState.entry(this.noteId())?.status);
 
   constructor() {
@@ -159,6 +175,13 @@ export class NoteEditor {
           gapCursor(),
           trailingParagraphPlugin(),
           imagePlugin(this.imageContext()),
+          codeBlockPlugin({
+            pickLanguage: (view, pos, anchor) => {
+              if (this.languagePicker()?.anchor === anchor) return this.languagePicker.set(null);
+              this.languagePicker.set({ view, pos, anchor, current: view.state.doc.nodeAt(pos)?.attrs['params'] ?? '' });
+            },
+            contextMenu: (event, view, pos) => this.openCodeBlockMenu(event, view, pos),
+          }),
         ],
       });
 
@@ -167,6 +190,7 @@ export class NoteEditor {
         nodeViews: {
           task_item: (node, nodeView, getPos) => new TaskItemView(node, nodeView, getPos),
           image: (node, nodeView, getPos) => new ImageView(node, nodeView, getPos),
+          code_block: (node, nodeView, getPos) => new CodeBlockView(node, nodeView, getPos),
         },
         // Only affects plain-text pastes; HTML clipboard content still goes
         // through the default DOM parser.
@@ -242,6 +266,36 @@ export class NoteEditor {
           initialValue: markdown,
         }),
     };
+  }
+
+  protected onLanguagePicked(id: string): void {
+    const picker = this.languagePicker();
+    this.languagePicker.set(null);
+    if (!picker) return;
+    setCodeBlockLanguage(picker.view, picker.pos, id);
+    picker.view.focus();
+  }
+
+  private openCodeBlockMenu(event: MouseEvent, view: EditorView, pos: number): void {
+    const node = view.state.doc.nodeAt(pos);
+    if (!node) return;
+    const current = languageId(node.attrs['params']) ?? '';
+    this.contextMenuState.open(event, [
+      {
+        kind: 'submenu',
+        label: 'Language',
+        icon: 'code',
+        items: [{ id: '', name: 'Plain text' }, ...CODE_LANGUAGES].map((lang) => ({
+          kind: 'item' as const,
+          label: lang.name,
+          checked: lang.id === current,
+          action: () => setCodeBlockLanguage(view, pos, lang.id),
+        })),
+      },
+      { kind: 'separator' },
+      { kind: 'item', label: 'Copy Code', icon: 'copy', action: () => void navigator.clipboard.writeText(node.textContent) },
+      { kind: 'item', label: 'Turn into Paragraph', icon: 'paragraph', action: () => codeBlockToParagraph(view, pos) },
+    ]);
   }
 
   private async openImageMenu(event: MouseEvent, view: EditorView, pos: number, src: string): Promise<void> {

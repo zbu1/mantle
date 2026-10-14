@@ -9,6 +9,8 @@ import {
   insertHorizontalRule,
 } from '../prosemirror/editor-commands';
 import { pickImage } from '../prosemirror/plugins/image-plugin';
+import { setCodeBlock } from '../prosemirror/plugins/code-block-plugin';
+import { matchLanguages } from '../prosemirror/code-languages';
 
 export type SlashCommandIcon =
   | 'h1'
@@ -104,6 +106,16 @@ export const SLASH_COMMAND_ITEMS: SlashCommandItem[] = [
 ];
 
 export function filterSlashCommands(query: string): SlashCommandItem[] {
+  const language = /^code (.*)$/i.exec(query);
+  if (language) {
+    return matchLanguages(language[1]).map((lang) => ({
+      id: `code-block-${lang.id}`,
+      label: `Code Block — ${lang.name}`,
+      icon: 'code-block',
+      keywords: [],
+      run: (view) => void setCodeBlock(view, lang.id),
+    }));
+  }
   const q = query.trim().toLowerCase();
   if (!q) return SLASH_COMMAND_ITEMS;
   return SLASH_COMMAND_ITEMS.filter(

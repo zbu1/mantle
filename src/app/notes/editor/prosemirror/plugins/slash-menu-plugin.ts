@@ -82,7 +82,8 @@ export function createSlashMenuPlugin(
           // than matching anywhere in the text \u2014 otherwise typing a URL or a
           // fraction like "https://example.com" or "3/4" would pop the menu.
           const textBefore = $from.parent.textBetween(0, $from.parentOffset, null, '\ufffc');
-          const match = textBefore.match(/(?:^|\s)\/([\w-]*)$/);
+          // `/code <language>` is the one query with a space in it.
+          const match = textBefore.match(/(?:^|\s)\/(code [^\s/]*|[\w-]*)$/);
 
           if (!match) {
             hide(panel);

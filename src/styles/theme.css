@@ -49,6 +49,16 @@
   --tooltip: #2a231d;
   --tooltip-foreground: #f6f0e8;
 
+  /* Code block syntax highlighting (highlight.js token classes, mapped in styles.css). Warm, like the rest. */
+  --code-keyword: #9c3d1a;
+  --code-string: #4f7a35;
+  --code-number: #a2650f;
+  --code-comment: #8f8273;
+  --code-title: #2f6280;
+  --code-type: #7a4f8a;
+  --code-attr: #8a5a2b;
+  --code-meta: #6e6255;
+
   /* A sheet lying on the frame: 1px inner highlight, then a tight and a wide soft shadow. */
   --card-shadow:
     inset 0 1px 0 rgb(255 255 255 / 0.7),
@@ -98,6 +108,15 @@
     /* Lighter than the light-theme value on purpose — against this theme's near-black background, a matching near-black tooltip would be nearly invisible. */
     --tooltip: #4a413a;
     --tooltip-foreground: #f6f0e8;
+
+    --code-keyword: #f08a5d;
+    --code-string: #a9c97d;
+    --code-number: #e3b04b;
+    --code-comment: #8a7e71;
+    --code-title: #8fb8d6;
+    --code-type: #c79ad6;
+    --code-attr: #d9a877;
+    --code-meta: #a99d8f;
 
     --card-shadow:
       inset 0 1px 0 rgb(255 255 255 / 0.04),

@@ -298,6 +298,74 @@
   padding: 0;
 }
 
+/* A code block's language label and copy button sit in a strip above the code, on the same background. */
+.ProseMirror .code-block {
+  background: var(--muted);
+  border-radius: 6px;
+}
+
+.ProseMirror .code-block pre {
+  background: none;
+  padding-top: 0.2em;
+}
+
+/* highlight.js token classes; colors are the --code-* tokens in theme.css. */
+.ProseMirror .hljs-keyword,
+.ProseMirror .hljs-selector-tag,
+.ProseMirror .hljs-doctag,
+.ProseMirror .hljs-section {
+  color: var(--code-keyword);
+}
+.ProseMirror .hljs-string,
+.ProseMirror .hljs-regexp,
+.ProseMirror .hljs-addition,
+.ProseMirror .hljs-template-tag {
+  color: var(--code-string);
+}
+.ProseMirror .hljs-number,
+.ProseMirror .hljs-literal,
+.ProseMirror .hljs-symbol,
+.ProseMirror .hljs-bullet {
+  color: var(--code-number);
+}
+.ProseMirror .hljs-comment,
+.ProseMirror .hljs-quote,
+.ProseMirror .hljs-deletion {
+  color: var(--code-comment);
+  font-style: italic;
+}
+.ProseMirror .hljs-title,
+.ProseMirror .hljs-name,
+.ProseMirror .hljs-selector-id,
+.ProseMirror .hljs-selector-class {
+  color: var(--code-title);
+}
+.ProseMirror .hljs-type,
+.ProseMirror .hljs-built_in,
+.ProseMirror .hljs-title.class_ {
+  color: var(--code-type);
+}
+.ProseMirror .hljs-attr,
+.ProseMirror .hljs-attribute,
+.ProseMirror .hljs-property,
+.ProseMirror .hljs-variable,
+.ProseMirror .hljs-template-variable,
+.ProseMirror .hljs-params {
+  color: var(--code-attr);
+}
+.ProseMirror .hljs-meta,
+.ProseMirror .hljs-tag,
+.ProseMirror .hljs-punctuation,
+.ProseMirror .hljs-subst {
+  color: var(--code-meta);
+}
+.ProseMirror .hljs-emphasis {
+  font-style: italic;
+}
+.ProseMirror .hljs-strong {
+  font-weight: 600;
+}
+
 .ProseMirror hr {
   border: none;
   border-top: 1px solid var(--border);

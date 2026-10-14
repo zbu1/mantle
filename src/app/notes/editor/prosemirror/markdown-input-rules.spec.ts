@@ -149,11 +149,27 @@ describe('markdown input rules', () => {
       expect(view.state.doc.firstChild!.type).toBe(schema.nodes['blockquote']);
     });
 
-    it('converts a triple backtick into a code block', async () => {
+    it('converts a triple backtick into a code block on Space', async () => {
       const { view } = await setup();
       type(view, '```');
+      expect(view.state.doc.firstChild!.type).toBe(schema.nodes['paragraph']);
+      type(view, ' ');
 
       expect(view.state.doc.firstChild!.type).toBe(schema.nodes['code_block']);
+    });
+
+    it('keeps a language typed after the backticks, on Space or Enter', async () => {
+      const { view } = await setup();
+      type(view, '```ts ');
+      expect(view.state.doc.firstChild!.attrs['params']).toBe('ts');
+
+      const second = await setup();
+      type(second.view, '```python');
+      expect(pressEnter(second.view)).toBe(true);
+      const block = second.view.state.doc.firstChild!;
+      expect(block.type).toBe(schema.nodes['code_block']);
+      expect(block.attrs['params']).toBe('python');
+      expect(block.textContent).toBe('');
     });
 
     it('converts "---" into a horizontal rule and leaves a cursor position after it', async () => {
@@ -235,7 +251,7 @@ describe('markdown input rules', () => {
 
     it('leaves markdown untouched inside a code block', async () => {
       const { view } = await setup();
-      type(view, '```');
+      type(view, '``` ');
       type(view, '**bold** # heading');
 
       const block = view.state.doc.firstChild!;
@@ -245,7 +261,7 @@ describe('markdown input rules', () => {
 
     it('keeps an empty paragraph below a trailing code block to move the cursor into', async () => {
       const { view } = await setup();
-      type(view, '```');
+      type(view, '``` ');
       type(view, 'const x = 1;');
 
       expect(view.state.doc.childCount).toBe(2);

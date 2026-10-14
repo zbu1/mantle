@@ -4,7 +4,7 @@ import { LucideFileInput, LucideFileText, LucideLock, LucideLockOpen } from '@lu
 import { MenuItem } from '../../shared/menu/menu-item';
 import { MenuSeparator } from '../../shared/menu/menu-separator';
 import { MenuSurface } from '../../shared/menu/menu-surface';
-import { ContextMenuAction, ContextMenuItem } from '../../shared/context-menu/context-menu.model';
+import { ContextMenuAction, ContextMenuFlatItem } from '../../shared/context-menu/context-menu.model';
 import { CredentialProfile, CredentialsState } from '../credentials-state';
 import { NoteEncryptionActions } from '../note-encryption-actions';
 import { VaultNoteNode, markdownExtensionOf } from '../vault-tree.model';
@@ -135,7 +135,7 @@ export class EncryptionPanel {
    * the `otherProfiles` picker) and plus a "Lock" entry the toolbar button
    * alone offers.
    */
-  protected readonly items = computed<ContextMenuItem[]>(() => {
+  protected readonly items = computed<ContextMenuFlatItem[]>(() => {
     const note = this.note();
     if (!note) return [];
 

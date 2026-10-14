@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { invoke } from '@tauri-apps/api/core';
 import { formatError, logError, logInfo } from '../core/logger';
-import { ContextMenuItem } from '../shared/context-menu/context-menu.model';
+import { ContextMenuFlatItem } from '../shared/context-menu/context-menu.model';
 import { DialogState } from '../shared/dialog/dialog-state';
 import { CredentialsState } from './credentials-state';
 import { FavoritesState } from './favorites-state';
@@ -37,7 +37,7 @@ export class NoteEncryptionActions {
   private readonly modalState = inject(NoteEncryptionModalState);
 
   /** Menu entries for a note, reflecting whether it's encrypted and unlocked. */
-  menuItems(note: VaultNoteNode): ContextMenuItem[] {
+  menuItems(note: VaultNoteNode): ContextMenuFlatItem[] {
     const locked = note.encrypted && !this.credentialsState.isUnlocked(note.profile);
 
     if (note.encrypted && locked) {
@@ -56,7 +56,7 @@ export class NoteEncryptionActions {
       ];
     }
 
-    const items: ContextMenuItem[] = [];
+    const items: ContextMenuFlatItem[] = [];
     if (markdownExtensionOf(note.relPath)) {
       items.push({ kind: 'item', label: 'Convert to Mantle Note', icon: 'convert', action: () => void this.convertToNote(note) });
     }
