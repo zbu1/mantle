@@ -10,10 +10,19 @@ export interface NoteTab {
   missing?: boolean;
 }
 
-interface TabHistory {
-  back: NoteRef[];
-  forward: NoteRef[];
+/** A place back/forward can return to: a tab showing a note. */
+interface NavEntry {
+  tabId: string;
+  noteId: string;
+  title: string;
 }
+
+interface NavHistory {
+  back: NavEntry[];
+  forward: NavEntry[];
+}
+
+const sameEntry = (a: NavEntry, b: NavEntry) => a.tabId === b.tabId && a.noteId === b.noteId;
 
 interface PersistedTabsState {
   tabs: NoteTab[];
@@ -58,17 +67,11 @@ export class TabsState {
 
   readonly tabs = signal<NoteTab[]>(this.initial.tabs);
   readonly activeId = signal<string | null>(this.initial.activeId);
-  private readonly historyByTabId = signal<Record<string, TabHistory>>({});
+  /** One app-wide history, so back/forward also retrace switches between tabs. */
+  private readonly history = signal<NavHistory>({ back: [], forward: [] });
 
-  readonly canGoBack = computed(() => {
-    const id = this.activeId();
-    return !!id && (this.historyByTabId()[id]?.back.length ?? 0) > 0;
-  });
-
-  readonly canGoForward = computed(() => {
-    const id = this.activeId();
-    return !!id && (this.historyByTabId()[id]?.forward.length ?? 0) > 0;
-  });
+  readonly canGoBack = computed(() => this.history().back.length > 0);
+  readonly canGoForward = computed(() => this.history().forward.length > 0);
 
   constructor() {
     effect(() => {
@@ -102,10 +105,9 @@ export class TabsState {
       return;
     }
 
-    const previous: NoteRef = { id: tabs[activeIndex].noteId, title: tabs[activeIndex].title };
+    this.recordCurrent();
     const replacement: NoteTab = { id: tabs[activeIndex].id, noteId: note.id, title: note.title };
     this.tabs.update((tabs) => tabs.map((tab, index) => (index === activeIndex ? replacement : tab)));
-    this.pushHistory(replacement.id, previous);
   }
 
   openNoteInBackground(note: NoteRef): void {
@@ -135,26 +137,24 @@ export class TabsState {
 
     const nextTabs = tabs.filter((tab) => tab.id !== id);
     this.tabs.set(nextTabs);
-    this.historyByTabId.update(({ [id]: _removed, ...rest }) => rest);
 
-    if (this.activeId() !== id) return;
-
-    if (nextTabs.length === 0) {
-      this.activeId.set(null);
-      return;
+    if (this.activeId() === id) {
+      const neighborIndex = index > 0 ? index - 1 : 0;
+      this.activeId.set(nextTabs[neighborIndex]?.id ?? null);
     }
-    const neighborIndex = index > 0 ? index - 1 : 0;
-    this.activeId.set(nextTabs[neighborIndex].id);
+    this.pruneHistory(id);
   }
 
   setActive(id: string): void {
+    if (this.activeId() === id) return;
+    this.recordCurrent();
     this.activeId.set(id);
   }
 
   closeAllTabs(): void {
     this.tabs.set([]);
     this.activeId.set(null);
-    this.historyByTabId.set({});
+    this.history.set({ back: [], forward: [] });
   }
 
   closeByNoteId(noteId: string): void {
@@ -175,6 +175,9 @@ export class TabsState {
         tab.noteId === oldNoteId ? { ...tab, noteId: newNoteId, title: newTitle, missing: false } : tab,
       ),
     );
+    const repoint = (list: NavEntry[]) =>
+      list.map((e) => (e.noteId === oldNoteId ? { ...e, noteId: newNoteId, title: newTitle } : e));
+    this.history.update(({ back, forward }) => ({ back: repoint(back), forward: repoint(forward) }));
   }
 
   /** Flags open tabs for `noteId` as pointing at a file that no longer exists on disk. */
@@ -190,53 +193,61 @@ export class TabsState {
   }
 
   goBack(): void {
-    if (!this.vaultRoot.isOpen()) return;
-    const tabId = this.activeId();
-    if (!tabId) return;
-    const hist = this.historyByTabId()[tabId];
-    if (!hist || hist.back.length === 0) return;
-
-    const tabs = this.tabs();
-    const index = tabs.findIndex((tab) => tab.id === tabId);
-    if (index === -1) return;
-
-    const target = hist.back[hist.back.length - 1];
-    const current: NoteRef = { id: tabs[index].noteId, title: tabs[index].title };
-    this.historyByTabId.update((map) => ({
-      ...map,
-      [tabId]: { back: hist.back.slice(0, -1), forward: [current, ...hist.forward] },
-    }));
-    this.tabs.update((tabs) =>
-      tabs.map((tab, i) => (i === index ? { ...tab, noteId: target.id, title: target.title } : tab)),
-    );
+    const current = this.currentEntry();
+    const { back, forward } = this.history();
+    if (!this.vaultRoot.isOpen() || !current || back.length === 0) return;
+    this.history.set({ back: back.slice(0, -1), forward: [current, ...forward] });
+    this.restore(back[back.length - 1]);
   }
 
   goForward(): void {
-    if (!this.vaultRoot.isOpen()) return;
-    const tabId = this.activeId();
-    if (!tabId) return;
-    const hist = this.historyByTabId()[tabId];
-    if (!hist || hist.forward.length === 0) return;
+    const current = this.currentEntry();
+    const { back, forward } = this.history();
+    if (!this.vaultRoot.isOpen() || !current || forward.length === 0) return;
+    this.history.set({ back: [...back, current], forward: forward.slice(1) });
+    this.restore(forward[0]);
+  }
 
-    const tabs = this.tabs();
-    const index = tabs.findIndex((tab) => tab.id === tabId);
-    if (index === -1) return;
+  private currentEntry(): NavEntry | null {
+    const tab = this.tabs().find((tab) => tab.id === this.activeId());
+    return tab ? { tabId: tab.id, noteId: tab.noteId, title: tab.title } : null;
+  }
 
-    const target = hist.forward[0];
-    const current: NoteRef = { id: tabs[index].noteId, title: tabs[index].title };
-    this.historyByTabId.update((map) => ({
-      ...map,
-      [tabId]: { back: [...hist.back, current], forward: hist.forward.slice(1) },
-    }));
+  /** Pushes where we are now onto the back stack, ahead of a navigation. */
+  private recordCurrent(): void {
+    const current = this.currentEntry();
+    if (!current) return;
+    this.history.update(({ back }) => ({ back: [...back, current], forward: [] }));
+  }
+
+  private restore(entry: NavEntry): void {
+    this.activeId.set(entry.tabId);
     this.tabs.update((tabs) =>
-      tabs.map((tab, i) => (i === index ? { ...tab, noteId: target.id, title: target.title } : tab)),
+      tabs.map((tab) =>
+        tab.id === entry.tabId && tab.noteId !== entry.noteId
+          ? { ...tab, noteId: entry.noteId, title: entry.title }
+          : tab,
+      ),
     );
   }
 
-  private pushHistory(tabId: string, previous: NoteRef): void {
-    this.historyByTabId.update((map) => {
-      const hist = map[tabId] ?? { back: [], forward: [] };
-      return { ...map, [tabId]: { back: [...hist.back, previous], forward: [] } };
-    });
+  /** Forgets a closed tab's entries, and any that now just repeat their neighbor or where we are. */
+  private pruneHistory(closedTabId: string): void {
+    const current = this.currentEntry();
+    // Both lists are walked outward from the current location, which sits next to their first entry.
+    const prune = (list: NavEntry[]) => {
+      const out: NavEntry[] = [];
+      let prev = current;
+      for (const e of list) {
+        if (e.tabId === closedTabId || (prev && sameEntry(e, prev))) continue;
+        out.push(e);
+        prev = e;
+      }
+      return out;
+    };
+    this.history.update(({ back, forward }) => ({
+      back: prune([...back].reverse()).reverse(),
+      forward: prune(forward),
+    }));
   }
 }

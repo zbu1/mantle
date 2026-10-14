@@ -216,6 +216,49 @@ describe('TabsState', () => {
     expect(state.canGoBack()).toBe(false);
   });
 
+  it('navigates back and forward across tab switches', () => {
+    const state = TestBed.inject(TabsState);
+    state.openNote(noteA);
+    state.openInNewTab(noteB);
+    const [tabA, tabB] = state.tabs();
+    state.openNote(noteC); // replaces B in tabB
+    state.setActive(tabA.id);
+
+    state.goBack();
+    expect(state.activeId()).toBe(tabB.id);
+    expect(state.tabs()[1].noteId).toBe(noteC.id);
+    state.goBack();
+    expect(state.tabs()[1].noteId).toBe(noteB.id);
+    state.goBack();
+    expect(state.activeId()).toBe(tabA.id);
+    expect(state.canGoBack()).toBe(false);
+
+    state.goForward();
+    state.goForward();
+    state.goForward();
+    expect(state.activeId()).toBe(tabA.id);
+    expect(state.tabs()[1].noteId).toBe(noteC.id);
+    expect(state.canGoForward()).toBe(false);
+  });
+
+  it('does not record re-activating the current tab', () => {
+    const state = TestBed.inject(TabsState);
+    state.openNote(noteA);
+    state.setActive(state.tabs()[0].id);
+    expect(state.canGoBack()).toBe(false);
+  });
+
+  it('skips a closed tab and entries that collapse onto the current location', () => {
+    const state = TestBed.inject(TabsState);
+    state.openNote(noteA);
+    state.openInNewTab(noteB);
+    const [tabA, tabB] = state.tabs();
+    state.setActive(tabA.id); // history: A, B -> now A
+    state.closeTab(tabB.id);
+    expect(state.canGoBack()).toBe(false);
+    expect(state.canGoForward()).toBe(false);
+  });
+
   it('persists state changes back to localStorage', () => {
     const setItemSpy = jest.spyOn(Storage.prototype, 'setItem');
     const state = TestBed.inject(TabsState);
