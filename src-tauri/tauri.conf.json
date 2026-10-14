@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "mantle",
+  "productName": "Mantle",
   "version": "0.1.0",
   "identifier": "com.zbui.mantle",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "mantle",
+        "title": "Mantle",
         "decorations": false,
         "width": 800,
         "height": 600,
