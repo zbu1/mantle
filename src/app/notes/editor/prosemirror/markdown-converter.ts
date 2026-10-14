@@ -45,6 +45,8 @@ export const markdownParser = new MarkdownParser(schema, md, {
   },
   hr: { node: 'horizontal_rule' },
   hardbreak: { node: 'hard_break' },
+  // Obsidian shows a single newline as a line break; CommonMark would join the lines.
+  softbreak: { node: 'hard_break' },
   image: {
     node: 'image',
     getAttrs: (tok) => ({
@@ -85,6 +87,12 @@ export const markdownSerializer = new MarkdownSerializer(
       const { src, size } = node.attrs;
       if (node.attrs['embed']) state.write(`![[${src}${size ? `|${size}` : ''}]]`);
       else defaultMarkdownSerializer.nodes['image'](state, node, parent, index);
+    },
+    // A plain newline, not CommonMark's `\`, so Obsidian-style notes keep their source.
+    hard_break(state, node, parent, index) {
+      for (let i = index + 1; i < parent.childCount; i++) {
+        if (parent.child(i).type !== node.type) return state.write('\n');
+      }
     },
     horizontal_rule(state, node) {
       state.write(node.attrs['markup'] || '---');

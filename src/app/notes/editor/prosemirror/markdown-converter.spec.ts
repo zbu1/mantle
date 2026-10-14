@@ -18,3 +18,14 @@ describe('markdown images', () => {
     expect(parseMarkdown('![[Some note]]').firstChild!.textContent).toBe('![[Some note]]');
   });
 });
+
+describe('markdown line breaks', () => {
+  it('keeps single newlines as line breaks', () => {
+    const src = 'Oil\nPaprika\n\nSalt\nPepper';
+    expect(serializeMarkdown(parseMarkdown(src))).toBe(src);
+  });
+
+  it('reads a backslash break as a newline', () => {
+    expect(serializeMarkdown(parseMarkdown('a\\\nb'))).toBe('a\nb');
+  });
+});
