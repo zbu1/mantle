@@ -15,23 +15,25 @@
 //! them through the `mantle://` protocol ([`serve`]), which decrypts sealed
 //! images in memory, so a decrypted image never touches the disk.
 //!
-//! Attachments are never modified or deleted once written — a duplicated
-//! note shares its images with the original — so converting a note between
-//! plaintext and a profile ([`reseal_images`]) writes new copies and leaves
-//! the old ones behind.
+//! Attachments are never modified once written — a duplicated note shares its
+//! images with the original — so converting a note between plaintext and a
+//! profile ([`reseal_images`]) writes new copies and leaves the old ones
+//! behind. They are only deleted when the user asks, and only once nothing
+//! else uses them ([`unused_attachments`]).
 
 use crate::credentials::SessionKeys;
 use crate::logging::logged;
 use crate::vault::{
-    master_key_for, read_header_prefix, resolve_rel_dir, resolve_rel_path, write_atomic,
-    EXT_ENCRYPTED, LOCKED_ERR_PREFIX,
+    master_key_for, note_paths, read_header_prefix, read_note_inner, resolve_rel_dir, resolve_rel_path,
+    write_atomic, EXT_ENCRYPTED, LOCKED_ERR_PREFIX,
 };
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use percent_encoding::percent_decode_str;
 use rand_core::{OsRng, RngCore};
+use serde::Serialize;
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::ops::Range;
 use std::path::Path;
@@ -244,19 +246,32 @@ pub(crate) fn image_sources(markdown: &str) -> Vec<Range<usize>> {
 /// `target` is `None` — so the note never depends on an image less protected
 /// than itself, or on a profile it no longer belongs to. Images already in
 /// the right form, remote images and missing files are left alone.
+///
+/// This is what makes an attachment belong to a profile: a sealed one is only
+/// ever referenced by notes of its own profile, and a plaintext one only by
+/// plaintext notes — which is what lets [`unused_attachments`] judge one
+/// without unlocking every profile.
+///
+/// Returns the new document and each source it re-pointed (as written in the
+/// note) with the copy it now points at. `lenient` leaves an image it can't
+/// copy — one sealed under a locked profile — as it is, for a save, which
+/// must never fail over a link.
 pub(crate) fn reseal_images(
     vault_root: &str,
     note_rel: &str,
     document: &str,
     target: Option<(&str, &mntl_core::MasterKey)>,
     keys: &SessionKeys,
-) -> Result<Zeroizing<String>, String> {
+    lenient: bool,
+) -> Result<(Zeroizing<String>, HashMap<String, String>), String> {
     let mut out = Zeroizing::new(String::with_capacity(document.len()));
     let mut copies: HashMap<String, String> = HashMap::new();
+    let mut relinked = HashMap::new();
     let mut last = 0;
 
     for range in image_sources(document) {
-        let Some(rel) = resolve_image(vault_root, note_rel, &document[range.clone()]) else {
+        let src = &document[range.clone()];
+        let Some(rel) = resolve_image(vault_root, note_rel, src) else {
             continue;
         };
         let (ext, sealed) = image_ext(&rel).ok_or("Not an image")?;
@@ -277,22 +292,197 @@ pub(crate) fn reseal_images(
         let copy = match copies.get(&rel) {
             Some(copy) => copy.clone(),
             None => {
-                let (bytes, _) = load(vault_root, &rel, keys).map_err(|e| match e.strip_prefix(LOCKED_ERR_PREFIX) {
-                    Some(profile) => format!("Unlock \"{profile}\" first: this note shows an image encrypted under it"),
-                    None => e,
-                })?;
-                let copy = store(vault_root, &bytes, &ext, target)?;
+                let copied = load(vault_root, &rel, keys)
+                    .map_err(|e| match e.strip_prefix(LOCKED_ERR_PREFIX) {
+                        Some(profile) => format!("Unlock \"{profile}\" first: this note shows an image encrypted under it"),
+                        None => e,
+                    })
+                    .and_then(|(bytes, _)| store(vault_root, &bytes, &ext, target));
+                let copy = match copied {
+                    Ok(copy) => copy,
+                    Err(_) if lenient => continue,
+                    Err(e) => return Err(e),
+                };
                 copies.insert(rel, copy.clone());
                 copy
             }
         };
+        relinked.insert(src.to_string(), copy.clone());
         out.push_str(&document[last..range.start]);
         out.push_str(&copy);
         last = range.end;
     }
 
     out.push_str(&document[last..]);
-    Ok(out)
+    Ok((out, relinked))
+}
+
+/// Whether `rel` is a file directly in the vault-root `attachments/` folder —
+/// one Mantle stored and manages — rather than one of the user's own files.
+fn is_managed(rel: &str) -> bool {
+    rel.strip_prefix(ATTACHMENTS_DIR)
+        .and_then(|rest| rest.strip_prefix('/'))
+        .is_some_and(|name| !name.is_empty() && !name.contains('/'))
+}
+
+/// The credential profile the sealed attachment at `rel` is encrypted under,
+/// read from its header; `None` for a plaintext one.
+fn sealed_profile(vault_root: &str, rel: &str) -> Option<String> {
+    let header = read_header_prefix(&resolve_rel_path(vault_root, rel).ok()?).ok()?;
+    mntl_core::extract_encrypted_header(&header).ok().map(|h| h.credential_profile)
+}
+
+/// Where an attachment reference in a note leads, for the editor to show.
+#[derive(Serialize, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachmentInfo {
+    /// The vault-relative path the reference resolved to.
+    pub rel_path: String,
+    /// Whether it is in Mantle's `attachments/` folder, rather than one of the
+    /// user's own files elsewhere in the vault.
+    pub managed: bool,
+    /// The credential profile it is sealed under, or `None` if plaintext.
+    pub profile: Option<String>,
+}
+
+/// What the attachment `src` in the note at `note_rel_path` resolves to, or
+/// `None` for a remote URL or a missing file.
+#[tauri::command]
+pub fn attachment_info(vault_root: String, note_rel_path: String, src: String) -> Option<AttachmentInfo> {
+    let rel_path = resolve_image(&vault_root, &note_rel_path, &src)?;
+    Some(AttachmentInfo {
+        managed: is_managed(&rel_path),
+        profile: sealed_profile(&vault_root, &rel_path),
+        rel_path,
+    })
+}
+
+/// The managed attachments that `content`, the text of the note at
+/// `note_rel`, references. With `only`, sources whose file name none of those
+/// paths has are skipped unresolved, which spares a vault-wide walk for every
+/// bare `![[name.png]]` in every note.
+fn referenced(vault_root: &str, note_rel: &str, content: &str, only: Option<&BTreeSet<String>>) -> HashSet<String> {
+    image_sources(content)
+        .into_iter()
+        .map(|range| &content[range])
+        .filter(|src| {
+            only.is_none_or(|only| {
+                let src = percent_decode_str(src).decode_utf8_lossy();
+                let name = src.rsplit(['/', '\\']).next().unwrap_or_default();
+                only.iter().any(|rel| rel.rsplit('/').next() == Some(name))
+            })
+        })
+        .filter_map(|src| resolve_image(vault_root, note_rel, src))
+        .filter(|rel| is_managed(rel))
+        .collect()
+}
+
+/// Which managed attachments could go along with some notes.
+#[derive(Serialize, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct UnusedAttachments {
+    /// Attachments no note outside the ones being deleted references.
+    pub paths: Vec<String>,
+    /// Notes being deleted that couldn't be read — locked — so their
+    /// attachments are unknown and not in `paths`.
+    pub unchecked: Vec<String>,
+}
+
+/// The managed attachments among `candidates` and those the notes in
+/// `deleting` reference, that no other note uses.
+///
+/// Every readable note is checked. A locked note can't be, so it keeps every
+/// attachment sealed under its own profile; it can't be holding any other, as
+/// [`reseal_images`] keeps a note's attachments under the note's own profile.
+#[tauri::command]
+pub fn unused_attachments(
+    vault_root: String,
+    deleting: Vec<String>,
+    candidates: Vec<String>,
+    keys: State<SessionKeys>,
+) -> Result<UnusedAttachments, String> {
+    logged("unused_attachments", || unused_attachments_inner(&vault_root, &deleting, &candidates, &keys))
+}
+
+// ponytail: reads every note in the vault per call; keep a reference index if
+// big vaults make deleting slow.
+fn unused_attachments_inner(
+    vault_root: &str,
+    deleting: &[String],
+    candidates: &[String],
+    keys: &SessionKeys,
+) -> Result<UnusedAttachments, String> {
+    let mut unchecked = Vec::new();
+    let mut found: BTreeSet<String> = candidates.iter().filter(|rel| is_managed(rel)).cloned().collect();
+    for note in deleting {
+        match read_note_inner(vault_root, note, keys) {
+            Ok(doc) => found.extend(referenced(vault_root, note, &doc.content, None)),
+            Err(_) => unchecked.push(note.clone()),
+        }
+    }
+    found.retain(|rel| resolve_rel_path(vault_root, rel).is_ok_and(|path| path.is_file()));
+    let profiles: HashMap<String, Option<String>> =
+        found.iter().map(|rel| (rel.clone(), sealed_profile(vault_root, rel))).collect();
+
+    for note in note_paths(vault_root)? {
+        if found.is_empty() {
+            break;
+        }
+        if deleting.contains(&note) {
+            continue;
+        }
+        match read_note_inner(vault_root, &note, keys) {
+            Ok(doc) => {
+                let used = referenced(vault_root, &note, &doc.content, Some(&found));
+                found.retain(|rel| !used.contains(rel));
+            }
+            Err(e) => {
+                if let Some(profile) = e.strip_prefix(LOCKED_ERR_PREFIX) {
+                    found.retain(|rel| profiles[rel].as_deref() != Some(profile));
+                }
+            }
+        }
+    }
+    Ok(UnusedAttachments { paths: found.into_iter().collect(), unchecked })
+}
+
+/// Every attachment sealed under `profile_id`.
+#[tauri::command]
+pub fn profile_attachments(vault_root: String, profile_id: String) -> Result<Vec<String>, String> {
+    logged("profile_attachments", || {
+        let Ok(entries) = fs::read_dir(resolve_rel_dir(&vault_root, "")?.join(ATTACHMENTS_DIR)) else {
+            return Ok(Vec::new());
+        };
+        Ok(entries
+            .flatten()
+            .map(|entry| format!("{ATTACHMENTS_DIR}/{}", entry.file_name().to_string_lossy()))
+            .filter(|rel| rel.ends_with(EXT_SEALED))
+            .filter(|rel| sealed_profile(&vault_root, rel).as_deref() == Some(profile_id.as_str()))
+            .collect())
+    })
+}
+
+/// Move managed attachments to the OS trash. Only ever files directly in
+/// `attachments/`: a user's own files are theirs to delete.
+#[tauri::command]
+pub fn delete_attachments(vault_root: String, paths: Vec<String>) -> Result<(), String> {
+    logged("delete_attachments", || delete_attachments_inner(&vault_root, &paths))
+}
+
+fn delete_attachments_inner(vault_root: &str, paths: &[String]) -> Result<(), String> {
+    for rel in paths {
+        if !is_managed(rel) {
+            return Err(format!("Not a Mantle attachment: {rel}"));
+        }
+        let path = resolve_rel_path(vault_root, rel)?;
+        // Tests unlink rather than fill the developer's recycle bin.
+        #[cfg(not(test))]
+        let result = trash::delete(&path).map_err(|e| e.to_string());
+        #[cfg(test)]
+        let result = fs::remove_file(&path).map_err(|e| e.to_string());
+        result.map_err(|e| format!("Failed to delete attachment: {e}"))?;
+    }
+    Ok(())
 }
 
 /// Store an image for the note at `note_rel`: sealed under the note's profile
@@ -460,5 +650,78 @@ mod tests {
         assert_eq!(resolve("../../a.png"), None);
         assert_eq!(resolve("https://example.com/a.png"), None);
         assert_eq!(resolve("note.mntl"), None, "notes are not images");
+    }
+
+    fn write_plain(root: &Path, rel: &str, body: &str) {
+        fs::write(root.join(rel), mntl_core::encode_unencrypted_note(body).unwrap()).unwrap();
+    }
+
+    fn write_sealed(root: &Path, rel: &str, body: &str, mk: &mntl_core::MasterKey) {
+        let document = mntl_core::encode_unencrypted_note(body).unwrap();
+        fs::write(root.join(rel), mntl_core::encrypt_note(mk, "diary", document.as_bytes()).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn unused_attachments_keeps_what_other_notes_use_or_locked_notes_may() {
+        let root = temp_dir("unused");
+        let root_str = root.to_string_lossy().into_owned();
+        let mk = mntl_core::MasterKey::generate().unwrap();
+        let keys = SessionKeys::default();
+        keys.unlock_for_test(&root_str, "diary", mk.clone()).unwrap();
+
+        let shared = store(&root_str, PNG, "png", None).unwrap();
+        let sealed = store(&root_str, PNG, "png", Some(("diary", &mk))).unwrap();
+        write_plain(&root, "a.mntl", &format!("![]({shared})"));
+        write_plain(&root, "b.mntl", &format!("![[{}]]", shared.rsplit('/').next().unwrap()));
+        write_sealed(&root, "s.mntl.enc", &format!("![]({sealed})"), &mk);
+        write_sealed(&root, "t.mntl.enc", "nothing here", &mk);
+
+        let unused = |deleting: &[&str], candidates: &[&str], keys: &SessionKeys| {
+            let deleting: Vec<String> = deleting.iter().map(|s| s.to_string()).collect();
+            let candidates: Vec<String> = candidates.iter().map(|s| s.to_string()).collect();
+            unused_attachments_inner(&root_str, &deleting, &candidates, keys).unwrap()
+        };
+
+        assert!(unused(&["a.mntl"], &[], &keys).paths.is_empty(), "b.mntl still embeds it by name");
+        assert_eq!(unused(&["a.mntl", "b.mntl"], &[], &keys).paths, [shared.clone()]);
+        assert_eq!(unused(&["s.mntl.enc"], &[], &keys).paths, [sealed.clone()]);
+        assert_eq!(unused(&[], &[&sealed, "Work/mine.png"], &keys).paths, Vec::<String>::new(), "s.mntl.enc uses it");
+
+        let locked = SessionKeys::default();
+        let report = unused(&["s.mntl.enc"], &[], &locked);
+        assert_eq!((report.paths, report.unchecked), (vec![], vec!["s.mntl.enc".to_string()]));
+        assert!(unused(&[], &[&sealed], &locked).paths.is_empty(), "t.mntl.enc is locked, so might use it");
+        assert_eq!(unused(&["a.mntl", "b.mntl"], &[], &locked).paths, [shared.clone()], "a locked note keeps only its own profile's");
+
+        assert_eq!(profile_attachments(root_str.clone(), "diary".into()).unwrap(), [sealed.clone()]);
+        assert!(delete_attachments_inner(&root_str, &["a.mntl".into()]).is_err());
+        delete_attachments_inner(&root_str, &[shared.clone()]).unwrap();
+        assert!(!root.join(&shared).exists());
+    }
+
+    #[test]
+    fn saving_a_note_makes_its_attachments_its_own() {
+        let root = temp_dir("relink");
+        let root_str = root.to_string_lossy().into_owned();
+        let mk = mntl_core::MasterKey::generate().unwrap();
+        let keys = SessionKeys::default();
+        keys.unlock_for_test(&root_str, "diary", mk.clone()).unwrap();
+
+        let plain = store(&root_str, PNG, "png", None).unwrap();
+        write_sealed(&root, "s.mntl.enc", "", &mk);
+        let body = format!("![]({plain}) ![]({plain})");
+        let relinked = crate::vault::write_note_inner(&root_str, "s.mntl.enc", &body, &[], &keys).unwrap();
+        let copy = &relinked[&plain];
+        assert!(copy.ends_with(".png.enc"));
+        let saved = read_note_inner(&root_str, "s.mntl.enc", &keys).unwrap().content;
+        assert_eq!(saved, format!("![]({copy}) ![]({copy})"));
+        assert!(crate::vault::write_note_inner(&root_str, "s.mntl.enc", &saved, &[], &keys).unwrap().is_empty());
+
+        // A plaintext note can't copy an image of a locked profile; it still saves.
+        write_plain(&root, "p.mntl", "");
+        let locked = SessionKeys::default();
+        let sealed_body = format!("![]({copy})");
+        assert!(crate::vault::write_note_inner(&root_str, "p.mntl", &sealed_body, &[], &locked).unwrap().is_empty());
+        assert_eq!(read_note_inner(&root_str, "p.mntl", &locked).unwrap().content, sealed_body);
     }
 }

@@ -7,7 +7,7 @@ import { VaultState } from '../vault-state';
 import { flushAsync, installMockVaultInvoke } from '../../../testing/mock-vault';
 
 describe('TagBar', () => {
-  async function setup(noteId = 'daily-standup') {
+  async function setup(noteId = 'daily-standup.mntl') {
     localStorage.clear();
     TestBed.configureTestingModule({
       imports: [TagBar],
@@ -63,21 +63,21 @@ describe('TagBar', () => {
     press(input, 'Enter');
     fixture.detectChanges();
 
-    expect(TestBed.inject(NotesState).getNote('daily-standup')?.tags).toEqual(['work', 'urgent', 'newidea']);
+    expect(TestBed.inject(NotesState).getNote('daily-standup.mntl')?.tags).toEqual(['work', 'urgent', 'newidea']);
   });
 
   it("reuses the vault's spelling of an existing tag", async () => {
-    const fixture = await setup('todo');
+    const fixture = await setup('todo.mntl');
     const input = await openInput(fixture);
 
     type(input, 'WORK');
     press(input, 'Enter');
 
-    expect(TestBed.inject(NotesState).getNote('todo')?.tags).toEqual(['work']);
+    expect(TestBed.inject(NotesState).getNote('todo.mntl')?.tags).toEqual(['work']);
   });
 
   it('offers to create a new tag, and suggests existing ones not already on the note', async () => {
-    const fixture = await setup('todo');
+    const fixture = await setup('todo.mntl');
     const input = await openInput(fixture);
 
     type(input, 'ur');
@@ -97,7 +97,7 @@ describe('TagBar', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).toContain('at least one letter');
-    expect(TestBed.inject(NotesState).getNote('daily-standup')?.tags).toEqual(['work', 'urgent']);
+    expect(TestBed.inject(NotesState).getNote('daily-standup.mntl')?.tags).toEqual(['work', 'urgent']);
   });
 
   it('removes the last tag on Backspace in an empty input', async () => {
@@ -106,7 +106,7 @@ describe('TagBar', () => {
 
     press(input, 'Backspace');
 
-    expect(TestBed.inject(NotesState).getNote('daily-standup')?.tags).toEqual(['work']);
+    expect(TestBed.inject(NotesState).getNote('daily-standup.mntl')?.tags).toEqual(['work']);
   });
 
   it('removes a tag with its × button and updates the sidebar index at once', async () => {
@@ -114,7 +114,7 @@ describe('TagBar', () => {
     const remove: HTMLButtonElement = fixture.nativeElement.querySelector('[aria-label="Remove tag urgent"]');
     remove.click();
 
-    expect(TestBed.inject(NotesState).getNote('daily-standup')?.tags).toEqual(['work']);
+    expect(TestBed.inject(NotesState).getNote('daily-standup.mntl')?.tags).toEqual(['work']);
     expect(TestBed.inject(TagsState).names()).toEqual(['work']);
   });
 

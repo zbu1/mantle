@@ -2,7 +2,14 @@
 <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" (pointerdown)="onBackdropPointerDown($event)">
   <div class="w-80 rounded-lg border border-border bg-surface p-4 text-surface-foreground shadow-xl animate-pop-in">
     <h2 class="text-sm font-semibold">{{ req.title }}</h2>
-    <p class="mt-2 text-xs text-muted-foreground">{{ req.message }}</p>
+    <p class="mt-2 whitespace-pre-line text-xs text-muted-foreground">{{ req.message }}</p>
+
+    @if (req.kind === 'confirm' && req.checkboxLabel) {
+    <label class="mt-3 flex items-start gap-2 text-xs text-foreground">
+      <input #checkboxInput type="checkbox" class="mt-px accent-[var(--primary)]" />
+      <span>{{ req.checkboxLabel }}</span>
+    </label>
+    }
 
     @if (req.kind === 'prompt') {
     <input #promptInput type="text" [value]="req.initialValue" [placeholder]="req.placeholder" spellcheck="false"
@@ -40,7 +47,7 @@
       </button>
       }
       <button #confirmButton type="button" [disabled]="busy()"
-        (click)="req.kind === 'password' ? submitPassword() : req.kind === 'prompt' ? submitPrompt() : state.confirmAction()"
+        (click)="req.kind === 'password' ? submitPassword() : req.kind === 'prompt' ? submitPrompt() : confirm()"
         [class]="req.tone === 'default'
           ? 'rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:opacity-90 disabled:opacity-50'
           : 'rounded-md bg-destructive px-3 py-1.5 text-xs text-destructive-foreground hover:opacity-90 disabled:opacity-50'">

@@ -40,11 +40,25 @@ export function titleFromRelPath(relPath: string): string {
 
 const DEBOUNCE_MS = 1000;
 
+/** Attachment sources a save re-pointed, each with its new source. See `write_note`. */
+export interface Relinked {
+  noteId: string;
+  sources: Record<string, string>;
+}
+
 @Injectable({ providedIn: 'root' })
 export class NotesState {
   private readonly vaultState = inject(VaultState);
   private readonly entries = signal<Record<string, NoteEntry>>({});
   private readonly pendingWrites = new Map<string, ReturnType<typeof setTimeout>>();
+
+  /**
+   * The last save that re-pointed attachment links — an attachment that
+   * belonged to another profile was copied to belong to this note's. The file
+   * already has the new links; the open editor follows them so the next save
+   * doesn't copy the attachment again.
+   */
+  readonly relinked = signal<Relinked | null>(null);
 
   entry(id: string): NoteEntry | undefined {
     return this.entries()[id];
@@ -211,7 +225,13 @@ export class NotesState {
     const entry = this.entries()[id];
     if (!root || !entry || entry.status !== 'loaded') return;
     try {
-      await invoke('write_note', { vaultRoot: root, relPath: id, content: entry.note.content, tags: entry.note.tags });
+      const sources = await invoke<Record<string, string>>('write_note', {
+        vaultRoot: root,
+        relPath: id,
+        content: entry.note.content,
+        tags: entry.note.tags,
+      });
+      if (Object.keys(sources).length > 0) this.applyRelinked(id, sources);
     } catch (err) {
       // A save can fail because the note's profile was locked while the write
       // was in flight. Either way this is unsaved user work, so it belongs in
@@ -224,5 +244,18 @@ export class NotesState {
       }
       logError(`Failed to save note "${id}": ${String(err)}`);
     }
+  }
+
+  private applyRelinked(id: string, sources: Record<string, string>): void {
+    this.entries.update((entries) => {
+      const entry = entries[id];
+      if (entry?.status !== 'loaded') return entries;
+      let content = entry.note.content;
+      for (const [from, to] of Object.entries(sources)) {
+        content = content.split(`](${from}`).join(`](${to}`).split(`![[${from}`).join(`![[${to}`);
+      }
+      return { ...entries, [id]: { status: 'loaded', note: { ...entry.note, content } } };
+    });
+    this.relinked.set({ noteId: id, sources });
   }
 }

@@ -25,6 +25,14 @@ describe('VaultState external-change reconciliation', () => {
     });
   });
 
+  /** Makes `scan_vault` fail with `message`; every other command behaves as before. */
+  function failScan(message: string): void {
+    const respond = mock.invoke.getMockImplementation()!;
+    mock.invoke.mockImplementation((command: string, ...rest: unknown[]) =>
+      command === 'scan_vault' ? Promise.reject(message) : respond(command, ...rest),
+    );
+  }
+
   function setup(): { vaultState: VaultState; tabsState: TabsState } {
     const vaultState = TestBed.inject(VaultState);
     const tabsState = TestBed.inject(TabsState);
@@ -60,6 +68,36 @@ describe('VaultState external-change reconciliation', () => {
     const moved = tabs.find((t) => t.noteId === 'Work/a.mntl');
     expect(moved).toBeTruthy();
     expect(moved?.missing).toBeFalsy();
+  });
+
+  it('keeps the tree when a rescan of the open vault fails', async () => {
+    const { vaultState } = setup();
+    mock.respondWith('scan_vault', tree([note('a.mntl')]));
+    await vaultState.refresh();
+
+    failScan('Access denied');
+    await vaultState.refresh();
+
+    expect(vaultState.tree()?.children.map((n) => n.relPath)).toEqual(['a.mntl']);
+    expect(vaultState.error()).toBeNull();
+  });
+
+  it('reports a vault that fails to open', async () => {
+    const { vaultState } = setup();
+    failScan('No such folder');
+    await vaultState.refresh();
+
+    expect(vaultState.tree()).toBeNull();
+    expect(vaultState.error()).toContain('No such folder');
+  });
+
+  it('opens a vault holding other files next to its notes', async () => {
+    const { vaultState } = setup();
+    mock.respondWith('scan_vault', tree([note('a.mntl'), { type: 'file', name: 'photo.png', relPath: 'photo.png' }]));
+    await vaultState.refresh();
+
+    expect(vaultState.error()).toBeNull();
+    expect(vaultState.tree()?.children).toHaveLength(2);
   });
 
   it('clears the missing flag once a note reappears', async () => {
@@ -161,7 +199,7 @@ describe('VaultState recent notes', () => {
   it('does not record notes that are not in the vault', async () => {
     const { tabsState, vaultMeta } = await openVault([note('a.mntl')]);
 
-    tabsState.openNote({ id: 'daily-standup', title: 'Daily Standup' });
+    tabsState.openNote({ id: 'daily-standup.mntl', title: 'Daily Standup' });
     TestBed.tick();
 
     expect(paths(vaultMeta)).toEqual([]);

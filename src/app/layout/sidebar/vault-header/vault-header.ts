@@ -28,22 +28,19 @@ import { CredentialsState } from '../../../notes/credentials-state';
 import { NewEncryptedNoteState } from '../../../notes/new-encrypted-note/new-encrypted-note-state';
 import { VaultState } from '../../../notes/vault-state';
 import { SettingsModalState } from '../../../shared/settings/settings-modal-state';
-import { VaultMenu } from '../../vault-menu/vault-menu';
 import { SectionId, SidebarState } from '../sidebar-state';
 
 /** Session-only, not persisted — see `sortMode` below. */
 type SortMode = 'name-asc' | 'name-desc' | 'modified' | 'created' | 'manual';
 
 /**
- * The top of the sidebar, and the vault's title: the vault's name (which is
- * also its switcher), a filter for the tree, a New Note button, and one
+ * The top of the sidebar: a filter for the tree, a New Note button, and one
  * overflow menu for everything else — creating other items, sort, which
  * sections show, and vault-wide actions. Pinned above the scrolling tree.
  */
 @Component({
   selector: 'app-vault-header',
   imports: [
-    VaultMenu,
     MenuSurface,
     MenuItem,
     MenuSeparator,

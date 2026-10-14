@@ -4,9 +4,9 @@ import { TabsState } from './tabs-state';
 import { NoteRef } from './note.model';
 import { VaultRootState } from './vault-root-state';
 
-const noteA: NoteRef = { id: 'daily-standup', title: 'daily-standup' };
-const noteB: NoteRef = { id: 'architecture-notes', title: 'architecture-notes' };
-const noteC: NoteRef = { id: 'todo', title: 'todo' };
+const noteA: NoteRef = { id: 'daily-standup.mntl', title: 'daily-standup.mntl' };
+const noteB: NoteRef = { id: 'architecture-notes.mntl', title: 'architecture-notes.mntl' };
+const noteC: NoteRef = { id: 'todo.mntl', title: 'todo.mntl' };
 
 describe('TabsState', () => {
   beforeEach(() => {

@@ -233,12 +233,30 @@ export class VaultState {
     const root = this.rootPath();
     if (!root) return;
     this.loading.set(true);
-    this.error.set(null);
+    let tree: VaultFolderNode;
     try {
       logInfo(`Scanning vault "${root}"`);
-      const tree = await invoke<VaultFolderNode>('scan_vault', { vaultRoot: root });
-      this.tree.set(tree);
+      tree = await invoke<VaultFolderNode>('scan_vault', { vaultRoot: root });
+    } catch (err) {
+      // A rescan of the open vault can fail transiently (e.g. a sync tool
+      // holding a file); keep showing what we had rather than blanking it.
+      if (this.previousRoot === root && this.tree()) {
+        logError(`Failed to rescan vault "${root}": ${formatError(err)}`);
+      } else {
+        logError(`Failed to open vault "${root}": ${formatError(err)}`);
+        this.error.set(formatError(err));
+        this.tree.set(null);
+      }
+      return;
+    } finally {
+      this.loading.set(false);
+    }
 
+    this.error.set(null);
+    this.tree.set(tree);
+    // Only the scan means the vault couldn't be opened; a bug in following
+    // it up must not take the whole tree down with it.
+    try {
       const notes = flattenVaultNotes(tree);
       if (this.previousRoot === root && this.previousNotes) {
         this.reconcileTabs(this.previousNotes, notes);
@@ -246,11 +264,7 @@ export class VaultState {
       this.previousRoot = root;
       this.previousNotes = notes;
     } catch (err) {
-      logError(`Failed to open vault "${root}": ${formatError(err)}`);
-      this.error.set(String(err));
-      this.tree.set(null);
-    } finally {
-      this.loading.set(false);
+      logError(`Failed to update tabs after scanning "${root}": ${formatError(err)}`);
     }
   }
 
@@ -332,6 +346,11 @@ export class VaultState {
     const root = this.rootPath();
     if (!root) throw new Error('No vault open');
     await invoke('delete_note', { vaultRoot: root, relPath });
+  }
+
+  /** Moves a file that isn't a note to the trash; `delete_note` trashes whatever path it's given. */
+  async deleteFile(relPath: string): Promise<void> {
+    await this.deleteNote(relPath);
   }
 
   async deleteFolder(relPath: string): Promise<void> {

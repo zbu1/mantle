@@ -24,11 +24,18 @@ import { VaultState } from '../../../notes/vault-state';
 import { FavoritesState } from '../../../notes/favorites-state';
 import { VaultMetaState } from '../../../notes/vault-meta-state';
 import { NoteEditor } from '../../../notes/editor/note-editor';
+import { FilePreview } from '../../../notes/file-preview/file-preview';
 import { TagBar } from '../../../notes/tag-bar/tag-bar';
 import { ContextMenuState } from '../../../shared/context-menu/context-menu-state';
 import { ContextMenuItem } from '../../../shared/context-menu/context-menu.model';
 import { DialogState } from '../../../shared/dialog/dialog-state';
-import { VaultNoteNode, flattenEncryptedNotes, flattenVaultNotes, markdownExtensionOf } from '../../../notes/vault-tree.model';
+import {
+  VaultNoteNode,
+  flattenEncryptedNotes,
+  flattenVaultNotes,
+  isNotePath,
+  markdownExtensionOf,
+} from '../../../notes/vault-tree.model';
 import { MarkdownNoticeState } from '../../../notes/markdown-notice-state';
 import { SidebarState } from '../../sidebar/sidebar-state';
 import { NoteEncryptionActions } from '../../../notes/note-encryption-actions';
@@ -39,6 +46,7 @@ const RENAME_DEBOUNCE_MS = 1000;
   selector: 'app-content-area',
   imports: [
     NoteEditor,
+    FilePreview,
     TagBar,
     LucideArrowLeft,
     LucideArrowRight,
@@ -79,6 +87,12 @@ export class ContentArea {
   protected readonly activeTab = computed<NoteTab | undefined>(() => {
     const activeId = this.tabsState.activeId();
     return activeId ? this.tabsState.tabs().find((t) => t.id === activeId) : undefined;
+  });
+
+  /** The active tab shows a file that isn't a note — an image, a PDF — in a read-only preview. */
+  protected readonly activeIsFile = computed(() => {
+    const tab = this.activeTab();
+    return !!tab && !isNotePath(tab.noteId);
   });
 
   /** Vault failed to open (bad/missing path, permissions, etc.) — show a fallback screen instead of the editor. */
@@ -161,7 +175,7 @@ export class ContentArea {
     // note, and a locked note could never report that it's locked.
     effect(() => {
       const tab = this.activeTab();
-      if (tab) this.notesState.ensureLoaded(tab.noteId);
+      if (tab && !this.activeIsFile()) this.notesState.ensureLoaded(tab.noteId);
     });
   }
 

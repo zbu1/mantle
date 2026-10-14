@@ -6,6 +6,7 @@ import { VaultHeader } from './vault-header/vault-header';
 import { VaultTreeNode } from './vault-tree-node/vault-tree-node';
 import { CredentialsSection } from './credentials-section/credentials-section';
 import { TagGroupRow } from './tag-group-row/tag-group-row';
+import { AttachmentsState } from '../../notes/attachments-state';
 import { CredentialsState } from '../../notes/credentials-state';
 import { NewEncryptedNoteState } from '../../notes/new-encrypted-note/new-encrypted-note-state';
 import { NoteEncryptionActions } from '../../notes/note-encryption-actions';
@@ -32,6 +33,7 @@ import {
   NOTE_REFERENCE_DRAG_MIME,
   VAULT_FOLDER_DRAG_MIME,
   VAULT_NOTE_DRAG_MIME,
+  VaultFileNode,
   VaultFolderNode,
   VaultNoteNode,
 } from '../../notes/vault-tree.model';
@@ -74,6 +76,7 @@ export class Sidebar {
   private readonly vaultMeta = inject(VaultMetaState);
   private readonly favorites = inject(FavoritesState);
   protected readonly tagsState = inject(TagsState);
+  private readonly attachments = inject(AttachmentsState);
 
   /** Text in the header's filter field; the tree shows only notes whose name contains it. Session-only. */
   protected readonly filterQuery = signal('');
@@ -266,6 +269,50 @@ export class Sidebar {
 
   protected onOpenNoteInBackground(note: VaultNoteNode): void {
     this.tabsState.openNoteInBackground({ id: note.relPath, title: note.name });
+  }
+
+  /** Files open in a read-only preview tab, which tabs tell apart from notes by extension. */
+  protected onOpenFile(file: VaultFileNode): void {
+    this.tabsState.openNote({ id: file.relPath, title: file.name });
+  }
+
+  protected onFileContextMenu(payload: { event: MouseEvent; file: VaultFileNode }): void {
+    const { event, file } = payload;
+    const items: ContextMenuItem[] = [
+      { kind: 'item', label: 'Open', icon: 'open', action: () => this.onOpenFile(file) },
+      {
+        kind: 'item',
+        label: 'Open in New Tab',
+        icon: 'open-new-tab',
+        action: () => this.tabsState.openNoteInBackground({ id: file.relPath, title: file.name }),
+      },
+      {
+        kind: 'item',
+        label: 'Open in Default App',
+        icon: 'open-external',
+        action: () => void this.attachments.openInDefaultApp(file.relPath),
+      },
+      { kind: 'separator' },
+      { kind: 'item', label: 'Show in File Explorer', icon: 'reveal', action: () => void this.vaultState.revealInFileExplorer(file.relPath) },
+      { kind: 'item', label: 'Copy Path', icon: 'copy', action: () => void navigator.clipboard.writeText(file.relPath) },
+      { kind: 'separator' },
+      { kind: 'item', label: 'Delete', icon: 'delete', danger: true, action: () => void this.deleteFile(file) },
+    ];
+    this.contextMenuState.open(event, items);
+  }
+
+  private async deleteFile(file: VaultFileNode): Promise<void> {
+    const confirmed = await this.dialogState.confirm(
+      `Move "${file.name}" to the system trash? Notes that show it will show a broken image.`,
+      { title: 'Delete File', tone: 'warning', confirmLabel: 'Move to Trash' },
+    );
+    if (!confirmed) return;
+    try {
+      await this.vaultState.deleteFile(file.relPath);
+      this.tabsState.closeByNoteId(file.relPath);
+    } catch (err) {
+      await this.dialogState.alert(String(err), { title: 'Delete Failed', tone: 'error' });
+    }
   }
 
   /**
@@ -600,49 +647,67 @@ export class Sidebar {
   }
 
   private async deleteNote(note: VaultNoteNode): Promise<void> {
-    const confirmed = await this.dialogState.confirm(`Move "${note.name}" to the system trash?`, {
+    const { confirmed, attachments } = await this.attachments.confirmDeleteNotes([note.relPath], {
       title: 'Delete Note',
-      tone: 'warning',
-      confirmLabel: 'Move to Trash',
+      message: `Move "${note.name}" to the system trash?`,
+      scope: 'note',
     });
     if (!confirmed) return;
-    await this.vaultState.deleteNote(note.relPath);
-    this.tabsState.closeByNoteId(note.relPath);
-    this.vaultMeta.forgetNote(note.relPath);
+    try {
+      await this.vaultState.deleteNote(note.relPath);
+      this.tabsState.closeByNoteId(note.relPath);
+      this.vaultMeta.forgetNote(note.relPath);
+    } catch (err) {
+      await this.dialogState.alert(String(err), { title: 'Delete Failed', tone: 'error' });
+      return;
+    }
+    await this.attachments.delete(attachments);
   }
 
   private async deleteFolder(folder: VaultFolderNode): Promise<void> {
-    const confirmed = await this.dialogState.confirm(
-      `Move "${folder.name}" and everything inside it to the system trash?`,
-      { title: 'Delete Folder', tone: 'warning', confirmLabel: 'Move to Trash' },
-    );
-    if (!confirmed) return;
     const affectedNotePaths = [...flattenVaultNotes(folder).keys()];
+    const { confirmed, attachments } = await this.attachments.confirmDeleteNotes(affectedNotePaths, {
+      title: 'Delete Folder',
+      message: `Move "${folder.name}" and everything inside it to the system trash?`,
+      scope: 'folder',
+    });
+    if (!confirmed) return;
     try {
       await this.vaultState.deleteFolder(folder.relPath);
-      for (const relPath of affectedNotePaths) {
-        this.tabsState.closeByNoteId(relPath);
-        this.vaultMeta.forgetNote(relPath);
+      // Files in it too, not just notes: their preview tabs would show nothing.
+      for (const tab of this.tabsState.tabs().filter((t) => t.noteId.startsWith(`${folder.relPath}/`))) {
+        this.tabsState.closeTab(tab.id);
       }
+      for (const relPath of affectedNotePaths) this.vaultMeta.forgetNote(relPath);
     } catch (err) {
       await this.dialogState.alert(String(err), { title: 'Delete Failed', tone: 'error' });
+      return;
     }
+    await this.attachments.delete(attachments);
   }
 
   private async deleteSelectedNotes(): Promise<void> {
     const relPaths = [...this.selectionState.selected()];
-    const confirmed = await this.dialogState.confirm(`Move ${relPaths.length} notes to the system trash?`, {
+    const { confirmed, attachments } = await this.attachments.confirmDeleteNotes(relPaths, {
       title: 'Delete Notes',
-      tone: 'warning',
-      confirmLabel: 'Move to Trash',
+      message: `Move ${relPaths.length} notes to the system trash?`,
+      scope: 'notes',
     });
     if (!confirmed) return;
-    for (const relPath of relPaths) {
-      await this.vaultState.deleteNote(relPath);
-      this.tabsState.closeByNoteId(relPath);
-      this.vaultMeta.forgetNote(relPath);
+    try {
+      for (const relPath of relPaths) {
+        await this.vaultState.deleteNote(relPath);
+        this.tabsState.closeByNoteId(relPath);
+        this.vaultMeta.forgetNote(relPath);
+      }
+    } catch (err) {
+      // Attachments only go along once every note they belonged to has.
+      await this.dialogState.alert(String(err), { title: 'Delete Failed', tone: 'error' });
+      return;
+    } finally {
+      this.selectionState.clear();
     }
-    this.selectionState.clear();
+    await this.attachments.delete(attachments);
   }
 
   private async pasteInto(destRelDir: string): Promise<void> {

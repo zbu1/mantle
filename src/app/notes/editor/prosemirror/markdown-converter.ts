@@ -10,8 +10,12 @@ import { schema } from './schema';
 const md = markdownIt('commonmark', { html: false });
 md.enable('strikethrough');
 
-/** Obsidian `![[photo.png|300]]` image embeds; embeds of anything else (notes) stay text. */
-const IMAGE_EMBED = /^!\[\[([^\]|\n]+\.(?:png|jpe?g|gif|webp|svg|avif|bmp))(?:\|([^\]\n]*))?\]\]/i;
+/**
+ * Obsidian `![[photo.png|300]]` image embeds, including the sealed
+ * `….png.enc` an encrypted note's embed gets re-pointed at; embeds of anything
+ * else (notes) stay text.
+ */
+const IMAGE_EMBED = /^!\[\[([^\]|\n]+\.(?:png|jpe?g|gif|webp|svg|avif|bmp)(?:\.enc)?)(?:\|([^\]\n]*))?\]\]/i;
 md.inline.ruler.before('image', 'image_embed', (state, silent) => {
   const match = IMAGE_EMBED.exec(state.src.slice(state.pos));
   if (!match) return false;

@@ -171,14 +171,17 @@ export class NoteEncryptionActions {
     }
   }
 
-  /** Re-seal an encrypted note under a different profile. The filename doesn't change. */
-  async moveToProfile(note: VaultNoteNode, profileId: string): Promise<void> {
+  /**
+   * Re-seal an encrypted note under a different profile. The filename doesn't
+   * change. Resolves whether the note ended up moved.
+   */
+  async moveToProfile(note: VaultNoteNode, profileId: string): Promise<boolean> {
     const root = this.vaultState.rootPath();
-    if (!root) return;
+    if (!root) return false;
     // Both profiles have to be unlocked: one to read the note, one to reseal it.
-    if (!(await this.ensureUnlocked(note))) return;
+    if (!(await this.ensureUnlocked(note))) return false;
     if (!this.credentialsState.isUnlocked(profileId)) {
-      if (!(await this.credentialsState.promptUnlock(profileId))) return;
+      if (!(await this.credentialsState.promptUnlock(profileId))) return false;
     }
 
     await this.notesState.flushPending([note.relPath]);
@@ -190,9 +193,11 @@ export class NoteEncryptionActions {
       this.notesState.reload(note.relPath);
       logInfo(`Moved "${note.relPath}" to profile "${profileId}"`);
       await this.vaultState.refresh();
+      return true;
     } catch (err) {
       logError(`Failed to move "${note.relPath}" to "${profileId}": ${formatError(err)}`);
       await this.dialogState.alert(String(err), { title: 'Move Failed', tone: 'error' });
+      return false;
     }
   }
 

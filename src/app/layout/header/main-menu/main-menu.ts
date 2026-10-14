@@ -41,6 +41,7 @@ import {
 import { MenuItem } from '../../../shared/menu/menu-item';
 import { MenuSeparator } from '../../../shared/menu/menu-separator';
 import { MenuSurface } from '../../../shared/menu/menu-surface';
+import { VaultMenu } from '../../vault-menu/vault-menu';
 import { DialogState } from '../../../shared/dialog/dialog-state';
 import { SettingsModalState } from '../../../shared/settings/settings-modal-state';
 import { CredentialsState } from '../../../notes/credentials-state';
@@ -69,6 +70,7 @@ type MenuCategory = 'file' | 'edit' | 'view' | 'help';
     MenuSurface,
     MenuItem,
     MenuSeparator,
+    VaultMenu,
     LucideMenu,
     LucideCheck,
     LucideFilePlus,

@@ -81,10 +81,70 @@
 }
 
 <h3 class="mb-1 mt-4 text-xs font-semibold uppercase tracking-wide text-destructive">Danger Zone</h3>
-<app-settings-row label="Delete This Profile" description="Decrypts its notes to plaintext, then removes the profile.">
-  <button type="button" (click)="deleteProfile()" [disabled]="!canDelete()"
-    class="flex items-center gap-1.5 rounded-md border border-destructive/40 px-2.5 py-1 text-xs text-destructive hover:bg-destructive/10 disabled:pointer-events-none disabled:opacity-40">
-    <svg lucideTrash2 [size]="12"></svg> Delete
+<app-settings-row label="Delete This Profile" description="Choose what happens to its notes, then remove the profile.">
+  <button type="button" (click)="deleting() ? deleting.set(false) : openDelete()"
+    class="flex items-center gap-1.5 rounded-md border border-destructive/40 px-2.5 py-1 text-xs text-destructive hover:bg-destructive/10">
+    <svg lucideTrash2 [size]="12"></svg> {{ deleting() ? 'Cancel' : 'Delete…' }}
   </button>
 </app-settings-row>
+@if (deleting()) {
+<div class="mt-1 space-y-2 rounded-md border border-destructive/40 bg-background px-3 py-2.5 text-xs text-foreground">
+  <p class="text-muted-foreground">
+    Deleting "{{ p.displayName }}" destroys its key: nothing encrypted under it can be opened again, even with the
+    password.
+  </p>
+  @if (notes().length > 0) {
+  <p class="font-medium">Its {{ notes().length === 1 ? 'note' : notes().length + ' notes' }}:</p>
+  <label class="flex items-start gap-2" [class.opacity-40]="!unlocked()">
+    <input type="radio" name="delete-mode" class="mt-px accent-[var(--primary)]" [disabled]="!unlocked()"
+      [checked]="deleteMode() === 'decrypt'" (change)="deleteMode.set('decrypt')" />
+    <span>Decrypt to plaintext, stored as readable text on disk</span>
+  </label>
+  <label class="flex items-start gap-2" [class.opacity-40]="!unlocked() || otherProfiles().length === 0">
+    <input type="radio" name="delete-mode" class="mt-px accent-[var(--primary)]"
+      [disabled]="!unlocked() || otherProfiles().length === 0"
+      [checked]="deleteMode() === 'move'" (change)="deleteMode.set('move')" />
+    <span class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+      Move to another profile
+      @if (deleteMode() === 'move') {
+      <select [value]="moveTarget()" (change)="moveTarget.set($any($event.target).value)"
+        class="rounded-md border border-border bg-background px-1.5 py-0.5 text-xs text-foreground outline-none focus:border-ring">
+        <option value="" disabled>Choose a profile</option>
+        @for (other of otherProfiles(); track other.id) {
+        <option [value]="other.id">{{ other.displayName }}</option>
+        }
+      </select>
+      }
+    </span>
+  </label>
+  <label class="flex items-start gap-2">
+    <input type="radio" name="delete-mode" class="mt-px accent-[var(--primary)]"
+      [checked]="deleteMode() === 'delete'" (change)="deleteMode.set('delete')" />
+    <span>Delete them too</span>
+  </label>
+  @if (!unlocked()) {
+  <p class="text-muted-foreground">Unlock the profile to decrypt or move its notes.</p>
+  }
+  }
+  @if (sealedAttachments().length > 0) {
+  <label class="flex items-start gap-2">
+    <input type="checkbox" class="mt-px accent-[var(--primary)]" [checked]="deleteAttachments()"
+      (change)="deleteAttachments.set($any($event.target).checked)" />
+    <span>
+      Also move its {{ sealedAttachments().length === 1 ? 'encrypted attachment' : sealedAttachments().length + ' encrypted attachments' }}
+      to the trash.
+      @if (notes().length > 0 && deleteMode() !== 'delete') {
+      Its notes get their own copies first.
+      }
+    </span>
+  </label>
+  }
+  <div class="flex justify-end">
+    <button type="button" (click)="confirmDeleteProfile()" [disabled]="!canConfirmDelete()"
+      class="rounded-md bg-destructive px-3 py-1.5 text-xs text-destructive-foreground hover:opacity-90 disabled:opacity-50">
+      {{ working() ? 'Working…' : 'Delete Profile' }}
+    </button>
+  </div>
+</div>
+}
 }

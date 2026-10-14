@@ -9,19 +9,19 @@ export interface FixtureNote {
 
 export const FIXTURE_NOTES: FixtureNote[] = [
   {
-    id: 'daily-standup',
+    id: 'daily-standup.mntl',
     title: 'daily-standup',
     content: 'Yesterday: shipped the sidebar resize handle. Today: tab strip. Blockers: none.',
     tags: ['work', 'urgent'],
   },
   {
-    id: 'architecture-notes',
+    id: 'architecture-notes.mntl',
     title: 'architecture-notes',
     content: 'Notes on the layout shell: header, sidebar, and the tabbed content area.',
     tags: ['work'],
   },
   {
-    id: 'todo',
+    id: 'todo.mntl',
     title: 'todo',
     content: '- Wire up sidebar clicks to open tabs\n- Persist open tabs\n- Empty state for no tabs',
     tags: [],

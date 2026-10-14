@@ -12,16 +12,15 @@
     (dragenter)="onVaultBackgroundDragOver($event)" (dragover)="onVaultBackgroundDragOver($event)"
     (dragleave)="onVaultBackgroundDragLeave($event)" (drop)="onVaultBackgroundDrop($event)"
     (contextmenu)="onVaultContextMenu($event)">
-    @if (vaultState.error(); as err) {
-    <div class="px-2 py-1 text-xs text-destructive">{{ err }}</div>
-    } @else if (visibleTree(); as tree) {
+    @if (visibleTree(); as tree) {
     @for (child of tree.children; track child.relPath) {
     <app-vault-tree-node [node]="child" [unlockedProfiles]="credentialsState.unlockedIds()" [filter]="filterQuery()"
       (openNote)="onOpenNote($event)"
       (openNoteInBackground)="onOpenNoteInBackground($event)" (noteContextMenu)="onNoteContextMenu($event)"
       (folderContextMenu)="onFolderContextMenu($event)" (lockedClicked)="onLockedClicked($event)"
       (notesDropped)="onNotesDropped($event)" (folderDropped)="onFolderDropped($event)"
-      (noteRenamed)="onNoteRenamed($event)" (folderRenamed)="onFolderRenamed($event)" />
+      (noteRenamed)="onNoteRenamed($event)" (folderRenamed)="onFolderRenamed($event)"
+      (openFile)="onOpenFile($event)" (fileContextMenu)="onFileContextMenu($event)" />
     }
     @if (tree.children.length === 0) {
     @if (filterQuery().trim()) {
@@ -32,6 +31,9 @@
     }
     } @else if (vaultState.loading()) {
     <div class="px-2 py-1 text-xs text-muted-foreground">Loading vault…</div>
+    } @else if (vaultState.error()) {
+    <!-- The content area explains what went wrong and offers a retry. -->
+    <div class="px-2 py-1 text-xs text-muted-foreground">Couldn't open this vault.</div>
     } @else {
     <div class="px-2 py-1 text-xs text-muted-foreground">No vault open. Pick one from the vault name above.</div>
     }

@@ -12,9 +12,11 @@
 //! rename, move, duplicate, copy, delete — works regardless, because those
 //! operations never look at a note's contents.
 
+use crate::attachments::reseal_images;
 use crate::credentials::SessionKeys;
 use crate::logging::logged;
 use serde::Serialize;
+use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -104,11 +106,14 @@ pub enum VaultNode {
         /// notes, whose favorites live in `.mantle/state.json`.
         favorite: bool,
     },
+    /// Any other file — an image, a PDF — kept in the vault by the user.
+    #[serde(rename_all = "camelCase")]
+    File { name: String, rel_path: String },
 }
 
 fn node_name(node: &VaultNode) -> &str {
     match node {
-        VaultNode::Folder { name, .. } | VaultNode::Note { name, .. } => name,
+        VaultNode::Folder { name, .. } | VaultNode::Note { name, .. } | VaultNode::File { name, .. } => name,
     }
 }
 
@@ -256,6 +261,11 @@ fn scan_dir(
         }
         let child_rel = rel_dir.join(&name);
 
+        // Mantle's own attachment store: its files are reached through the
+        // notes that show them, not browsed.
+        if file_type.is_dir() && rel_dir.as_os_str().is_empty() && name == crate::attachments::ATTACHMENTS_DIR {
+            continue;
+        }
         if file_type.is_dir() {
             let children = scan_dir(&entry.path(), &child_rel, vault_root, keys)?;
             folders.push(VaultNode::Folder {
@@ -280,6 +290,8 @@ fn scan_dir(
                     tags,
                     favorite,
                 });
+            } else {
+                notes.push(VaultNode::File { name, rel_path: to_slash(&child_rel) });
             }
         }
     }
@@ -415,6 +427,29 @@ pub(crate) fn scan_vault_inner(vault_root: &str, keys: &SessionKeys) -> Result<V
     })
 }
 
+/// Every note in the vault, vault-relative, skipping hidden folders as a scan
+/// does — without reading any of them.
+pub(crate) fn note_paths(vault_root: &str) -> Result<Vec<String>, String> {
+    fn walk(dir: &Path, rel_dir: &str, out: &mut Vec<String>) {
+        let Ok(entries) = fs::read_dir(dir) else { return };
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with('.') {
+                continue;
+            }
+            let rel = if rel_dir.is_empty() { name.clone() } else { format!("{rel_dir}/{name}") };
+            match entry.file_type() {
+                Ok(t) if t.is_dir() => walk(&entry.path(), &rel, out),
+                Ok(t) if t.is_file() && classify_note_file(&name).is_some() => out.push(rel),
+                _ => {}
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(&resolve_rel_dir(vault_root, "")?, "", &mut out);
+    Ok(out)
+}
+
 /// The master key for the profile a `.mntl.enc` blob names, or the
 /// `mantle:locked:<id>` sentinel if that profile is not unlocked.
 pub(crate) fn master_key_for(
@@ -478,6 +513,8 @@ pub(crate) fn read_note_inner(
     Ok(NoteDocument { content, tags: frontmatter.tags })
 }
 
+/// Saves a note, returning each attachment source it re-pointed (see
+/// [`write_note_inner`]) with its new one, for the editor to follow.
 #[tauri::command]
 pub fn write_note(
     vault_root: String,
@@ -485,7 +522,7 @@ pub fn write_note(
     content: String,
     tags: Vec<String>,
     keys: State<SessionKeys>,
-) -> Result<(), String> {
+) -> Result<HashMap<String, String>, String> {
     logged("write_note", || {
         write_note_inner(&vault_root, &rel_path, &content, &tags, &keys)
     })
@@ -493,15 +530,35 @@ pub fn write_note(
 
 /// Save a note's body and tags. `tags` replaces the note's tags wholesale,
 /// the same way `content` replaces its body.
+///
+/// An attachment the note shows that belongs elsewhere — pasted in from a
+/// note of another profile, or a plaintext one into an encrypted note — is
+/// copied to belong to this note's profile first, and the link re-pointed
+/// (see [`reseal_images`]).
 pub(crate) fn write_note_inner(
     vault_root: &str,
     rel_path: &str,
     content: &str,
     tags: &[String],
     keys: &SessionKeys,
-) -> Result<(), String> {
+) -> Result<HashMap<String, String>, String> {
     let path = resolve_rel_path(vault_root, rel_path)?;
     let tags = clean_tags(tags);
+
+    if rel_path.ends_with(EXT_ENCRYPTED) {
+        let (profile_id, mk) = master_key_for(vault_root, &read_header_prefix(&path)?, keys)?;
+        let (content, relinked) = reseal_images(vault_root, rel_path, content, Some((&profile_id, &mk)), keys, true)?;
+        // Decrypting the old version, not just reading its header, is what
+        // keeps the note's sealed favorite flag across a save.
+        reseal_note(vault_root, &path, keys, |frontmatter, body| {
+            frontmatter.tags = tags;
+            *body = content.to_string();
+        })?;
+        return Ok(relinked);
+    }
+
+    let (content, relinked) = reseal_images(vault_root, rel_path, content, None, keys, true)?;
+    let content = content.as_str();
 
     if is_markdown_note(rel_path) {
         // Keep whatever frontmatter is on disk *now*, byte for byte, rather
@@ -515,21 +572,14 @@ pub(crate) fn write_note_inner(
         if mntl_core::markdown_tags(&existing) != tags {
             updated = mntl_core::set_markdown_tags(&updated, &tags);
         }
-        return fs::write(&path, updated).map_err(|e| format!("Failed to write note: {e}"));
-    }
-
-    if rel_path.ends_with(EXT_ENCRYPTED) {
-        // Decrypting the old version, not just reading its header, is what
-        // keeps the note's sealed favorite flag across a save.
-        return reseal_note(vault_root, &path, keys, |frontmatter, body| {
-            frontmatter.tags = tags;
-            *body = content.to_string();
-        });
+        fs::write(&path, updated).map_err(|e| format!("Failed to write note: {e}"))?;
+        return Ok(relinked);
     }
 
     let frontmatter = mntl_core::NoteFrontmatter { tags, ..Default::default() };
     let encoded = mntl_core::encode_note(&frontmatter, content).map_err(|e| e.to_string())?;
-    fs::write(&path, encoded).map_err(|e| format!("Failed to write note: {e}"))
+    fs::write(&path, encoded).map_err(|e| format!("Failed to write note: {e}"))?;
+    Ok(relinked)
 }
 
 /// Serializes read-modify-write cycles on encrypted notes, so a save and a
@@ -706,6 +756,23 @@ pub fn delete_note(vault_root: String, rel_path: String) -> Result<(), String> {
         // Send to the OS recycle bin/trash rather than unlinking outright, so a
         // deleted note stays recoverable through the normal OS trash UI.
         trash::delete(&path).map_err(|e| format!("Failed to delete note: {e}"))
+    })
+}
+
+/// Open a file in the vault with the OS's default app for it. Never a sealed
+/// `.enc` file: that is ciphertext to any other app, and decrypting it to
+/// disk for one would defeat the point.
+#[tauri::command]
+pub fn open_vault_file(app: tauri::AppHandle, vault_root: String, rel_path: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    logged("open_vault_file", || {
+        if rel_path.ends_with(".enc") {
+            return Err("An encrypted file can only be viewed in Mantle".to_string());
+        }
+        let path = resolve_rel_path(&vault_root, &rel_path)?;
+        app.opener()
+            .open_path(path.to_string_lossy(), None::<&str>)
+            .map_err(|e| format!("Failed to open file: {e}"))
     })
 }
 
@@ -1473,6 +1540,31 @@ tags: [x]
             }
             other => panic!("expected a note, got {other:?}"),
         }
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn scan_vault_lists_other_files_but_hides_the_attachment_store() {
+        let root = temp_dir("scan-files");
+        fs::create_dir_all(root.join("attachments")).unwrap();
+        fs::create_dir_all(root.join("Trip/attachments")).unwrap();
+        fs::write(root.join("attachments/abc.png"), "x").unwrap();
+        fs::write(root.join("Trip/attachments/photo.png"), "x").unwrap();
+        fs::write(root.join("Trip/plan.pdf"), "x").unwrap();
+        fs::write(root.join("Trip/notes.mntl"), "---\nv: 2\n---\n").unwrap();
+
+        let tree = scan_vault_inner(&root.to_string_lossy(), &SessionKeys::default()).unwrap();
+        let json = serde_json::to_value(&tree).unwrap();
+        let names = |node: &serde_json::Value| -> Vec<String> {
+            node["children"].as_array().unwrap().iter().map(|c| format!("{}:{}", c["type"].as_str().unwrap(), c["relPath"].as_str().unwrap())).collect()
+        };
+        assert_eq!(names(&json), ["folder:Trip"]);
+        assert_eq!(
+            names(&json["children"][0]),
+            ["folder:Trip/attachments", "note:Trip/notes.mntl", "file:Trip/plan.pdf"],
+        );
+        assert_eq!(note_paths(&root.to_string_lossy()).unwrap(), ["Trip/notes.mntl"]);
 
         let _ = fs::remove_dir_all(&root);
     }

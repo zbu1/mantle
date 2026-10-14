@@ -517,7 +517,7 @@ describe('Sidebar', () => {
     }
 
     it("lists the vault's tags with their note counts", async () => {
-      const fixture = await setup([note('plan', ['work', 'Idea']), note('todo', ['work'])]);
+      const fixture = await setup([note('plan', ['work', 'Idea']), note('todo.mntl', ['work'])]);
       expect(tagRows(fixture)).toEqual(['Idea 1', 'work 2']);
     });
 

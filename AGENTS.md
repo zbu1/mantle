@@ -30,9 +30,17 @@ Angular 22 (frontend, signals-based, no NgModules).
   `src-tauri/src/attachments.rs` stores images in the vault's `attachments/`
   folder (content-hashed for plaintext notes, `<random>.<ext>.enc` sealed in
   the note envelope for encrypted ones) and serves them to the editor through
-  the `mantle://` protocol, decrypting in memory. Encrypting, decrypting or
-  re-homing a note writes new copies of its images and re-points its links;
-  attachments are never modified or deleted once written.
+  the `mantle://` protocol, decrypting in memory. An attachment belongs to its
+  profile (or to plaintext notes): encrypting, decrypting or re-homing a note,
+  and every `write_note`, copies any attachment that belongs elsewhere and
+  re-points the link (`write_note` returns those re-pointings for the editor
+  to follow). That invariant is what lets `unused_attachments` judge an
+  attachment without unlocking every profile — a locked note can only hold
+  its own profile's. Attachments are never modified once written, and only
+  deleted (to the OS trash) when the user opts in while deleting notes,
+  removing an image, or deleting a profile. The vault-root `attachments/`
+  folder is hidden from the tree; other non-note files appear as `file` nodes
+  and open in a read-only preview tab.
 - **`crates/mntl-core`**: standalone Rust crate (Cargo workspace member,
   independent of Tauri) implementing the `.mntl` note format — plaintext
   Markdown with a YAML frontmatter header — and the `.mntl.enc` encrypted

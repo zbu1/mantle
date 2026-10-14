@@ -10,7 +10,10 @@ interface DialogRequestBase {
 export interface ConfirmDialogRequest extends DialogRequestBase {
   kind: 'confirm';
   cancelLabel: string;
-  resolve: (confirmed: boolean) => void;
+  /** Label of an optional checkbox under the message (unchecked to start), or null for none. */
+  checkboxLabel: string | null;
+  /** `checked` is the checkbox's final state; always false without one, or when cancelled. */
+  resolve: (confirmed: boolean, checked: boolean) => void;
 }
 
 export interface AlertDialogRequest extends DialogRequestBase {

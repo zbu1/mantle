@@ -49,7 +49,15 @@ export interface VaultNoteNode {
   favorite?: boolean;
 }
 
-export type VaultNode = VaultFolderNode | VaultNoteNode;
+/** Any other file the user keeps in the vault — an image, a PDF. Opens in a read-only preview tab. */
+export interface VaultFileNode {
+  type: 'file';
+  /** The full filename, extension included. */
+  name: string;
+  relPath: string;
+}
+
+export type VaultNode = VaultFolderNode | VaultNoteNode | VaultFileNode;
 
 /**
  * Extensions of plain Markdown files, which open as notes but stay Markdown on
@@ -60,6 +68,11 @@ export const MARKDOWN_EXTENSIONS = ['.md', '.markdown'] as const;
 /** The Markdown extension `relPath` ends with (e.g. `.md`), or null for a `.mntl` / `.mntl.enc` note. */
 export function markdownExtensionOf(relPath: string): string | null {
   return MARKDOWN_EXTENSIONS.find((ext) => relPath.endsWith(ext)) ?? null;
+}
+
+/** Whether `relPath` is a note (`.mntl`, `.mntl.enc` or Markdown) rather than some other file. */
+export function isNotePath(relPath: string): boolean {
+  return relPath.endsWith('.mntl') || relPath.endsWith('.mntl.enc') || markdownExtensionOf(relPath) !== null;
 }
 
 /** True when `note` is encrypted and its credential profile is not currently unlocked. */
@@ -85,6 +98,7 @@ export function findFolder(root: VaultFolderNode, relPath: string): VaultFolderN
 /** Returns a copy of `root` with the note at `relPath` renamed in place (name + relPath updated). No-op (same reference) if not found. */
 export function withRenamedNote(root: VaultFolderNode, relPath: string, newRelPath: string, newName: string): VaultFolderNode {
   const rename = (node: VaultNode): VaultNode => {
+    if (node.type === 'file') return node;
     if (node.type === 'note') {
       return node.relPath === relPath ? { ...node, relPath: newRelPath, name: newName } : node;
     }
@@ -101,6 +115,7 @@ export function withNoteFields(
   fields: Partial<Pick<VaultNoteNode, 'tags' | 'favorite'>>,
 ): VaultFolderNode {
   const retag = (node: VaultNode): VaultNode => {
+    if (node.type === 'file') return node;
     if (node.type === 'note') return node.relPath === relPath ? { ...node, ...fields } : node;
     const children = node.children.map(retag);
     return children.some((child, i) => child !== node.children[i]) ? { ...node, children } : node;
@@ -119,7 +134,7 @@ export function filterVaultTree(root: VaultFolderNode, query: string): VaultFold
   const prune = (folder: VaultFolderNode): VaultFolderNode => ({
     ...folder,
     children: folder.children.flatMap((child): VaultNode[] => {
-      if (child.type === 'note') return child.name.toLowerCase().includes(needle) ? [child] : [];
+      if (child.type !== 'folder') return child.name.toLowerCase().includes(needle) ? [child] : [];
       const pruned = prune(child);
       return pruned.children.length > 0 ? [pruned] : [];
     }),
@@ -131,6 +146,7 @@ export function filterVaultTree(root: VaultFolderNode, query: string): VaultFold
 export function flattenVaultNotes(root: VaultFolderNode): Map<string, string> {
   const notes = new Map<string, string>();
   const visit = (node: VaultNode): void => {
+    if (node.type === 'file') return;
     if (node.type === 'note') {
       notes.set(node.relPath, node.name);
       return;
@@ -151,6 +167,7 @@ export function flattenVaultNotes(root: VaultFolderNode): Map<string, string> {
 export function flattenEncryptedNotes(root: VaultFolderNode): VaultNoteNode[] {
   const notes: VaultNoteNode[] = [];
   const visit = (node: VaultNode): void => {
+    if (node.type === 'file') return;
     if (node.type === 'note') {
       if (node.encrypted) notes.push(node);
       return;
@@ -165,6 +182,7 @@ export function flattenEncryptedNotes(root: VaultFolderNode): VaultNoteNode[] {
 export function flattenAllNotes(root: VaultFolderNode): VaultNoteNode[] {
   const notes: VaultNoteNode[] = [];
   const visit = (node: VaultNode): void => {
+    if (node.type === 'file') return;
     if (node.type === 'note') {
       notes.push(node);
       return;

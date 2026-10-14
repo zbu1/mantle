@@ -142,7 +142,7 @@ fn encrypt_note_inner(
         let document = read_plaintext_document(&source, rel_path)?;
         // Its images get sealed copies too; the plaintext originals stay, as
         // other notes may show them.
-        let document = reseal_images(vault_root, rel_path, &document, Some((profile_id, &mk)), keys)?;
+        let (document, _) = reseal_images(vault_root, rel_path, &document, Some((profile_id, &mk)), keys, false)?;
 
         let blob =
             mntl_core::encrypt_note(&mk, profile_id, document.as_bytes()).map_err(|e| e.to_string())?;
@@ -276,7 +276,7 @@ fn decrypt_note_inner(
         } else {
             document
         };
-        let document = reseal_images(vault_root, rel_path, document, None, keys)?;
+        let (document, _) = reseal_images(vault_root, rel_path, document, None, keys, false)?;
 
         write_atomic(&dest, document.as_bytes())?;
         fs::remove_file(&source).map_err(|e| format!("Failed to remove the encrypted note: {e}"))?;
@@ -336,8 +336,8 @@ fn move_note_inner(
         let document = mntl_core::decrypt_note(&source_key, &blob).map_err(|e| e.to_string())?;
         let document =
             std::str::from_utf8(&document).map_err(|_| "Decrypted note is not UTF-8".to_string())?;
-        let document =
-            reseal_images(vault_root, rel_path, document, Some((profile_id, &destination_key)), keys)?;
+        let (document, _) =
+            reseal_images(vault_root, rel_path, document, Some((profile_id, &destination_key)), keys, false)?;
         let resealed = mntl_core::encrypt_note(&destination_key, profile_id, document.as_bytes())
             .map_err(|e| e.to_string())?;
 

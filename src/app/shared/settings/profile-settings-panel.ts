@@ -11,9 +11,12 @@ import { ContextMenuState } from '../context-menu/context-menu-state';
 import { DialogState } from '../dialog/dialog-state';
 import { Toggle } from '../toggle/toggle';
 import { SettingsRow } from './settings-row';
+import { AttachmentsState } from '../../notes/attachments-state';
 import { CredentialsState } from '../../notes/credentials-state';
 import { NoteEncryptionActions } from '../../notes/note-encryption-actions';
 import { TabsState } from '../../notes/tabs-state';
+import { VaultMetaState } from '../../notes/vault-meta-state';
+import { VaultState } from '../../notes/vault-state';
 import { VaultNoteNode } from '../../notes/vault-tree.model';
 
 /**
@@ -34,7 +37,7 @@ import { VaultNoteNode } from '../../notes/vault-tree.model';
     LucideLock,
     LucideLockOpen,
     LucidePencil,
-      LucideTrash2,
+    LucideTrash2,
   ],
   templateUrl: './profile-settings-panel.html',
   host: { class: 'block' },
@@ -47,12 +50,33 @@ export class ProfileSettingsPanel {
   private readonly tabsState = inject(TabsState);
   private readonly dialogState = inject(DialogState);
   private readonly contextMenuState = inject(ContextMenuState);
+  private readonly attachments = inject(AttachmentsState);
+  private readonly vaultState = inject(VaultState);
+  private readonly vaultMeta = inject(VaultMetaState);
 
   protected readonly profile = computed(() => this.credentialsState.profileById(this.profileId()));
   protected readonly notes = computed(() => this.credentialsState.membersByProfile().get(this.profileId()) ?? []);
   protected readonly unlocked = computed(() => this.credentialsState.isUnlocked(this.profileId()));
-  /** An empty profile needs no key to delete — there's nothing to decrypt first. */
-  protected readonly canDelete = computed(() => this.unlocked() || this.notes().length === 0);
+  /** The other profiles its notes could move to. */
+  protected readonly otherProfiles = computed(() =>
+    this.credentialsState.profiles().filter((p) => p.id !== this.profileId()),
+  );
+
+  /** Whether the delete section is open, where what happens to the profile's notes is chosen. */
+  protected readonly deleting = signal(false);
+  protected readonly deleteMode = signal<'decrypt' | 'move' | 'delete'>('decrypt');
+  protected readonly moveTarget = signal('');
+  protected readonly deleteAttachments = signal(true);
+  /** Attachments sealed under this profile, looked up when the delete section opens. */
+  protected readonly sealedAttachments = signal<string[]>([]);
+  protected readonly working = signal(false);
+
+  /** Decrypting or moving the notes needs to read them; deleting them doesn't. */
+  protected readonly canConfirmDelete = computed(() => {
+    if (this.working()) return false;
+    if (this.notes().length === 0 || this.deleteMode() === 'delete') return true;
+    return this.unlocked() && (this.deleteMode() === 'decrypt' || this.moveTarget() !== '');
+  });
 
   protected readonly editingName = signal(false);
   protected readonly nameDraft = signal('');
@@ -68,6 +92,7 @@ export class ProfileSettingsPanel {
       untracked(() => {
         this.editingName.set(false);
         this.advancedOpen.set(false);
+        this.deleting.set(false);
       });
     });
     effect(() => {
@@ -114,30 +139,68 @@ export class ProfileSettingsPanel {
     this.contextMenuState.open(event, this.encryptionActions.menuItems(note));
   }
 
-  protected async deleteProfile(): Promise<void> {
+  protected async openDelete(): Promise<void> {
+    this.deleteMode.set(this.unlocked() || this.notes().length === 0 ? 'decrypt' : 'delete');
+    this.moveTarget.set('');
+    this.deleteAttachments.set(true);
+    this.sealedAttachments.set([]);
+    this.deleting.set(true);
+    try {
+      this.sealedAttachments.set(await this.attachments.ofProfile(this.profileId()));
+    } catch {
+      // Nothing to offer; the profile can still be deleted.
+    }
+  }
+
+  /**
+   * Delete the profile, first dealing with its notes as chosen: decrypt them
+   * to plaintext, move them to another profile, or delete them too.
+   *
+   * Deleting the profile destroys the only copy of its key, so nothing sealed
+   * under it can be opened again. Its notes are dealt with first for that
+   * reason; its attachments, once its notes have their own copies or are gone,
+   * are deleted too unless the user unticks that.
+   */
+  protected async confirmDeleteProfile(): Promise<void> {
     const id = this.profileId();
     const profile = this.profile();
-    if (!profile || !this.canDelete()) return;
-
+    if (!profile || !this.canConfirmDelete()) return;
     const notes = this.notes();
-    const message =
-      notes.length > 0
-        ? `"${profile.displayName}" has ${notes.length} note${notes.length === 1 ? '' : 's'} that will be decrypted to plaintext before the profile is deleted. This can't be undone.`
-        : `"${profile.displayName}" will be permanently deleted. This can't be undone.`;
+    const mode = this.deleteMode();
 
-    const confirmed = await this.dialogState.confirm(message, {
-      title: 'Delete Credential Profile',
-      tone: 'warning',
-      confirmLabel: 'Delete',
-    });
-    if (!confirmed) return;
-
-    for (const note of notes) {
-      // decrypt() already surfaces its own error dialog on failure.
-      if (!(await this.encryptionActions.decrypt(note, { skipConfirm: true }))) return;
+    if (mode === 'delete' && notes.length > 0) {
+      const confirmed = await this.dialogState.confirm(
+        `Move ${notes.length === 1 ? 'its note' : `all ${notes.length} of its notes`} to the system trash and delete ` +
+          `"${profile.displayName}"? Without the profile, nothing can open ${notes.length === 1 ? 'that note' : 'those notes'} ` +
+          `again, even from the trash.`,
+        { title: 'Delete Profile and Notes', tone: 'warning', confirmLabel: 'Delete Everything' },
+      );
+      if (!confirmed) return;
     }
 
-    // SettingsModal notices the profile is gone and moves off its now-dangling entry.
-    await this.credentialsState.delete(id);
+    this.working.set(true);
+    try {
+      for (const note of notes) {
+        // decrypt() and moveToProfile() surface their own error dialogs.
+        if (mode === 'decrypt' && !(await this.encryptionActions.decrypt(note, { skipConfirm: true }))) return;
+        if (mode === 'move' && !(await this.encryptionActions.moveToProfile(note, this.moveTarget()))) return;
+        if (mode === 'delete') {
+          this.tabsState.closeByNoteId(note.relPath);
+          try {
+            await this.vaultState.deleteNote(note.relPath);
+          } catch (err) {
+            await this.dialogState.alert(String(err), { title: 'Delete Failed', tone: 'error' });
+            return;
+          }
+          this.vaultMeta.forgetNote(note.relPath);
+        }
+      }
+      if (this.deleteAttachments()) await this.attachments.delete(this.sealedAttachments());
+
+      // SettingsModal notices the profile is gone and moves off its now-dangling entry.
+      await this.credentialsState.delete(id);
+    } finally {
+      this.working.set(false);
+    }
   }
 }

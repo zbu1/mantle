@@ -26,7 +26,8 @@
           (noteContextMenu)="noteContextMenu.emit($event)" (folderContextMenu)="folderContextMenu.emit($event)"
           (lockedClicked)="lockedClicked.emit($event)" (notesDropped)="notesDropped.emit($event)"
           (folderDropped)="folderDropped.emit($event)" (noteRenamed)="noteRenamed.emit($event)"
-          (folderRenamed)="folderRenamed.emit($event)" />
+          (folderRenamed)="folderRenamed.emit($event)" (openFile)="openFile.emit($event)"
+          (fileContextMenu)="fileContextMenu.emit($event)" />
         }
       </div>
     </div>
@@ -60,4 +61,9 @@
   </app-sidebar-item-button>
   }
 </div>
+} @else if (asFile(); as file) {
+<app-sidebar-item-button [label]="fileLabel(file).name" [labelSuffix]="fileLabel(file).ext"
+  [active]="file.relPath === activeNoteId()" [baseIndent]="0" [indent]="noteIndentOf(depth())" [highlight]="filter()"
+  [suppressNativeTitle]="true" [appHoverTooltip]="file.name" appHoverTooltipSublabel="File in the vault"
+  (clicked)="openFile.emit(file)" (contextMenu)="fileContextMenu.emit({ event: $event, file })" />
 }

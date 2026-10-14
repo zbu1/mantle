@@ -9,7 +9,7 @@ import { VaultState } from '../vault-state';
 import { installMockVaultInvoke, flushAsync } from '../../../testing/mock-vault';
 
 function plainNote(relPath = 'todo.mntl'): VaultNoteNode {
-  return { type: 'note', name: 'todo', relPath, encrypted: false, profile: null };
+  return { type: 'note', name: 'todo.mntl', relPath, encrypted: false, profile: null };
 }
 
 function encryptedNote(relPath = 'secret.mntl.enc', profile: string | null = 'ghost-profile'): VaultNoteNode {

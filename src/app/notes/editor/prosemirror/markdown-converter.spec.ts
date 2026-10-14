@@ -6,6 +6,7 @@ describe('markdown images', () => {
   it('round-trips Markdown images and Obsidian embeds in their own syntax', () => {
     expect(roundTrip('a ![cat](attachments/cat.png "Tom") b')).toBe('a ![cat](attachments/cat.png "Tom") b');
     expect(roundTrip('![[my cat.png|300]] and ![[dog.JPG]]')).toBe('![[my cat.png|300]] and ![[dog.JPG]]');
+    expect(roundTrip('![[attachments/ab12.png.enc|300]]')).toBe('![[attachments/ab12.png.enc|300]]');
   });
 
   it('parses an embed into an image node with its size', () => {

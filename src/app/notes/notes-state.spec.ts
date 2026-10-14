@@ -32,17 +32,17 @@ describe('NotesState', () => {
 
   it('returns undefined for a note that has not been loaded', () => {
     const state = TestBed.inject(NotesState);
-    expect(state.getNote('daily-standup')).toBeUndefined();
+    expect(state.getNote('daily-standup.mntl')).toBeUndefined();
   });
 
   it('loads note content asynchronously via ensureLoaded', async () => {
     const state = TestBed.inject(NotesState);
-    state.ensureLoaded('daily-standup');
-    expect(state.entry('daily-standup')?.status).toBe('loading');
+    state.ensureLoaded('daily-standup.mntl');
+    expect(state.entry('daily-standup.mntl')?.status).toBe('loading');
 
     await flushMicrotasks();
 
-    expect(state.getNote('daily-standup')?.content).toBe(FIXTURE_NOTES[0].content);
+    expect(state.getNote('daily-standup.mntl')?.content).toBe(FIXTURE_NOTES[0].content);
   });
 
   it('returns an error entry for an id the vault cannot read', async () => {
@@ -56,15 +56,15 @@ describe('NotesState', () => {
 
   it('updateContent mutates only the targeted loaded note', async () => {
     const state = TestBed.inject(NotesState);
-    state.ensureLoaded('daily-standup');
-    state.ensureLoaded('architecture-notes');
+    state.ensureLoaded('daily-standup.mntl');
+    state.ensureLoaded('architecture-notes.mntl');
     await flushMicrotasks();
 
-    const other = state.getNote('architecture-notes');
-    state.updateContent('daily-standup', 'new content');
+    const other = state.getNote('architecture-notes.mntl');
+    state.updateContent('daily-standup.mntl', 'new content');
 
-    expect(state.getNote('daily-standup')?.content).toBe('new content');
-    expect(state.getNote('architecture-notes')).toBe(other);
+    expect(state.getNote('daily-standup.mntl')?.content).toBe('new content');
+    expect(state.getNote('architecture-notes.mntl')).toBe(other);
   });
 
   it('updateContent is a no-op for a note that has not been loaded', () => {
@@ -75,13 +75,13 @@ describe('NotesState', () => {
 
   it('debounces disk writes, flushing only the latest content once the quiet period elapses', async () => {
     const state = TestBed.inject(NotesState);
-    state.ensureLoaded('daily-standup');
+    state.ensureLoaded('daily-standup.mntl');
     await flushMicrotasks();
 
     invoke.mockClear();
-    state.updateContent('daily-standup', 'v1');
-    state.updateContent('daily-standup', 'v2');
-    state.updateContent('daily-standup', 'v3');
+    state.updateContent('daily-standup.mntl', 'v1');
+    state.updateContent('daily-standup.mntl', 'v2');
+    state.updateContent('daily-standup.mntl', 'v3');
 
     expect(invoke.mock.calls.filter(([cmd]) => cmd === 'write_note')).toHaveLength(0);
 
@@ -90,26 +90,48 @@ describe('NotesState', () => {
 
     const writeCalls = invoke.mock.calls.filter(([cmd]) => cmd === 'write_note');
     expect(writeCalls).toHaveLength(1);
-    expect(writeCalls[0][1]).toMatchObject({ relPath: 'daily-standup', content: 'v3' });
+    expect(writeCalls[0][1]).toMatchObject({ relPath: 'daily-standup.mntl', content: 'v3' });
+  });
+
+  it('follows attachment links a save re-pointed, without saving again', async () => {
+    const state = TestBed.inject(NotesState);
+    state.ensureLoaded('daily-standup.mntl');
+    await flushMicrotasks();
+
+    const respond = invoke.getMockImplementation()!;
+    invoke.mockImplementation((command: string, args?: Record<string, unknown>) =>
+      command === 'write_note' ? Promise.resolve({ 'a.png': 'attachments/x.png.enc' }) : respond(command, args),
+    );
+    state.updateContent('daily-standup.mntl', '![](a.png) and ![[a.png|300]]');
+    jest.advanceTimersByTime(1000);
+    await flushMicrotasks();
+
+    expect(state.getNote('daily-standup.mntl')?.content).toBe(
+      '![](attachments/x.png.enc) and ![[attachments/x.png.enc|300]]',
+    );
+    expect(state.relinked()).toEqual({ noteId: 'daily-standup.mntl', sources: { 'a.png': 'attachments/x.png.enc' } });
+    invoke.mockClear();
+    jest.advanceTimersByTime(1000);
+    expect(invoke.mock.calls.filter(([cmd]) => cmd === 'write_note')).toHaveLength(0);
   });
 
   describe('tags', () => {
     it('loads a note with its tags', async () => {
       const state = TestBed.inject(NotesState);
-      state.ensureLoaded('daily-standup');
+      state.ensureLoaded('daily-standup.mntl');
       await flushMicrotasks();
 
-      expect(state.getNote('daily-standup')?.tags).toEqual(FIXTURE_NOTES[0].tags);
+      expect(state.getNote('daily-standup.mntl')?.tags).toEqual(FIXTURE_NOTES[0].tags);
     });
 
     it('saves tag edits with the same debounce as content, alongside it', async () => {
       const state = TestBed.inject(NotesState);
-      state.ensureLoaded('daily-standup');
+      state.ensureLoaded('daily-standup.mntl');
       await flushMicrotasks();
 
       invoke.mockClear();
-      state.updateTags('daily-standup', ['work', 'urgent', 'idea']);
-      state.updateContent('daily-standup', 'edited');
+      state.updateTags('daily-standup.mntl', ['work', 'urgent', 'idea']);
+      state.updateContent('daily-standup.mntl', 'edited');
       jest.advanceTimersByTime(1000);
       await flushMicrotasks();
 
@@ -120,11 +142,11 @@ describe('NotesState', () => {
 
     it('does not save when the tags are unchanged', async () => {
       const state = TestBed.inject(NotesState);
-      state.ensureLoaded('daily-standup');
+      state.ensureLoaded('daily-standup.mntl');
       await flushMicrotasks();
 
       invoke.mockClear();
-      state.updateTags('daily-standup', [...FIXTURE_NOTES[0].tags]);
+      state.updateTags('daily-standup.mntl', [...FIXTURE_NOTES[0].tags]);
       jest.advanceTimersByTime(1000);
       await flushMicrotasks();
 
@@ -133,16 +155,16 @@ describe('NotesState', () => {
 
     it('retagLoaded mirrors a vault-wide rename, merging duplicates, without writing', async () => {
       const state = TestBed.inject(NotesState);
-      state.ensureLoaded('daily-standup');
-      state.ensureLoaded('architecture-notes');
+      state.ensureLoaded('daily-standup.mntl');
+      state.ensureLoaded('architecture-notes.mntl');
       await flushMicrotasks();
 
       invoke.mockClear();
       state.retagLoaded('URGENT', 'work');
-      expect(state.getNote('daily-standup')?.tags).toEqual(['work']);
+      expect(state.getNote('daily-standup.mntl')?.tags).toEqual(['work']);
 
       state.retagLoaded('work', null);
-      expect(state.getNote('architecture-notes')?.tags).toEqual([]);
+      expect(state.getNote('architecture-notes.mntl')?.tags).toEqual([]);
 
       jest.advanceTimersByTime(1000);
       await flushMicrotasks();
@@ -194,14 +216,14 @@ describe('NotesState', () => {
 
     it('markLocked replaces loaded content so nothing decrypted lingers', async () => {
       const state = TestBed.inject(NotesState);
-      state.ensureLoaded('daily-standup');
+      state.ensureLoaded('daily-standup.mntl');
       await flushMicrotasks();
-      expect(state.getNote('daily-standup')).toBeDefined();
+      expect(state.getNote('daily-standup.mntl')).toBeDefined();
 
-      state.markLocked(['daily-standup'], 'my-diary');
+      state.markLocked(['daily-standup.mntl'], 'my-diary');
 
-      expect(state.getNote('daily-standup')).toBeUndefined();
-      expect(state.entry('daily-standup')).toEqual({ status: 'locked', profileId: 'my-diary' });
+      expect(state.getNote('daily-standup.mntl')).toBeUndefined();
+      expect(state.entry('daily-standup.mntl')).toEqual({ status: 'locked', profileId: 'my-diary' });
     });
 
     it('markLocked ignores notes that were never loaded', () => {
@@ -212,27 +234,27 @@ describe('NotesState', () => {
 
     it('reload re-reads a note after its profile is unlocked', async () => {
       const state = TestBed.inject(NotesState);
-      state.ensureLoaded('daily-standup');
+      state.ensureLoaded('daily-standup.mntl');
       await flushMicrotasks();
-      state.markLocked(['daily-standup'], 'my-diary');
+      state.markLocked(['daily-standup.mntl'], 'my-diary');
 
-      state.reload('daily-standup');
+      state.reload('daily-standup.mntl');
       await flushMicrotasks();
 
-      expect(state.getNote('daily-standup')?.content).toBe(FIXTURE_NOTES[0].content);
+      expect(state.getNote('daily-standup.mntl')?.content).toBe(FIXTURE_NOTES[0].content);
     });
   });
 
   describe('flushPending', () => {
     it('writes a debounced edit immediately instead of waiting out the timer', async () => {
       const state = TestBed.inject(NotesState);
-      state.ensureLoaded('daily-standup');
+      state.ensureLoaded('daily-standup.mntl');
       await flushMicrotasks();
 
       invoke.mockClear();
-      state.updateContent('daily-standup', 'urgent');
+      state.updateContent('daily-standup.mntl', 'urgent');
 
-      await state.flushPending(['daily-standup']);
+      await state.flushPending(['daily-standup.mntl']);
 
       const writes = invoke.mock.calls.filter(([cmd]) => cmd === 'write_note');
       expect(writes).toHaveLength(1);
@@ -252,8 +274,8 @@ describe('NotesState', () => {
       await flushMicrotasks();
 
       invoke.mockClear();
-      state.updateContent('daily-standup', 'a');
-      state.updateContent('todo', 'b');
+      state.updateContent('daily-standup.mntl', 'a');
+      state.updateContent('todo.mntl', 'b');
 
       await state.flushPending();
 
@@ -263,7 +285,7 @@ describe('NotesState', () => {
     it('is a no-op when nothing is pending', async () => {
       const state = TestBed.inject(NotesState);
       invoke.mockClear();
-      await state.flushPending(['daily-standup']);
+      await state.flushPending(['daily-standup.mntl']);
       expect(invoke.mock.calls.filter(([cmd]) => cmd === 'write_note')).toHaveLength(0);
     });
   });

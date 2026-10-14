@@ -3,6 +3,7 @@ import { LucideChevronRight, LucideLock, LucideLockOpen } from '@lucide/angular'
 import {
   VAULT_FOLDER_DRAG_MIME,
   VAULT_NOTE_DRAG_MIME,
+  VaultFileNode,
   VaultFolderNode,
   VaultNode,
   VaultNoteNode,
@@ -78,6 +79,8 @@ export class VaultTreeNode {
   readonly folderDropped = output<{ relPath: string; destRelDir: string }>();
   readonly noteRenamed = output<{ relPath: string; newName: string }>();
   readonly folderRenamed = output<{ relPath: string; newName: string }>();
+  readonly openFile = output<VaultFileNode>();
+  readonly fileContextMenu = output<{ event: MouseEvent; file: VaultFileNode }>();
 
   protected readonly selectionState = inject(VaultSelectionState);
   protected readonly dragState = inject(VaultDragState);
@@ -150,6 +153,17 @@ export class VaultTreeNode {
   protected asNote(): VaultNoteNode | null {
     const n = this.node();
     return n.type === 'note' ? n : null;
+  }
+
+  protected asFile(): VaultFileNode | null {
+    const n = this.node();
+    return n.type === 'file' ? n : null;
+  }
+
+  /** A file's name and its extension, shown muted like a Markdown note's. */
+  protected fileLabel(file: VaultFileNode): { name: string; ext: string | null } {
+    const dot = file.name.lastIndexOf('.');
+    return dot > 0 ? { name: file.name.slice(0, dot), ext: file.name.slice(dot) } : { name: file.name, ext: null };
   }
 
   protected indentOf(depth: number): number {

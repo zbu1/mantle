@@ -46,7 +46,7 @@ function clear(view: EditorView) {
 
 async function setup() {
   const fixture = TestBed.createComponent(NoteEditor);
-  fixture.componentRef.setInput('noteId', 'daily-standup');
+  fixture.componentRef.setInput('noteId', 'daily-standup.mntl');
   fixture.detectChanges();
   await fixture.whenStable();
   await flushAsync();
@@ -415,7 +415,7 @@ describe('markdown input rules', () => {
       const notesState = TestBed.inject(NotesState);
       fixture.nativeElement.querySelector('input[type="checkbox"]').click();
 
-      expect(notesState.getNote('daily-standup')?.content).toContain('[x] task');
+      expect(notesState.getNote('daily-standup.mntl')?.content).toContain('[x] task');
     });
   });
 

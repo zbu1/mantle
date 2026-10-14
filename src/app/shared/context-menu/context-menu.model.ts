@@ -1,6 +1,7 @@
 export type ContextMenuIcon =
   | 'open'
   | 'open-new-tab'
+  | 'open-external'
   | 'new-note'
   | 'new-folder'
   | 'new-encrypted-note'

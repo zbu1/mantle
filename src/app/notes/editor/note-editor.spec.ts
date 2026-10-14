@@ -25,7 +25,7 @@ describe('NoteEditor', () => {
 
   it('renders the loaded note content', async () => {
     const fixture = TestBed.createComponent(NoteEditor);
-    fixture.componentRef.setInput('noteId', 'daily-standup');
+    fixture.componentRef.setInput('noteId', 'daily-standup.mntl');
     fixture.detectChanges();
     await fixture.whenStable();
     await flushAsync();
@@ -33,7 +33,7 @@ describe('NoteEditor', () => {
     await fixture.whenStable();
 
     const notesState = TestBed.inject(NotesState);
-    const note = notesState.getNote('daily-standup')!;
+    const note = notesState.getNote('daily-standup.mntl')!;
 
     expect(fixture.nativeElement.querySelector('.ProseMirror')).toBeTruthy();
     expect(fixture.nativeElement.textContent).toContain(note.content);
@@ -41,7 +41,7 @@ describe('NoteEditor', () => {
 
   it('saves edits back into NotesState through transaction', async () => {
     const fixture = TestBed.createComponent(NoteEditor);
-    fixture.componentRef.setInput('noteId', 'daily-standup');
+    fixture.componentRef.setInput('noteId', 'daily-standup.mntl');
     fixture.detectChanges();
     await fixture.whenStable();
     await flushAsync();
@@ -55,12 +55,12 @@ describe('NoteEditor', () => {
     const tr = view.state.tr.replaceWith(0, view.state.doc.content.size, newDoc);
     view.dispatch(tr);
 
-    expect(notesState.getNote('daily-standup')?.content.trim()).toBe('Updated content');
+    expect(notesState.getNote('daily-standup.mntl')?.content.trim()).toBe('Updated content');
   });
 
   it('swaps content when noteId changes without recreating the editor view', async () => {
     const fixture = TestBed.createComponent(NoteEditor);
-    fixture.componentRef.setInput('noteId', 'daily-standup');
+    fixture.componentRef.setInput('noteId', 'daily-standup.mntl');
     fixture.detectChanges();
     await fixture.whenStable();
     await flushAsync();
@@ -70,14 +70,14 @@ describe('NoteEditor', () => {
     const notesState = TestBed.inject(NotesState);
     const viewBefore = getEditorView(fixture.componentInstance);
 
-    fixture.componentRef.setInput('noteId', 'architecture-notes');
+    fixture.componentRef.setInput('noteId', 'architecture-notes.mntl');
     fixture.detectChanges();
     await fixture.whenStable();
     await flushAsync();
     fixture.detectChanges();
     await fixture.whenStable();
 
-    const otherNote = notesState.getNote('architecture-notes')!;
+    const otherNote = notesState.getNote('architecture-notes.mntl')!;
     const viewAfter = getEditorView(fixture.componentInstance);
     expect(viewAfter).toBe(viewBefore);
     expect(fixture.nativeElement.textContent).toContain(otherNote.content);
@@ -87,7 +87,7 @@ describe('NoteEditor', () => {
   async function mountEditor() {
     const fixture = TestBed.createComponent(NoteEditor);
     document.body.appendChild(fixture.nativeElement);
-    fixture.componentRef.setInput('noteId', 'daily-standup');
+    fixture.componentRef.setInput('noteId', 'daily-standup.mntl');
     fixture.detectChanges();
     await fixture.whenStable();
     await flushAsync();
@@ -97,7 +97,7 @@ describe('NoteEditor', () => {
   }
 
   it('takes focus once its content is in, when asked to for that note', async () => {
-    TestBed.inject(EditorFocusState).request('daily-standup');
+    TestBed.inject(EditorFocusState).request('daily-standup.mntl');
     const fixture = await mountEditor();
 
     expect(fixture.nativeElement.querySelector('.ProseMirror')).toBe(document.activeElement);
@@ -112,7 +112,7 @@ describe('NoteEditor', () => {
   });
 
   it('does not steal focus for a note other than the one it was asked about', async () => {
-    TestBed.inject(EditorFocusState).request('architecture-notes');
+    TestBed.inject(EditorFocusState).request('architecture-notes.mntl');
     const fixture = await mountEditor();
 
     expect(fixture.nativeElement.querySelector('.ProseMirror')).not.toBe(document.activeElement);

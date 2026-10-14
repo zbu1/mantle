@@ -34,6 +34,7 @@ export class Dialog {
   private readonly passwordInput = viewChild<ElementRef<HTMLInputElement>>('passwordInput');
   private readonly confirmInput = viewChild<ElementRef<HTMLInputElement>>('confirmInput');
   private readonly promptInput = viewChild<ElementRef<HTMLInputElement>>('promptInput');
+  private readonly checkboxInput = viewChild<ElementRef<HTMLInputElement>>('checkboxInput');
 
   constructor() {
     effect(() => {
@@ -62,6 +63,11 @@ export class Dialog {
 
   protected onBackdropPointerDown(event: PointerEvent): void {
     if (event.target === event.currentTarget) this.state.cancel();
+  }
+
+  /** Confirm a confirm or alert dialog, passing on a confirm's checkbox. */
+  protected confirm(): void {
+    this.state.confirmAction(undefined, this.checkboxInput()?.nativeElement.checked ?? false);
   }
 
   /** Confirm a prompt dialog with whatever is currently in its input. */

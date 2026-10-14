@@ -7,6 +7,7 @@ import {
   effect,
   inject,
   input,
+  untracked,
   viewChild,
 } from '@angular/core';
 import { EditorState, Command } from 'prosemirror-state';
@@ -18,11 +19,16 @@ import { baseKeymap, chainCommands, joinTextblockBackward, toggleMark } from 'pr
 import { splitListItem, sinkListItem, liftListItem } from 'prosemirror-schema-list';
 import { undoInputRule } from 'prosemirror-inputrules';
 import { gapCursor } from 'prosemirror-gapcursor';
-import { convertFileSrc, invoke } from '@tauri-apps/api/core';
+import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 
+import { AttachmentsState, attachmentUrl } from '../attachments-state';
+import { CredentialsState } from '../credentials-state';
 import { NotesState } from '../notes-state';
+import { VaultState } from '../vault-state';
 import { VaultRootState } from '../vault-root-state';
+import { ContextMenuState } from '../../shared/context-menu/context-menu-state';
+import { DialogState } from '../../shared/dialog/dialog-state';
 import { EditorFocusState } from './editor-focus-state';
 import { schema } from './prosemirror/schema';
 import { parseMarkdown, serializeMarkdown } from './prosemirror/markdown-converter';
@@ -33,7 +39,13 @@ import { demoteEmptyLeadingBlock } from './prosemirror/commands/demote-empty-lea
 import { liftListItemAtStart } from './prosemirror/commands/lift-list-item-at-start';
 import { TaskItemView } from './prosemirror/nodeviews/task-item-view';
 import { ImageView } from './prosemirror/nodeviews/image-view';
-import { ImageContext, imagePlugin } from './prosemirror/plugins/image-plugin';
+import {
+  ImageContext,
+  editImageSource,
+  imagePlugin,
+  relinkImages,
+  removeImage,
+} from './prosemirror/plugins/image-plugin';
 
 import { SlashMenu } from './slash-menu/slash-menu';
 import { SlashMenuState } from './slash-menu/slash-menu-state';
@@ -94,6 +106,11 @@ export class NoteEditor {
   private readonly slashMenuState = inject(SlashMenuState);
   private readonly destroyRef = inject(DestroyRef);
   private readonly vaultRoot = inject(VaultRootState).path;
+  private readonly vaultState = inject(VaultState);
+  private readonly attachments = inject(AttachmentsState);
+  private readonly credentialsState = inject(CredentialsState);
+  private readonly contextMenuState = inject(ContextMenuState);
+  private readonly dialogState = inject(DialogState);
 
   readonly noteId = input.required<string>();
 
@@ -132,7 +149,7 @@ export class NoteEditor {
         state,
         nodeViews: {
           task_item: (node, nodeView, getPos) => new TaskItemView(node, nodeView, getPos),
-          image: (node, nodeView) => new ImageView(node, nodeView),
+          image: (node, nodeView, getPos) => new ImageView(node, nodeView, getPos),
         },
         // Only affects plain-text pastes; HTML clipboard content still goes
         // through the default DOM parser.
@@ -157,6 +174,13 @@ export class NoteEditor {
       this.notesState.ensureLoaded(id);
       this.notesState.entry(id); // signal read so this effect reruns once loading completes
       this.applyIfReady(id);
+    });
+
+    // A save copied an attachment over to this note's profile; follow it.
+    effect(() => {
+      const relinked = this.notesState.relinked();
+      const view = this.editorView;
+      if (relinked && view && relinked.noteId === this.noteId()) untracked(() => relinkImages(view, relinked.sources));
     });
 
     this.destroyRef.onDestroy(() => this.editorView?.destroy());
@@ -187,14 +211,65 @@ export class NoteEditor {
         });
         return sourcePath ? invoke<string>('import_attachment', { ...args(), sourcePath }) : null;
       },
-      url: (src) => {
-        if (/^[a-z][a-z0-9+.-]*:/i.test(src)) return src; // http:, data:, …
-        const { vaultRoot, noteRelPath } = args();
-        const query = new URLSearchParams({ vault: vaultRoot, note: noteRelPath, src });
-        // URLSearchParams writes a space as `+`, which the protocol doesn't decode.
-        return `${convertFileSrc('', 'mantle')}?${query.toString().replace(/\+/g, '%20')}`;
+      url: (src) => attachmentUrl(args().vaultRoot, args().noteRelPath, src),
+      describe: async (src) => {
+        const info = await this.attachments.info(this.noteId(), src);
+        return info && { ...info, profile: info.profile && this.credentialsState.displayNameOf(info.profile) };
       },
+      contextMenu: (event, view, pos, node) => void this.openImageMenu(event, view, pos, node.attrs['src']),
+      editSource: (markdown) =>
+        this.dialogState.prompt("Edit the image's Markdown. Clear it to remove the image.", {
+          title: 'Edit Image Source',
+          confirmLabel: 'Save',
+          initialValue: markdown,
+        }),
     };
+  }
+
+  private async openImageMenu(event: MouseEvent, view: EditorView, pos: number, src: string): Promise<void> {
+    // Claim the event now: the content area has its own menu, and this one waits on a lookup.
+    event.preventDefault();
+    event.stopPropagation();
+    const noteId = this.noteId();
+    const info = await this.attachments.info(noteId, src).catch(() => null);
+    this.contextMenuState.open(event, [
+      {
+        kind: 'item',
+        label: 'Show in File Explorer',
+        icon: 'reveal',
+        disabled: !info,
+        action: () => info && void this.vaultState.revealInFileExplorer(info.relPath),
+      },
+      {
+        kind: 'item',
+        label: 'Copy Path',
+        icon: 'copy',
+        action: () => void navigator.clipboard.writeText(info?.relPath ?? src),
+      },
+      {
+        kind: 'item',
+        label: 'Open in Default App',
+        icon: 'open-external',
+        // A sealed image would have to be decrypted to disk for another app.
+        disabled: !info || info.profile !== null,
+        action: () => info && void this.attachments.openInDefaultApp(info.relPath),
+      },
+      { kind: 'separator' },
+      { kind: 'item', label: 'Edit Source…', icon: 'rename', action: () => void editImageSource(view, pos) },
+      { kind: 'separator' },
+      {
+        kind: 'item',
+        label: 'Remove from Note',
+        icon: 'delete',
+        danger: true,
+        action: () => {
+          // The note may have changed while the menu was open.
+          if (view.state.doc.nodeAt(pos)?.attrs['src'] !== src) return;
+          removeImage(view, pos);
+          if (info) void this.attachments.offerDeleteAfterRemoval(noteId, info);
+        },
+      },
+    ]);
   }
 
   private applyIfReady(id: string): void {

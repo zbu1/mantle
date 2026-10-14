@@ -8,6 +8,10 @@ export interface ConfirmOptions {
   cancelLabel?: string;
 }
 
+export interface ConfirmWithCheckboxOptions extends ConfirmOptions {
+  checkboxLabel: string;
+}
+
 export interface AlertOptions {
   title: string;
   tone?: DialogTone;
@@ -58,7 +62,27 @@ export class DialogState {
         tone: options.tone ?? 'default',
         confirmLabel: options.confirmLabel ?? 'Confirm',
         cancelLabel: options.cancelLabel ?? 'Cancel',
-        resolve,
+        checkboxLabel: null,
+        resolve: (confirmed) => resolve(confirmed),
+      });
+    });
+  }
+
+  /** A confirm with an opt-in checkbox, e.g. "Also delete its attachments". */
+  confirmWithCheckbox(
+    message: string,
+    options: ConfirmWithCheckboxOptions,
+  ): Promise<{ confirmed: boolean; checked: boolean }> {
+    return new Promise((resolve) => {
+      this.request.set({
+        kind: 'confirm',
+        title: options.title,
+        message,
+        tone: options.tone ?? 'default',
+        confirmLabel: options.confirmLabel ?? 'Confirm',
+        cancelLabel: options.cancelLabel ?? 'Cancel',
+        checkboxLabel: options.checkboxLabel,
+        resolve: (confirmed, checked) => resolve({ confirmed, checked }),
       });
     });
   }
@@ -149,7 +173,8 @@ export class DialogState {
     this.inlineError.set(message);
   }
 
-  confirmAction(value?: string): void {
+  /** `value` is a prompt's text; `checked` a confirm's checkbox. */
+  confirmAction(value?: string, checked = false): void {
     const req = this.request();
     if (!req) return;
     // `password` closes only through submitPassword, which has to await
@@ -157,7 +182,7 @@ export class DialogState {
     if (req.kind === 'password') return;
 
     this.request.set(null);
-    if (req.kind === 'confirm') req.resolve(true);
+    if (req.kind === 'confirm') req.resolve(true, checked);
     else if (req.kind === 'prompt') req.resolve(value ?? '');
     else req.resolve();
   }
@@ -169,7 +194,7 @@ export class DialogState {
 
     this.request.set(null);
     this.inlineError.set(null);
-    if (req.kind === 'confirm') req.resolve(false);
+    if (req.kind === 'confirm') req.resolve(false, false);
     else if (req.kind === 'prompt') req.resolve(null);
     else if (req.kind === 'password') req.resolve(false);
     else req.resolve();

@@ -34,11 +34,11 @@ describe('tags', () => {
 
   it('buildTagGroups merges spellings case-insensitively, keeping the first, and sorts by name', () => {
     const plan = note('plan', ['Work', 'idea']);
-    const todo = note('todo', ['work']);
+    const todo = note('todo.mntl', ['work']);
     const groups = buildTagGroups(vault(todo, plan), new Set());
 
     expect(groups.map((g) => g.name)).toEqual(['idea', 'work']);
-    expect(groups[1].notes.map((n) => n.name)).toEqual(['plan', 'todo']);
+    expect(groups[1].notes.map((n) => n.name)).toEqual(['plan', 'todo.mntl']);
   });
 
   it('buildTagGroups leaves out notes that are locked or whose tags are unknown', () => {
