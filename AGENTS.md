@@ -126,8 +126,3 @@ Package manager is **pnpm** (see `pnpm-lock.yaml`), not npm.
 - Reusable menu UI (slash menu, context menu) is built from the shared `MenuSurface`/`MenuItem`/`MenuSeparator` components in `src/app/shared/menu/` — extend those rather than duplicating menu markup.
 - Icons come from `@lucide/angular`; import only the specific `Lucide*` icons used by a component.
 - Keep new Tauri commands in `src-tauri/src/lib.rs` (or split into modules under `src-tauri/src/` as the backend grows, following `vault.rs`) and register them via `invoke_handler(tauri::generate_handler![...])`. Cryptography and note-format logic belongs in `crates/mntl-core`, not `src-tauri`.
-
-## Debugging
-
-- Don't reach for `chromium-cli` or other unreliable/hacky tooling to debug the app.
-- It's fine to run the app (`pnpm start` or `pnpm run tauri dev`) to check for errors.
