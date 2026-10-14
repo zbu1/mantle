@@ -38,14 +38,17 @@ export class SidebarItemButton {
 
   protected readonly buttonClass = computed(() => {
     const layout = this.collapsed() ? 'h-9 w-full justify-center' : 'w-full py-1 pr-2 text-left';
-    const tone = this.active()
-      ? 'font-medium text-foreground before:absolute before:inset-y-1 before:left-0.5 before:w-0.5 before:rounded-full before:bg-primary'
-      : this.selected()
-        ? 'bg-foreground/[0.06] text-foreground'
+    // Active and selected stack: the rail and heavier label, plus the fill.
+    const rail = this.active()
+      ? ' font-medium before:absolute before:inset-y-1 before:left-0.5 before:w-0.5 before:rounded-full before:bg-primary'
+      : '';
+    const tone = this.selected()
+      ? 'bg-foreground/[0.06] text-foreground'
+      : this.active()
+        ? 'text-foreground hover:bg-surface'
         : 'text-foreground/75 hover:bg-surface hover:text-foreground';
-    const hoverActive = this.active() ? ' hover:bg-surface' : '';
     const focus = this.forceFocusRing() ? ' focus-ring-forced' : '';
-    return `relative flex items-center gap-2 rounded-md text-xs ${layout} ${tone}${hoverActive}${focus}`;
+    return `relative flex items-center gap-2 rounded-md text-xs ${layout} ${tone}${rail}${focus}`;
   });
 
   // Browsers suppress the native :focus-visible ring for mouse-originated
