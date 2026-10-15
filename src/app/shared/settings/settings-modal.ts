@@ -20,6 +20,8 @@ import { Window } from '../window/window';
 import { ProfileSettingsPanel } from './profile-settings-panel';
 import { SettingsRow } from './settings-row';
 import { SettingsCategoryId, SettingsModalState } from './settings-modal-state';
+import { ZoomState } from '../zoom-state';
+import { VaultMetaState } from '../../notes/vault-meta-state';
 import { CredentialsState } from '../../notes/credentials-state';
 import { VaultState, vaultNameFromPath } from '../../notes/vault-state';
 import { SectionId, SidebarState } from '../../layout/sidebar/sidebar-state';
@@ -47,7 +49,6 @@ type InterfaceTextSize = 'sm' | 'md' | 'lg';
 type EditorFont = 'default' | 'serif' | 'mono';
 type AutosaveDelay = 'immediate' | '1s' | '3s' | '5s';
 type TabBehavior = 'spaces' | 'indent';
-type SidebarSortMode = 'name-asc' | 'name-desc' | 'modified' | 'created' | 'manual';
 type DeletedFileHandling = 'trash' | 'local-trash' | 'permanent';
 type AutoLockTimeout = 'never' | '5m' | '15m' | '1h';
 
@@ -60,10 +61,23 @@ interface ShortcutEntry {
 
 const SHORTCUTS: ShortcutEntry[] = [
   { action: 'Close menu or dialog', keys: 'Esc' },
+  { action: 'Go to note', keys: 'Ctrl+P' },
+  { action: 'Command palette', keys: 'Ctrl+Shift+P' },
   { action: 'New note', keys: 'Ctrl+N' },
   { action: 'Save note', keys: 'Ctrl+S' },
+  { action: 'Save all', keys: 'Ctrl+Shift+S' },
   { action: 'Close tab', keys: 'Ctrl+W' },
   { action: 'Toggle favorite', keys: 'Ctrl+Shift+B' },
+  { action: 'Undo', keys: 'Ctrl+Z' },
+  { action: 'Redo', keys: 'Ctrl+Y' },
+  { action: 'Select all (in the vault tree: a folder\'s items)', keys: 'Ctrl+A' },
+  { action: 'Bold', keys: 'Ctrl+B' },
+  { action: 'Italic', keys: 'Ctrl+I' },
+  { action: 'Inline code', keys: 'Ctrl+`' },
+  { action: 'Open link', keys: 'Ctrl+Click' },
+  { action: 'Zoom in', keys: 'Ctrl+=' },
+  { action: 'Zoom out', keys: 'Ctrl+-' },
+  { action: 'Reset zoom', keys: 'Ctrl+0' },
   { action: 'Navigate slash menu', keys: '↑ / ↓' },
   { action: 'Confirm slash menu item', keys: 'Enter' },
 ];
@@ -91,6 +105,8 @@ export class SettingsModal {
   protected readonly vaultState = inject(VaultState);
   protected readonly credentialsState = inject(CredentialsState);
   private readonly dialogState = inject(DialogState);
+  protected readonly zoom = inject(ZoomState);
+  protected readonly vaultMeta = inject(VaultMetaState);
 
   protected readonly categories = CATEGORIES;
   /** The profile selected in the sidebar, if it still exists. */
@@ -128,7 +144,6 @@ export class SettingsModal {
   // Mirrors vault-header.ts's own `showExtensions` stub — that one is
   // local to that component too, so this is a separate signal, not shared
   // state.
-  protected readonly showFileExtensions = signal(false);
   protected readonly compactSpacing = signal(false);
 
   // ---- Editor ----
@@ -146,7 +161,6 @@ export class SettingsModal {
   // Section visibility and sidebar width below are [real] — SidebarState.
   // Sort order mirrors vault-header.ts's own SortMode stub: cosmetic
   // there too, no tree ordering is wired to it yet.
-  protected readonly sidebarSortMode = signal<SidebarSortMode>('name-asc');
   protected readonly autoExpandActiveFolder = signal(false);
 
   // ---- Files & Vault ----
@@ -174,7 +188,6 @@ export class SettingsModal {
 
   // ---- Advanced ----
   protected readonly hardwareAcceleration = signal(true);
-  protected readonly zoomLevel = signal(100);
 
   constructor() {
     // A selected profile can vanish under the window: deleted from its own
@@ -235,10 +248,6 @@ export class SettingsModal {
     this.editorFontSize.update((v) => Math.min(24, Math.max(12, v + delta)));
   }
 
-  protected stepZoomLevel(delta: number): void {
-    this.zoomLevel.update((v) => Math.min(200, Math.max(50, v + delta)));
-  }
-
   /**
    * Resets the cosmetic-only signals above to their defaults. Behind a real
    * confirm dialog, but there's nothing persisted to actually clear yet —
@@ -261,7 +270,6 @@ export class SettingsModal {
     this.interfaceTextSize.set('md');
     this.editorFont.set('default');
     this.editorFontSize.set(16);
-    this.showFileExtensions.set(false);
     this.compactSpacing.set(false);
     this.autosaveDelay.set('1s');
     this.spellcheck.set(true);
@@ -270,7 +278,6 @@ export class SettingsModal {
     this.typewriterScrolling.set(false);
     this.smartLists.set(true);
     this.tabBehavior.set('spaces');
-    this.sidebarSortMode.set('name-asc');
     this.autoExpandActiveFolder.set(false);
     this.defaultAttachmentFolder.set('attachments/');
     this.watchExternalChanges.set(true);
@@ -279,6 +286,6 @@ export class SettingsModal {
     this.lockOnBlur.set(false);
     this.clearClipboardAfterCopy.set(false);
     this.hardwareAcceleration.set(true);
-    this.zoomLevel.set(100);
+    this.zoom.reset();
   }
 }

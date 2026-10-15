@@ -1,9 +1,8 @@
 import { Injectable, signal } from '@angular/core';
-import { VaultNoteNode } from './vault-tree.model';
 
+/** Vault items copied or cut in the tree, waiting to be pasted into a folder. */
 export interface VaultClipboardEntry {
-  relPath: string;
-  name: string;
+  relPaths: string[];
   mode: 'copy' | 'cut';
 }
 
@@ -11,12 +10,13 @@ export interface VaultClipboardEntry {
 export class VaultClipboardState {
   readonly entry = signal<VaultClipboardEntry | null>(null);
 
-  copy(note: VaultNoteNode): void {
-    this.entry.set({ relPath: note.relPath, name: note.name, mode: 'copy' });
+  /** Only notes can be copied; folders and files are moved, by cutting. */
+  copy(relPaths: readonly string[]): void {
+    this.entry.set({ relPaths: [...relPaths], mode: 'copy' });
   }
 
-  cut(note: VaultNoteNode): void {
-    this.entry.set({ relPath: note.relPath, name: note.name, mode: 'cut' });
+  cut(relPaths: readonly string[]): void {
+    this.entry.set({ relPaths: [...relPaths], mode: 'cut' });
   }
 
   clear(): void {

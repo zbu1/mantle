@@ -17,6 +17,7 @@ import { NewEncryptedNote } from '../../notes/new-encrypted-note/new-encrypted-n
 import { NoteEncryptionModal } from '../../notes/note-encryption-modal/note-encryption-modal';
 import { VaultRootState } from '../../notes/vault-root-state';
 import { VaultState } from '../../notes/vault-state';
+import { ZoomState } from '../../shared/zoom-state';
 
 @Component({
   selector: 'app-main-layout',
@@ -43,6 +44,8 @@ export class MainLayout {
   protected readonly vaultRoot = inject(VaultRootState);
   protected readonly vaultState = inject(VaultState);
   private readonly hoverTooltipState = inject(HoverTooltipState);
+  // Created here so the saved zoom applies, and its shortcuts work, from startup.
+  private readonly zoom = inject(ZoomState);
   // Only rendered while a vault is open — the welcome screen replaces it otherwise.
   private readonly editorBoundary = viewChild<ElementRef<HTMLElement>>('editorBoundary');
 

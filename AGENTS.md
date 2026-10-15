@@ -8,8 +8,11 @@ Angular 22 (frontend, signals-based, no NgModules).
 
 - **Frontend** (`src/app/`): a `layout/` shell (header, sidebar with vault
   tree, content area) around a `notes/` feature — a tabbed, ProseMirror-based
-  Markdown editor (`notes/editor/`) with a slash command menu — plus `shared/`
-  UI primitives (menu surface/item, context menu).
+  Markdown editor (`notes/editor/`) with a slash command menu, which shows the
+  Markdown under the cursor as editable raw text (`syntax-reveal-plugin.ts`:
+  `md_raw` / `md_prefix` marks, saved so the file never changes) — plus
+  `shared/` UI primitives (menu surface/item, context menu). The Edit menu acts
+  on whichever of the editor or vault tree last had focus (`EditContextState`).
 - **Rust backend** (`src-tauri/`): Tauri commands in `src-tauri/src/vault.rs`
   for scanning a vault directory and reading/writing/creating notes, on top of
   the `mntl-core` crate. Plain Markdown files (`.md` / `.markdown`) also open

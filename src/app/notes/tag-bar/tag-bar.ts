@@ -1,3 +1,5 @@
+import { ContextMenuState } from '../../shared/context-menu/context-menu-state';
+import { TagActions } from '../tag-actions';
 import { Component, ElementRef, computed, inject, input, signal, viewChild } from '@angular/core';
 import { LucideHash, LucidePlus, LucideX } from '@lucide/angular';
 import { MenuItem } from '../../shared/menu/menu-item';
@@ -31,6 +33,8 @@ interface Suggestion {
 export class TagBar {
   private readonly notesState = inject(NotesState);
   private readonly tagsState = inject(TagsState);
+  private readonly tagActions = inject(TagActions);
+  private readonly contextMenuState = inject(ContextMenuState);
 
   readonly noteId = input.required<string>();
 
@@ -176,6 +180,15 @@ export class TagBar {
 
   protected reveal(tag: string): void {
     this.tagsState.reveal(tag);
+  }
+
+  protected onChipContextMenu(event: MouseEvent, tag: string): void {
+    this.contextMenuState.open(event, [
+      { kind: 'item', label: 'Remove from Note', icon: 'close', action: () => this.remove(tag) },
+      { kind: 'item', label: 'Rename Tag Everywhere…', icon: 'rename', action: () => void this.tagActions.rename(tag) },
+      { kind: 'separator' },
+      { kind: 'item', label: 'Show Notes with Tag', action: () => this.reveal(tag) },
+    ]);
   }
 
   private stopAdding(): void {

@@ -3,6 +3,7 @@ import { Command, EditorState, Plugin, PluginKey, TextSelection } from 'prosemir
 import { setBlockType } from 'prosemirror-commands';
 import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 import { highlightCode } from '../code-languages';
+import { codeBody } from '../markdown-converter';
 import { schema } from '../schema';
 
 /** What code blocks need from the app: the Angular-side language picker and context menu. */
@@ -28,8 +29,17 @@ function highlightDecorations(doc: PMNode): DecorationSet {
   const decorations: Decoration[] = [];
   doc.descendants((node, pos) => {
     if (node.type !== schema.nodes['code_block']) return true;
-    for (const token of highlightCode(node.textContent, node.attrs['params'])) {
-      decorations.push(Decoration.inline(pos + 1 + token.from, pos + 1 + token.to, { class: token.className }));
+    const { text, params, offset } = codeBody(node);
+    const start = pos + 1 + offset;
+    for (const token of highlightCode(text, params)) {
+      decorations.push(Decoration.inline(start + token.from, start + token.to, { class: token.className }));
+    }
+    // Revealed fences, muted like other syntax.
+    if (offset) {
+      const end = pos + 1 + node.content.size;
+      const all = node.textContent;
+      decorations.push(Decoration.inline(pos + 1, start - 1, { class: 'md-syntax' }));
+      decorations.push(Decoration.inline(end - (all.length - all.lastIndexOf('\n') - 1), end, { class: 'md-syntax' }));
     }
     return false;
   });
@@ -78,7 +88,11 @@ function codeBlockPosAt(view: EditorView, event: MouseEvent): number | null {
 export function setCodeBlockLanguage(view: EditorView, pos: number, params: string): void {
   const node = view.state.doc.nodeAt(pos);
   if (node?.type !== schema.nodes['code_block']) return;
-  view.dispatch(view.state.tr.setNodeMarkup(pos, null, { ...node.attrs, params }));
+  const tr = view.state.tr.setNodeMarkup(pos, null, { ...node.attrs, params });
+  // While its fences show, the opening one is where the language lives.
+  const { offset } = codeBody(node);
+  if (offset) tr.insertText(/^`+/.exec(node.textContent)![0] + params, pos + 1, pos + offset);
+  view.dispatch(tr);
 }
 
 /** Turns the current block into a code block with the fence language `params`, or relabels the code block it's in. */
@@ -95,8 +109,8 @@ export function setCodeBlock(view: EditorView, params: string): boolean {
 export function codeBlockToParagraph(view: EditorView, pos: number): void {
   const node = view.state.doc.nodeAt(pos);
   if (node?.type !== schema.nodes['code_block']) return;
-  const content = node.textContent
-    .split('\n')
+  const content = codeBody(node)
+    .text.split('\n')
     .flatMap((line, i) => [...(i > 0 ? [schema.nodes['hard_break'].create()] : []), ...(line ? [schema.text(line)] : [])]);
   view.dispatch(view.state.tr.replaceWith(pos, pos + node.nodeSize, schema.nodes['paragraph'].create(null, content)));
 }

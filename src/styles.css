@@ -162,6 +162,17 @@
   margin: 0 0 0.5em;
 }
 
+/* Markdown syntax revealed under the cursor (syntax-reveal-plugin). */
+.ProseMirror .md-syntax {
+  color: var(--muted-foreground);
+}
+
+/* An image's source, on its own line above the image. */
+.ProseMirror .md-raw-image {
+  display: block;
+  font-size: 0.9em;
+}
+
 .ProseMirror img.note-image {
   display: inline-block;
   max-width: 100%;

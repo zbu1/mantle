@@ -13,7 +13,7 @@
     [style.padding-left.px]="tabsPaddingLeft()" [style.transition]="tabsPaddingTransition()">
     @if (tabsState.tabs().length > 0) {
     @for (tab of tabsState.tabs(); track tab.id) {
-    <button type="button" (click)="activateTab(tab.id)"
+    <button type="button" (click)="activateTab(tab.id)" (contextmenu)="tabMenu.open($event, tab)"
       [title]="tab.missing ? tab.title + ' — file not found (moved or deleted outside Mantle)' : tab.title"
       class="group my-1 flex min-w-0 max-w-48 shrink-0 items-center gap-2 rounded-md border border-input px-3 text-xs"
       [class.bg-background]="tab.id === tabsState.activeId()" [class.text-foreground]="tab.id === tabsState.activeId()"

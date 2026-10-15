@@ -1,23 +1,17 @@
-import { Component, ElementRef, HostListener, effect, inject, model, output, signal, viewChild } from '@angular/core';
+import { Component, ElementRef, HostListener, computed, effect, inject, model, output, signal, viewChild } from '@angular/core';
 import {
   LucideArrowDownAZ,
-  LucideArrowUpAZ,
-  LucideCalendarPlus,
   LucideCheck,
-  LucideClock,
+  LucideChevronDown,
   LucideEllipsis,
-  LucideFileText,
+  LucideEye,
   LucideFoldVertical,
   LucideFolderOpen,
   LucideFolderPlus,
-  LucideKeyRound,
-  LucideListOrdered,
   LucideLockKeyhole,
   LucidePlus,
   LucideSearch,
   LucideSettings,
-  LucideStar,
-  LucideTags,
   LucideUnfoldVertical,
   LucideX,
 } from '@lucide/angular';
@@ -27,16 +21,17 @@ import { MenuSurface } from '../../../shared/menu/menu-surface';
 import { CredentialsState } from '../../../notes/credentials-state';
 import { NewEncryptedNoteState } from '../../../notes/new-encrypted-note/new-encrypted-note-state';
 import { VaultState } from '../../../notes/vault-state';
+import { VaultMetaState } from '../../../notes/vault-meta-state';
+import { SORT_MODES, SortMode, folderPaths } from '../../../notes/vault-tree.model';
 import { SettingsModalState } from '../../../shared/settings/settings-modal-state';
-import { SectionId, SidebarState } from '../sidebar-state';
+import { SIDEBAR_SECTIONS, SectionId, SidebarState } from '../sidebar-state';
 
-/** Session-only, not persisted — see `sortMode` below. */
-type SortMode = 'name-asc' | 'name-desc' | 'modified' | 'created' | 'manual';
+type HeaderMenu = 'sort' | 'display' | 'more';
 
 /**
- * The top of the sidebar: a filter for the tree, a New Note button, and one
- * overflow menu for everything else — creating other items, sort, which
- * sections show, and vault-wide actions. Pinned above the scrolling tree.
+ * The top of the sidebar, pinned above the scrolling tree: a row of tree
+ * actions (new note and folder, sort, expand/collapse, what the sidebar
+ * shows, and an overflow menu for vault-wide actions), then the tree filter.
  */
 @Component({
   selector: 'app-vault-header',
@@ -51,14 +46,8 @@ type SortMode = 'name-asc' | 'name-desc' | 'modified' | 'created' | 'manual';
     LucideFolderPlus,
     LucideLockKeyhole,
     LucideArrowDownAZ,
-    LucideArrowUpAZ,
-    LucideClock,
-    LucideCalendarPlus,
-    LucideListOrdered,
-    LucideStar,
-    LucideTags,
-    LucideKeyRound,
-    LucideFileText,
+    LucideChevronDown,
+    LucideEye,
     LucideUnfoldVertical,
     LucideFoldVertical,
     LucideFolderOpen,
@@ -74,6 +63,10 @@ export class VaultHeader {
   protected readonly sidebarState = inject(SidebarState);
   private readonly newEncryptedNoteState = inject(NewEncryptedNoteState);
   private readonly settingsModalState = inject(SettingsModalState);
+  protected readonly vaultMeta = inject(VaultMetaState);
+
+  protected readonly sortModes = SORT_MODES;
+  protected readonly sections = SIDEBAR_SECTIONS;
 
   /** The tree filter, owned by the sidebar. */
   readonly filter = model('');
@@ -82,44 +75,46 @@ export class VaultHeader {
   readonly newNote = output<void>();
   readonly newFolder = output<void>();
 
-  protected readonly menuOpen = signal(false);
+  protected readonly openMenu = signal<HeaderMenu | null>(null);
 
-  /**
-   * Cosmetic only — no vault tree ordering is wired to this yet (see
-   * `goals/vault-state-future.md`'s "Folder sort mode override"). Selecting
-   * one just moves the checkmark.
-   */
-  protected readonly sortMode = signal<SortMode>('name-asc');
+  protected readonly hasVault = computed(() => !!this.vaultState.rootPath());
 
-  /** Stub — nothing renders differently yet. */
-  protected readonly showExtensions = signal(false);
+  private readonly folders = computed(() => {
+    const tree = this.vaultState.tree();
+    return tree ? folderPaths(tree) : [];
+  });
 
-  protected readonly hasVault = () => !!this.vaultState.rootPath();
+  /** The expand/collapse toggle collapses while anything is open, and expands once everything is shut. */
+  protected readonly anyFolderExpanded = computed(() => {
+    const collapsed = this.vaultMeta.collapsedFolders();
+    return this.folders().some((relPath) => !collapsed.has(relPath));
+  });
 
-  // Drives which row in the menu is highlighted — see MenuItem.active.
+  // Drives which row in the open menu is highlighted — see MenuItem.active.
   protected readonly hoveredItem = signal<string | null>(null);
   private readonly resetHoverOnMenuChange = effect(() => {
-    this.menuOpen();
+    this.openMenu();
     this.hoveredItem.set(null);
   });
 
-  private readonly trigger = viewChild<ElementRef<HTMLElement>>('trigger');
+  private readonly toolbar = viewChild<ElementRef<HTMLElement>>('toolbar');
   private readonly panel = viewChild('panel', { read: ElementRef<HTMLElement> });
 
-  protected toggleMenu(): void {
-    this.menuOpen.update((open) => !open);
+  protected toggleMenu(menu: HeaderMenu): void {
+    this.openMenu.update((open) => (open === menu ? null : menu));
   }
 
   private closeMenu(): void {
-    this.menuOpen.set(false);
+    this.openMenu.set(null);
   }
 
   @HostListener('document:pointerdown', ['$event'])
   protected onDocumentPointerDown(event: PointerEvent): void {
-    if (!this.menuOpen()) return;
+    if (!this.openMenu()) return;
     const target = event.target;
     if (!(target instanceof Node)) return;
-    if (this.trigger()?.nativeElement.contains(target)) return;
+    // The toolbar's own buttons toggle their menus themselves.
+    if (this.toolbar()?.nativeElement.contains(target)) return;
     if (this.panel()?.nativeElement.contains(target)) return;
     this.closeMenu();
   }
@@ -152,7 +147,7 @@ export class VaultHeader {
     field.focus();
   }
 
-  // ---- Create ----
+  // ---- Toolbar ----
 
   protected onNewNote(): void {
     this.closeMenu();
@@ -164,41 +159,31 @@ export class VaultHeader {
     this.newFolder.emit();
   }
 
-  protected onNewEncryptedNote(): void {
-    this.closeMenu();
-    this.newEncryptedNoteState.open();
-  }
-
-  // ---- Sort ----
-
   protected setSortMode(mode: SortMode): void {
     this.closeMenu();
-    this.sortMode.set(mode);
+    this.vaultMeta.setSortMode(mode);
   }
 
-  // ---- Sections ----
-
-  protected toggleSection(id: SectionId): void {
+  protected toggleAllFolders(): void {
     this.closeMenu();
-    this.sidebarState.toggleSection(id);
+    this.vaultMeta.setCollapsedFolders(this.anyFolderExpanded() ? this.folders() : []);
+  }
+
+  // Display options stay open, so several can be flipped in one go.
+
+  protected toggleSectionVisibility(id: SectionId): void {
+    this.sidebarState.toggleSectionVisibility(id);
   }
 
   protected toggleExtensions(): void {
-    this.closeMenu();
-    this.showExtensions.update((v) => !v);
+    this.sidebarState.showExtensions.update((show) => !show);
   }
 
-  // ---- Vault ----
-  //
-  // Expand/collapse-all have no shared expansion state to drive yet —
-  // VaultTreeNode's `expanded` signal is local per node — so these are stubs.
+  // ---- More ----
 
-  protected expandAllFolders(): void {
+  protected onNewEncryptedNote(): void {
     this.closeMenu();
-  }
-
-  protected collapseAllFolders(): void {
-    this.closeMenu();
+    this.newEncryptedNoteState.open();
   }
 
   protected async revealVault(): Promise<void> {

@@ -1,4 +1,4 @@
-import { VaultFolderNode, filterVaultTree, findFolder, flattenVaultNotes, markdownExtensionOf } from './vault-tree.model';
+import { VaultFolderNode, VaultNode, filterVaultTree, findFolder, flattenVaultNotes, markdownExtensionOf, sortVaultTree } from './vault-tree.model';
 import { relPathAfter } from './note-encryption-modal/note-encryption-modal.model';
 
 const tree: VaultFolderNode = {
@@ -87,5 +87,34 @@ describe('filterVaultTree', () => {
 
   it('returns the tree untouched for a blank query', () => {
     expect(filterVaultTree(vault, '  ')).toBe(vault);
+  });
+});
+
+describe('sortVaultTree', () => {
+  const note = (name: string, modified: number, created: number): VaultNode =>
+    ({ type: 'note', name, relPath: `${name}.mntl`, encrypted: false, profile: null, tags: [], modified, created });
+  const root: VaultFolderNode = {
+    type: 'folder',
+    name: 'vault',
+    relPath: '',
+    children: [
+      note('b', 3, 1),
+      { type: 'folder', name: 'Z', relPath: 'Z', children: [] },
+      note('note 10', 1, 3),
+      note('note 9', 2, 2),
+    ],
+  };
+  const names = (mode: Parameters<typeof sortVaultTree>[1], order = {}) =>
+    sortVaultTree(root, mode, order).children.map((child) => child.name);
+
+  it('keeps folders first and sorts the rest by the mode', () => {
+    expect(names('name-asc')).toEqual(['Z', 'b', 'note 9', 'note 10']);
+    expect(names('name-desc')).toEqual(['Z', 'note 10', 'note 9', 'b']);
+    expect(names('modified')).toEqual(['Z', 'b', 'note 9', 'note 10']);
+    expect(names('created')).toEqual(['Z', 'note 10', 'note 9', 'b']);
+  });
+
+  it("follows the manual order, then names for anything it doesn't list", () => {
+    expect(names('manual', { '': ['note 9.mntl', 'b.mntl'] })).toEqual(['Z', 'note 9', 'b', 'note 10']);
   });
 });

@@ -17,14 +17,20 @@ export function isVaultTreeDrag(event: DragEvent): boolean {
   return types.includes(VAULT_NOTE_DRAG_MIME) || types.includes(VAULT_FOLDER_DRAG_MIME);
 }
 
-export interface VaultFolderNode {
+/** Modified/created times from the scan, in ms since the Unix epoch; 0 (or absent) when unknown. */
+interface Timestamps {
+  modified?: number;
+  created?: number;
+}
+
+export interface VaultFolderNode extends Timestamps {
   type: 'folder';
   name: string;
   relPath: string;
   children: VaultNode[];
 }
 
-export interface VaultNoteNode {
+export interface VaultNoteNode extends Timestamps {
   type: 'note';
   name: string;
   relPath: string;
@@ -50,7 +56,7 @@ export interface VaultNoteNode {
 }
 
 /** Any other file the user keeps in the vault — an image, a PDF. Opens in a read-only preview tab. */
-export interface VaultFileNode {
+export interface VaultFileNode extends Timestamps {
   type: 'file';
   /** The full filename, extension included. */
   name: string;
@@ -140,6 +146,57 @@ export function filterVaultTree(root: VaultFolderNode, query: string): VaultFold
     }),
   });
   return prune(root);
+}
+
+/** How the vault tree orders each folder's children; folders always come first. */
+export type SortMode = 'name-asc' | 'name-desc' | 'modified' | 'created' | 'manual';
+
+export const SORT_MODES: readonly { id: SortMode; label: string }[] = [
+  { id: 'name-asc', label: 'Name (A → Z)' },
+  { id: 'name-desc', label: 'Name (Z → A)' },
+  { id: 'modified', label: 'Date Modified' },
+  { id: 'created', label: 'Date Created' },
+  { id: 'manual', label: 'Manual Order' },
+];
+
+const byName = (a: VaultNode, b: VaultNode) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+
+/**
+ * `root` with every folder's children in `mode`'s order, folders first.
+ * Dates sort newest first. `manual` follows `order` (child file names per
+ * folder relPath); anything it doesn't list goes after, by name.
+ */
+export function sortVaultTree(root: VaultFolderNode, mode: SortMode, order: Readonly<Record<string, readonly string[]>>): VaultFolderNode {
+  const compare = (folder: VaultFolderNode): ((a: VaultNode, b: VaultNode) => number) => {
+    switch (mode) {
+      case 'name-desc':
+        return (a, b) => byName(b, a);
+      case 'modified':
+        return (a, b) => (b.modified ?? 0) - (a.modified ?? 0) || byName(a, b);
+      case 'created':
+        return (a, b) => (b.created ?? 0) - (a.created ?? 0) || byName(a, b);
+      case 'manual': {
+        const rank = new Map((order[folder.relPath] ?? []).map((name, i) => [name, i]));
+        const rankOf = (node: VaultNode) => rank.get(fileNameOf(node.relPath)) ?? Infinity;
+        return (a, b) => rankOf(a) - rankOf(b) || byName(a, b);
+      }
+      default:
+        return byName;
+    }
+  };
+  const sortFolder = (folder: VaultFolderNode): VaultFolderNode => {
+    const byMode = compare(folder);
+    const children = folder.children
+      .map((child) => (child.type === 'folder' ? sortFolder(child) : child))
+      .sort((a, b) => Number(b.type === 'folder') - Number(a.type === 'folder') || byMode(a, b));
+    return { ...folder, children };
+  };
+  return sortFolder(root);
+}
+
+/** Every folder's relPath under `root`, for collapsing them all. */
+export function folderPaths(root: VaultFolderNode): string[] {
+  return [...flattenTreeNodes(root).values()].flatMap((node) => (node.type === 'folder' ? [node.relPath] : []));
 }
 
 /** Flattens a vault tree into a map of note relPath -> display name. */

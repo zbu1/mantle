@@ -24,6 +24,8 @@ const baseNodes = OrderedMap.from<NodeSpec>({
     },
   },
   horizontal_rule: {
+    // The `---` / `***` / `___` the file used, so it saves (and reveals) as written.
+    attrs: { markup: { default: '---' } },
     group: 'block',
     parseDOM: [{ tag: 'hr' }],
     toDOM() {
@@ -41,7 +43,8 @@ const baseNodes = OrderedMap.from<NodeSpec>({
     },
   },
   code_block: {
-    attrs: { params: { default: '' } },
+    // `revealed`: the cursor is in it, so its fence lines are part of its text (see syntax-reveal-plugin).
+    attrs: { params: { default: '' }, revealed: { default: false } },
     content: 'text*',
     marks: '',
     group: 'block',
@@ -128,13 +131,16 @@ const baseNodes = OrderedMap.from<NodeSpec>({
 const nodesWithLists = addListNodes(baseNodes, 'paragraph block*', 'block');
 
 export const marks: Record<string, MarkSpec> = {
+  // `markup` is the delimiter the file used (`*` or `_`), so it saves as written.
   em: {
+    attrs: { markup: { default: '*' } },
     parseDOM: [{ tag: 'i' }, { tag: 'em' }, { style: 'font-style=italic' }],
     toDOM() {
       return ['em', 0];
     },
   },
   strong: {
+    attrs: { markup: { default: '**' } },
     parseDOM: [{ tag: 'strong' }, { tag: 'b' }, { style: 'font-weight=bold' }],
     toDOM() {
       return ['strong', 0];
@@ -175,6 +181,28 @@ export const marks: Record<string, MarkSpec> = {
     ],
     toDOM(mark: PMMark) {
       return ['a', { href: mark.attrs['href'], title: mark.attrs['title'] }, 0];
+    },
+  },
+  // Raw Markdown shown while the cursor is in a construct (see syntax-reveal-plugin).
+  // Saved verbatim; `image` marks an image's source, shown just before the image it stands for.
+  // Inclusive, so what's typed straight after it stays raw until the cursor leaves.
+  md_raw: {
+    attrs: { image: { default: false } },
+    excludes: '_',
+    // Keeps the inline input rules from firing inside it.
+    code: true,
+    parseDOM: [{ tag: 'span.md-raw' }],
+    toDOM(mark: PMMark) {
+      return ['span', { class: mark.attrs['image'] ? 'md-raw md-raw-image' : 'md-raw' }, 0];
+    },
+  },
+  // A revealed `## ` / `> ` line prefix. Never saved: the block's type says the same.
+  md_prefix: {
+    inclusive: false,
+    excludes: '_',
+    code: true,
+    toDOM() {
+      return ['span', { class: 'md-syntax' }, 0];
     },
   },
 };

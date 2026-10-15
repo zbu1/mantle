@@ -83,6 +83,8 @@ pub enum VaultNode {
         name: String,
         rel_path: String,
         children: Vec<VaultNode>,
+        modified: u64,
+        created: u64,
     },
     #[serde(rename_all = "camelCase")]
     Note {
@@ -105,10 +107,24 @@ pub enum VaultNode {
         /// frontmatter. Always false for a locked note and for plaintext
         /// notes, whose favorites live in `.mantle/state.json`.
         favorite: bool,
+        /// Last modified, in milliseconds since the Unix epoch (0 if unknown).
+        modified: u64,
+        /// Created, in milliseconds since the Unix epoch (0 where the file system doesn't record it).
+        created: u64,
     },
     /// Any other file — an image, a PDF — kept in the vault by the user.
     #[serde(rename_all = "camelCase")]
-    File { name: String, rel_path: String },
+    File { name: String, rel_path: String, modified: u64, created: u64 },
+}
+
+/// A file's modified and created times, in milliseconds since the Unix epoch; 0 for either one that's unknown.
+fn file_times(meta: std::io::Result<fs::Metadata>) -> (u64, u64) {
+    let millis = |time: std::io::Result<std::time::SystemTime>| {
+        time.ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map_or(0, |d| d.as_millis() as u64)
+    };
+    meta.map_or((0, 0), |meta| (millis(meta.modified()), millis(meta.created())))
 }
 
 fn node_name(node: &VaultNode) -> &str {
@@ -266,12 +282,15 @@ fn scan_dir(
         if file_type.is_dir() && rel_dir.as_os_str().is_empty() && name == crate::attachments::ATTACHMENTS_DIR {
             continue;
         }
+        let (modified, created) = file_times(entry.metadata());
         if file_type.is_dir() {
             let children = scan_dir(&entry.path(), &child_rel, vault_root, keys)?;
             folders.push(VaultNode::Folder {
                 name,
                 rel_path: to_slash(&child_rel),
                 children,
+                modified,
+                created,
             });
         } else if file_type.is_file() {
             if let Some((title, encrypted)) = classify_note_file(&name) {
@@ -289,9 +308,11 @@ fn scan_dir(
                     profile,
                     tags,
                     favorite,
+                    modified,
+                    created,
                 });
             } else {
-                notes.push(VaultNode::File { name, rel_path: to_slash(&child_rel) });
+                notes.push(VaultNode::File { name, rel_path: to_slash(&child_rel), modified, created });
             }
         }
     }
@@ -424,6 +445,8 @@ pub(crate) fn scan_vault_inner(vault_root: &str, keys: &SessionKeys) -> Result<V
             .unwrap_or_default(),
         rel_path: String::new(),
         children,
+        modified: 0,
+        created: 0,
     })
 }
 

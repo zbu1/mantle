@@ -37,6 +37,14 @@ function pressEnter(view: EditorView): boolean {
   );
 }
 
+/**
+ * The note as saved and reopened. While the cursor is in a construct the
+ * editor shows its raw Markdown, so marks are checked on this instead.
+ */
+function folded(view: EditorView) {
+  return parseMarkdown(serializeMarkdown(view.state.doc));
+}
+
 /** Empties the document so rules run against a clean paragraph. */
 function clear(view: EditorView) {
   const empty = schema.nodes['doc'].createAndFill()!;
@@ -97,7 +105,7 @@ describe('markdown input rules', () => {
       const { view } = await setup();
       type(view, '# Title');
 
-      const block = view.state.doc.firstChild!;
+      const block = folded(view).firstChild!;
       expect(block.type).toBe(schema.nodes['heading']);
       expect(block.textContent).toBe('Title');
     });
@@ -167,7 +175,7 @@ describe('markdown input rules', () => {
       const second = await setup();
       type(second.view, '```python');
       expect(pressEnter(second.view)).toBe(true);
-      const block = second.view.state.doc.firstChild!;
+      const block = folded(second.view).firstChild!;
       expect(block.type).toBe(schema.nodes['code_block']);
       expect(block.attrs['params']).toBe('python');
       expect(block.textContent).toBe('');
@@ -210,7 +218,7 @@ describe('markdown input rules', () => {
       const { view } = await setup();
       type(view, input);
 
-      const paragraph = view.state.doc.firstChild!;
+      const paragraph = folded(view).firstChild!;
       expect(paragraph.textContent).toBe(text);
 
       const marked = paragraph.firstChild!;
@@ -221,7 +229,7 @@ describe('markdown input rules', () => {
       const { view } = await setup();
       type(view, '**bold** plain');
 
-      const paragraph = view.state.doc.firstChild!;
+      const paragraph = folded(view).firstChild!;
       expect(paragraph.textContent).toBe('bold plain');
 
       const lastChild = paragraph.lastChild!;
@@ -233,7 +241,7 @@ describe('markdown input rules', () => {
       const { view } = await setup();
       type(view, 'my_variable_name');
 
-      const paragraph = view.state.doc.firstChild!;
+      const paragraph = folded(view).firstChild!;
       expect(paragraph.textContent).toBe('my_variable_name');
       expect(paragraph.childCount).toBe(1);
       expect(paragraph.firstChild!.marks).toHaveLength(0);
@@ -243,7 +251,7 @@ describe('markdown input rules', () => {
       const { view } = await setup();
       type(view, '[docs](https://example.com)');
 
-      const paragraph = view.state.doc.firstChild!;
+      const paragraph = folded(view).firstChild!;
       expect(paragraph.textContent).toBe('docs');
 
       const link = schema.marks['link'].isInSet(paragraph.firstChild!.marks);
@@ -255,7 +263,7 @@ describe('markdown input rules', () => {
       type(view, '``` ');
       type(view, '**bold** # heading');
 
-      const block = view.state.doc.firstChild!;
+      const block = folded(view).firstChild!;
       expect(block.type).toBe(schema.nodes['code_block']);
       expect(block.textContent).toBe('**bold** # heading');
     });
@@ -279,7 +287,7 @@ describe('markdown input rules', () => {
       const { view } = await setup();
       type(view, '`a*b*c`');
 
-      const paragraph = view.state.doc.firstChild!;
+      const paragraph = folded(view).firstChild!;
       expect(paragraph.textContent).toBe('a*b*c');
       expect(schema.marks['code'].isInSet(paragraph.firstChild!.marks)).toBeTruthy();
     });
@@ -287,10 +295,9 @@ describe('markdown input rules', () => {
     it('does not apply marks when typing inside existing code-marked text', async () => {
       const { view } = await setup();
 
-      // The code span ends in a space so the emphasis regex's `(?:^|\s)` prefix
-      // can match; the cursor sits right after it so the code mark is active.
-      // Without `inCodeMark: false` the bold rule would fire here.
-      const codeText = schema.text('a ', [schema.marks['code'].create()]);
+      // The cursor goes inside the (by then revealed) span. Without `inCodeMark: false`
+      // the bold rule would fire here.
+      const codeText = schema.text('a b', [schema.marks['code'].create()]);
       view.dispatch(
         view.state.tr.replaceWith(0, view.state.doc.content.size, [
           schema.nodes['paragraph'].create(null, codeText),
@@ -300,34 +307,26 @@ describe('markdown input rules', () => {
 
       type(view, '**bold**');
 
-      const paragraph = view.state.doc.firstChild!;
-      expect(paragraph.textContent).toBe('a **bold**');
-      paragraph.forEach((child) => {
-        expect(schema.marks['strong'].isInSet(child.marks)).toBeFalsy();
-      });
+      const paragraph = folded(view).firstChild!;
+      expect(paragraph.textContent).toBe('a**bold** b');
+      expect(paragraph.childCount).toBe(1);
+      expect(schema.marks['code'].isInSet(paragraph.firstChild!.marks)).toBeTruthy();
     });
   });
 
   describe('backspace', () => {
-    it('restores the literal markdown when pressed straight after a conversion', async () => {
+    it('edits the revealed "# " straight after a conversion, so deleting its space ends the heading', async () => {
       const { view } = await setup();
       type(view, '# ');
-      expect(view.state.doc.firstChild!.type).toBe(schema.nodes['heading']);
+      const heading = view.state.doc.firstChild!;
+      expect(heading.type).toBe(schema.nodes['heading']);
+      expect(heading.textContent).toBe('# ');
 
-      expect(pressBackspace(view)).toBe(true);
+      // A plain character delete is the browser's, not a keymap command.
+      view.dispatch(view.state.tr.delete(view.state.selection.from - 1, view.state.selection.from));
       const block = view.state.doc.firstChild!;
       expect(block.type).toBe(schema.nodes['paragraph']);
-      expect(block.textContent).toBe('# ');
-    });
-
-    it('demotes an empty leading heading back to a paragraph', async () => {
-      const { view } = await setup();
-      type(view, '# a');
-      // Delete the "a" so the heading is empty but no longer rule-undoable.
-      view.dispatch(view.state.tr.delete(view.state.selection.from - 1, view.state.selection.from));
-
-      expect(pressBackspace(view)).toBe(true);
-      expect(view.state.doc.firstChild!.type).toBe(schema.nodes['paragraph']);
+      expect(block.textContent).toBe('#');
     });
 
     it('leaves a non-empty heading alone', async () => {

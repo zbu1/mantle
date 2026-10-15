@@ -1,5 +1,6 @@
 import { Component, ElementRef, HostListener, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import {
   LucideArrowLeft,
   LucideArrowRight,
@@ -51,6 +52,9 @@ import { VaultRenameState } from '../../../notes/vault-rename-state';
 import { VaultState } from '../../../notes/vault-state';
 import { isTauri } from '../../../core/tauri-env';
 import { SectionId, SidebarState } from '../../sidebar/sidebar-state';
+import { EditCommand, EditContextState } from '../../../shared/edit-context-state';
+import { ZoomState } from '../../../shared/zoom-state';
+import { ISSUES_URL } from '../../../shared/command-palette/command-palette';
 
 type MenuCategory = 'file' | 'edit' | 'view' | 'help';
 
@@ -120,6 +124,8 @@ export class MainMenu {
   protected readonly sidebarState = inject(SidebarState);
   private readonly dialogState = inject(DialogState);
   private readonly settingsModalState = inject(SettingsModalState);
+  protected readonly editContext = inject(EditContextState);
+  protected readonly zoom = inject(ZoomState);
 
   /** Whether the horizontal File/Edit/View/Help bar is showing in place of the vault switcher. */
   protected readonly open = signal(false);
@@ -191,6 +197,24 @@ export class MainMenu {
     this.closeMenu();
   }
 
+  /** The File menu's shortcuts: Ctrl+N, Ctrl+S, Ctrl+Shift+S, Ctrl+W. */
+  @HostListener('document:keydown', ['$event'])
+  protected onKeydown(event: KeyboardEvent): void {
+    if (!(event.ctrlKey || event.metaKey) || event.altKey || event.repeat) return;
+    const key = event.key.toLowerCase();
+    const action =
+      key === 'n' && !event.shiftKey && this.hasVault()
+        ? () => this.newNote()
+        : key === 's'
+          ? () => (event.shiftKey ? this.saveAll() : this.saveActiveNote())
+          : key === 'w' && !event.shiftKey && this.hasActiveTab()
+            ? () => this.closeActiveTab()
+            : null;
+    if (!action) return;
+    event.preventDefault();
+    void action();
+  }
+
   // ---- File ----
 
   protected async newNote(): Promise<void> {
@@ -259,34 +283,14 @@ export class MainMenu {
   }
 
   // ---- Edit ----
-  //
-  // ProseMirror's editor state (undo history, selection, clipboard) lives
-  // entirely inside NoteEditor with no command surface exposed to the rest of
-  // the app, so these are stubs until that's threaded through.
 
-  protected undo(): void {
+  /** Runs on the editor or the vault tree, whichever last had focus. */
+  protected runEdit(command: EditCommand): void {
     this.closeMenu();
+    this.editContext.run(command);
   }
 
-  protected redo(): void {
-    this.closeMenu();
-  }
-
-  protected cut(): void {
-    this.closeMenu();
-  }
-
-  protected copy(): void {
-    this.closeMenu();
-  }
-
-  protected paste(): void {
-    this.closeMenu();
-  }
-
-  protected selectAll(): void {
-    this.closeMenu();
-  }
+  // Find in Note / Find in Vault are planned; their items show disabled.
 
   protected findInNote(): void {
     this.closeMenu();
@@ -335,20 +339,6 @@ export class MainMenu {
     location.reload();
   }
 
-  // No zoom mechanism exists yet — stubs.
-
-  protected zoomIn(): void {
-    this.closeMenu();
-  }
-
-  protected zoomOut(): void {
-    this.closeMenu();
-  }
-
-  protected resetZoom(): void {
-    this.closeMenu();
-  }
-
   // ---- Help ----
 
   protected async showAbout(): Promise<void> {
@@ -359,13 +349,14 @@ export class MainMenu {
     );
   }
 
-  // No shortcuts reference or issue tracker wired up yet — stubs.
-
   protected showShortcuts(): void {
     this.closeMenu();
+    this.settingsModalState.open('shortcuts');
   }
 
   protected reportIssue(): void {
     this.closeMenu();
+    if (isTauri()) void openUrl(ISSUES_URL);
+    else window.open(ISSUES_URL, '_blank', 'noopener');
   }
 }

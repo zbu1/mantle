@@ -3,6 +3,7 @@ import { LucidePanelLeft, LucidePlus, LucideX } from '@lucide/angular';
 import { ICON_RAIL_WIDTH } from '../icon-rail/icon-rail';
 import { SidebarState } from '../sidebar/sidebar-state';
 import { TabsState } from '../../notes/tabs-state';
+import { TabMenu } from '../../notes/tab-menu';
 import { VaultState } from '../../notes/vault-state';
 import { MainMenu } from './main-menu/main-menu';
 import { WindowControls } from '../window-controls/window-controls';
@@ -20,6 +21,7 @@ const TOGGLE_BUTTON_GAP = 8;
 export class Header {
   protected readonly sidebarState = inject(SidebarState);
   protected readonly tabsState = inject(TabsState);
+  protected readonly tabMenu = inject(TabMenu);
   private readonly vaultState = inject(VaultState);
   protected readonly gridTemplateColumns = computed(
     () => `${ICON_RAIL_WIDTH + this.sidebarState.effectiveWidth()}px 1fr auto`,

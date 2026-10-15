@@ -4,7 +4,7 @@ import { installTauriMock } from '../../testing/tauri-mock';
 import { MAX_RECENT_NOTES, VaultMeta, VaultMetaState } from './vault-meta-state';
 
 function meta(overrides: Partial<VaultMeta> = {}): VaultMeta {
-  return { version: 1, favorites: [], order: {}, collapsedFolders: [], recentNotes: [], ...overrides };
+  return { version: 1, favorites: [], order: {}, collapsedFolders: [], sortMode: 'name-asc', recentNotes: [], ...overrides };
 }
 
 async function flushMicrotasks(): Promise<void> {
@@ -75,6 +75,26 @@ describe('VaultMetaState', () => {
       await first;
 
       expect(state.recentNotes()).toEqual([{ relPath: 'b.mntl', openedAt: 2 }]);
+    });
+  });
+
+  describe('folders', () => {
+    it('keeps collapsed folders, and their manual order, attached to a renamed folder', async () => {
+      mock.respondWith('load_vault_meta', meta({ collapsedFolders: ['Work', 'Work/Old', 'Home'], order: { Work: ['a.mntl'] } }));
+      await state.load('/vault');
+
+      state.renameFolder('Work', 'Job');
+      expect([...state.collapsedFolders()]).toEqual(['Job', 'Job/Old', 'Home']);
+      expect(state.order()).toEqual({ Job: ['a.mntl'] });
+
+      state.forgetFolder('Job');
+      expect([...state.collapsedFolders()]).toEqual(['Home']);
+    });
+
+    it("falls back to sorting by name for a sort mode it doesn't know", async () => {
+      mock.respondWith('load_vault_meta', { ...meta(), sortMode: 'by-color' });
+      await state.load('/vault');
+      expect(state.sortMode()).toBe('name-asc');
     });
   });
 

@@ -11,12 +11,12 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
-import { EditorState, Command } from 'prosemirror-state';
+import { EditorState, Command, Plugin } from 'prosemirror-state';
 import { EditorView } from 'prosemirror-view';
 import { Node as ProseMirrorNode, Slice } from 'prosemirror-model';
 import { history, undo, redo } from 'prosemirror-history';
 import { keymap } from 'prosemirror-keymap';
-import { baseKeymap, chainCommands, joinTextblockBackward, toggleMark } from 'prosemirror-commands';
+import { baseKeymap, chainCommands, joinTextblockBackward, setBlockType } from 'prosemirror-commands';
 import { splitListItem, sinkListItem, liftListItem } from 'prosemirror-schema-list';
 import { undoInputRule } from 'prosemirror-inputrules';
 import { gapCursor } from 'prosemirror-gapcursor';
@@ -30,9 +30,11 @@ import { VaultState } from '../vault-state';
 import { VaultRootState } from '../vault-root-state';
 import { ContextMenuState } from '../../shared/context-menu/context-menu-state';
 import { DialogState } from '../../shared/dialog/dialog-state';
+import { EditContextState } from '../../shared/edit-context-state';
 import { EditorFocusState } from './editor-focus-state';
 import { schema } from './prosemirror/schema';
-import { parseMarkdown, serializeMarkdown } from './prosemirror/markdown-converter';
+import { codeBody, parseMarkdown, serializeMarkdown } from './prosemirror/markdown-converter';
+import { exitEmptyQuoteLine, syntaxRevealPlugin } from './prosemirror/plugins/syntax-reveal-plugin';
 import { createSlashMenuPlugin } from './prosemirror/plugins/slash-menu-plugin';
 import { buildMarkdownInputRules } from './prosemirror/plugins/markdown-input-rules';
 import { trailingParagraphPlugin } from './prosemirror/plugins/trailing-paragraph-plugin';
@@ -59,6 +61,10 @@ import {
   setCodeBlockLanguage,
 } from './prosemirror/plugins/code-block-plugin';
 import { SlashMenu } from './slash-menu/slash-menu';
+import { SLASH_COMMAND_ITEMS } from './slash-menu/slash-menu.model';
+import { formatSelection, insertHorizontalRule, linkSelection, pastePlainText } from './prosemirror/editor-commands';
+import { pickImage } from './prosemirror/plugins/image-plugin';
+import { ContextMenuAction } from '../../shared/context-menu/context-menu.model';
 import { SlashMenuState } from './slash-menu/slash-menu-state';
 
 function buildEditorKeymap() {
@@ -67,11 +73,13 @@ function buildEditorKeymap() {
     'Mod-z': undo,
     'Mod-y': redo,
     'Shift-Mod-z': redo,
-    'Mod-b': (state, dispatch, view) => toggleMark(schema.marks['strong'])(state, dispatch, view),
-    'Mod-i': (state, dispatch, view) => toggleMark(schema.marks['em'])(state, dispatch, view),
-    'Mod-`': (state, dispatch, view) => toggleMark(schema.marks['code'])(state, dispatch, view),
+    'Mod-b': (_state, _dispatch, view) => !!view && (formatSelection(view, 'strong', '**'), true),
+    'Mod-i': (_state, _dispatch, view) => !!view && (formatSelection(view, 'em', '*'), true),
+    'Mod-`': (_state, _dispatch, view) => !!view && (formatSelection(view, 'code', '`'), true),
+    'Shift-Mod-v': (_state, _dispatch, view) => !!view && (pastePlainText(view), true),
     Enter: chainCommands(
       codeFenceOnEnter,
+      exitEmptyQuoteLine,
       splitListItem(schema.nodes['list_item']),
       splitListItem(schema.nodes['task_item']),
       baseKeymap['Enter']
@@ -138,6 +146,7 @@ export class NoteEditor {
   private readonly credentialsState = inject(CredentialsState);
   private readonly contextMenuState = inject(ContextMenuState);
   private readonly dialogState = inject(DialogState);
+  private readonly editContext = inject(EditContextState);
 
   readonly noteId = input.required<string>();
 
@@ -174,6 +183,11 @@ export class NoteEditor {
           buildEditorKeymap(),
           gapCursor(),
           trailingParagraphPlugin(),
+          syntaxRevealPlugin(),
+          // Last, so images and code blocks get their own menus first.
+          new Plugin({
+            props: { handleDOMEvents: { contextmenu: (view, event) => (this.openTextMenu(event, view), true) } },
+          }),
           imagePlugin(this.imageContext()),
           codeBlockPlugin({
             pickLanguage: (view, pos, anchor) => {
@@ -195,13 +209,17 @@ export class NoteEditor {
         // Only affects plain-text pastes; HTML clipboard content still goes
         // through the default DOM parser.
         clipboardTextParser: (text) => Slice.maxOpen(parseMarkdown(text).content),
+        // The Edit menu acts on whichever editor last had focus.
+        handleDOMEvents: { focus: (view) => void this.editContext.focusEditor(view) },
         dispatchTransaction: (tr) => {
           const newState = view.state.apply(tr);
           view.updateState(newState);
 
           if (tr.docChanged) {
-            this.textStats.set(countText(newState.doc));
             const markdown = serializeMarkdown(newState.doc);
+            // Counted from the saved Markdown, so revealed syntax doesn't count.
+            // ponytail: reparses the note per edit; count the doc minus revealed syntax if long notes lag.
+            this.textStats.set(countText(parseMarkdown(markdown)));
             this.notesState.updateContent(this.noteId(), markdown);
           }
         },
@@ -225,7 +243,10 @@ export class NoteEditor {
       if (relinked && view && relinked.noteId === this.noteId()) untracked(() => relinkImages(view, relinked.sources));
     });
 
-    this.destroyRef.onDestroy(() => this.editorView?.destroy());
+    this.destroyRef.onDestroy(() => {
+      if (this.editorView) this.editContext.forgetEditor(this.editorView);
+      this.editorView?.destroy();
+    });
   }
 
   /**
@@ -293,9 +314,84 @@ export class NoteEditor {
         })),
       },
       { kind: 'separator' },
-      { kind: 'item', label: 'Copy Code', icon: 'copy', action: () => void navigator.clipboard.writeText(node.textContent) },
+      { kind: 'item', label: 'Copy Code', icon: 'copy', action: () => void navigator.clipboard.writeText(codeBody(node).text) },
       { kind: 'item', label: 'Turn into Paragraph', icon: 'paragraph', action: () => codeBlockToParagraph(view, pos) },
     ]);
+  }
+
+  /** Right-click on text: the clipboard, formatting, block types and inserts. */
+  private openTextMenu(event: MouseEvent, view: EditorView): void {
+    const hasSelection = !view.state.selection.empty;
+    const run = (command: 'cut' | 'copy' | 'paste' | 'selectAll') => () => this.editContext.run(command);
+    const turnInto = (id: string) => () => SLASH_COMMAND_ITEMS.find((item) => item.id === id)?.run(view);
+    const format = (label: string, mark: string, delimiter: string, shortcut?: string): ContextMenuAction => ({
+      kind: 'item',
+      label,
+      shortcut,
+      action: () => formatSelection(view, mark, delimiter),
+    });
+    this.editContext.focusEditor(view);
+    this.contextMenuState.open(event, [
+      { kind: 'item', label: 'Cut', icon: 'cut', shortcut: 'Ctrl+X', disabled: !hasSelection, action: run('cut') },
+      { kind: 'item', label: 'Copy', icon: 'copy', shortcut: 'Ctrl+C', disabled: !hasSelection, action: run('copy') },
+      { kind: 'item', label: 'Paste', icon: 'paste', shortcut: 'Ctrl+V', action: run('paste') },
+      {
+        kind: 'item',
+        label: 'Paste as Plain Text',
+        shortcut: 'Ctrl+Shift+V',
+        action: () => pastePlainText(view),
+      },
+      { kind: 'item', label: 'Select All', shortcut: 'Ctrl+A', action: run('selectAll') },
+      { kind: 'separator' },
+      {
+        kind: 'submenu',
+        label: 'Format',
+        items: [
+          format('Bold', 'strong', '**', 'Ctrl+B'),
+          format('Italic', 'em', '*', 'Ctrl+I'),
+          format('Strikethrough', 'strike', '~~'),
+          format('Code', 'code', '`', 'Ctrl+`'),
+          { kind: 'separator' },
+          { kind: 'item', label: 'Link…', action: () => void this.promptLink(view) },
+        ],
+      },
+      {
+        kind: 'submenu',
+        label: 'Turn into',
+        items: [
+          { kind: 'item', label: 'Paragraph', icon: 'paragraph', action: () => setBlockType(schema.nodes['paragraph'])(view.state, view.dispatch) },
+          { kind: 'item', label: 'Heading 1', action: turnInto('h1') },
+          { kind: 'item', label: 'Heading 2', action: turnInto('h2') },
+          { kind: 'item', label: 'Heading 3', action: turnInto('h3') },
+          { kind: 'separator' },
+          { kind: 'item', label: 'Bullet List', action: turnInto('bullet-list') },
+          { kind: 'item', label: 'Numbered List', action: turnInto('ordered-list') },
+          { kind: 'item', label: 'To-do List', action: turnInto('task-list') },
+          { kind: 'separator' },
+          { kind: 'item', label: 'Quote', action: turnInto('blockquote') },
+          { kind: 'item', label: 'Code Block', icon: 'code', action: turnInto('code-block') },
+        ],
+      },
+      {
+        kind: 'submenu',
+        label: 'Insert',
+        items: [
+          { kind: 'item', label: 'Image…', action: () => void pickImage(view) },
+          { kind: 'item', label: 'Divider', action: () => insertHorizontalRule(view) },
+        ],
+      },
+    ]);
+  }
+
+  private async promptLink(view: EditorView): Promise<void> {
+    const href = await this.dialogState.prompt('The address to link to.', {
+      title: 'Add Link',
+      confirmLabel: 'Link',
+      placeholder: 'https://',
+    });
+    if (!href?.trim()) return;
+    linkSelection(view, href.trim());
+    view.focus();
   }
 
   private async openImageMenu(event: MouseEvent, view: EditorView, pos: number, src: string): Promise<void> {

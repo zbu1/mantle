@@ -39,6 +39,7 @@ import {
 import { MarkdownNoticeState } from '../../../notes/markdown-notice-state';
 import { SidebarState } from '../../sidebar/sidebar-state';
 import { NoteEncryptionActions } from '../../../notes/note-encryption-actions';
+import { TabMenu } from '../../../notes/tab-menu';
 
 const RENAME_DEBOUNCE_MS = 1000;
 
@@ -79,6 +80,7 @@ export class ContentArea {
   private readonly vaultMeta = inject(VaultMetaState);
   private readonly favorites = inject(FavoritesState);
   protected readonly sidebarState = inject(SidebarState);
+  protected readonly tabMenu = inject(TabMenu);
 
   private readonly contentRoot = viewChild<ElementRef<HTMLElement>>('contentRoot');
   protected readonly noteEditor = viewChild(NoteEditor);
@@ -320,41 +322,19 @@ export class ContentArea {
     }
   }
 
-  protected onMoreClick(event: MouseEvent, tab: NoteTab): void {
-    const items: ContextMenuItem[] = [
-      { kind: 'item', label: 'Copy Content', icon: 'copy', action: () => this.copyContent(tab.noteId) },
-      { kind: 'item', label: 'Copy Title', icon: 'copy', action: () => navigator.clipboard.writeText(tab.title) },
-    ];
-    if (this.favoritableNoteId() !== null) {
-      const favorite = this.activeIsFavorite();
-      items.push(
-        { kind: 'separator' },
-        {
-          kind: 'item',
-          label: favorite ? 'Remove from Favorites' : 'Add to Favorites',
-          icon: favorite ? 'unfavorite' : 'favorite',
-          action: () => this.toggleActiveFavorite(),
-        },
-      );
-    }
-    this.contextMenuState.open(event, items);
-  }
-
+  /** Right-click outside the editor (the toolbar, the title): the active tab's menu. */
   protected onContentContextMenu(event: MouseEvent): void {
     const tab = this.activeTab();
-    if (!tab) return;
-
-    const items: ContextMenuItem[] = [
-      { kind: 'item', label: 'Copy Content', icon: 'copy', action: () => this.copyContent(tab.noteId) },
-      { kind: 'item', label: 'Copy Title', icon: 'copy', action: () => navigator.clipboard.writeText(tab.title) },
-      { kind: 'separator' },
-      { kind: 'item', label: 'Close Tab', icon: 'close', action: () => this.tabsState.closeTab(tab.id) },
-    ];
-    this.contextMenuState.open(event, items);
+    if (tab) this.tabMenu.open(event, tab);
   }
 
-  private copyContent(noteId: string): void {
-    const note = this.notesState.getNote(noteId);
-    if (note) navigator.clipboard.writeText(note.content);
+  protected onCrumbContextMenu(event: MouseEvent, relPath: string): void {
+    const items: ContextMenuItem[] = [
+      { kind: 'item', label: 'Reveal in Sidebar', action: () => this.sidebarState.revealFolder(relPath) },
+      { kind: 'item', label: 'New Note Here', icon: 'new-note', action: () => void this.vaultState.createAndOpenNote(relPath) },
+      { kind: 'separator' },
+      { kind: 'item', label: 'Show in File Explorer', icon: 'reveal', action: () => void this.vaultState.revealInFileExplorer(relPath) },
+    ];
+    this.contextMenuState.open(event, items);
   }
 }

@@ -1,5 +1,6 @@
 import { joinBackward, setBlockType } from 'prosemirror-commands';
 import { Command, TextSelection } from 'prosemirror-state';
+import { codeBody } from '../markdown-converter';
 import { schema } from '../schema';
 
 const DEMOTABLE = new Set([
@@ -17,8 +18,19 @@ export const demoteEmptyLeadingBlock: Command = (state, dispatch, view) => {
   const { selection } = state;
   if (!(selection instanceof TextSelection) || !selection.empty) return false;
 
+  const { $from } = selection;
+  const parent = $from.parent;
+  // A code block whose fences show is empty when the cursor sits on the blank line between them.
+  const code = parent.type === schema.nodes['code_block'] ? codeBody(parent) : null;
+  if (code?.offset && !code.text && $from.parentOffset === code.offset && parent.textContent.split('\n').length === 3) {
+    if (dispatch) {
+      const start = $from.start();
+      dispatch(state.tr.delete(start, start + parent.content.size).setBlockType(start, start, schema.nodes['paragraph']));
+    }
+    return true;
+  }
+
   // An empty textblock has no cursor position other than its start.
-  const parent = selection.$from.parent;
   if (!DEMOTABLE.has(parent.type) || parent.content.size !== 0) return false;
 
   // Omitting dispatch tests applicability without applying anything.

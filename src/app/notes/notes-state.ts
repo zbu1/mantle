@@ -169,11 +169,10 @@ export class NotesState {
   }
 
   updateContent(id: string, content: string): void {
-    this.entries.update((entries) => {
-      const entry = entries[id];
-      if (!entry || entry.status !== 'loaded' || entry.note.content === content) return entries;
-      return { ...entries, [id]: { status: 'loaded', note: { ...entry.note, content } } };
-    });
+    const entry = this.entries()[id];
+    // Revealing syntax in the editor changes the doc but not the Markdown; nothing to save.
+    if (!entry || entry.status !== 'loaded' || entry.note.content === content) return;
+    this.entries.update((entries) => ({ ...entries, [id]: { status: 'loaded', note: { ...entry.note, content } } }));
     this.scheduleFlush(id);
   }
 

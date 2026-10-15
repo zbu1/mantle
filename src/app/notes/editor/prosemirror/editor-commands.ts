@@ -1,6 +1,6 @@
 import { Command } from 'prosemirror-state';
 import { EditorView } from 'prosemirror-view';
-import { setBlockType, wrapIn } from 'prosemirror-commands';
+import { setBlockType, toggleMark, wrapIn } from 'prosemirror-commands';
 import { wrapInList, liftListItem } from 'prosemirror-schema-list';
 import { schema } from './schema';
 
@@ -66,4 +66,38 @@ export function insertHorizontalRule(view: EditorView): boolean {
   const tr = view.state.tr.replaceSelectionWith(hr);
   view.dispatch(tr);
   return true;
+}
+
+/** Whether the selection sits in revealed Markdown, where marks can't go and delimiters are typed instead. */
+function inRawMarkdown(view: EditorView): boolean {
+  const { from, to, $from } = view.state.selection;
+  const raw = schema.marks['md_raw'];
+  return view.state.doc.rangeHasMark(from, to, raw) || !!raw.isInSet($from.marks());
+}
+
+/** Wraps the selection in raw Markdown, which parses once the cursor leaves. */
+function wrapInRaw(view: EditorView, open: string, close: string): void {
+  const { from, to } = view.state.selection;
+  const raw = [schema.marks['md_raw'].create()];
+  view.dispatch(view.state.tr.insert(to, schema.text(close, raw)).insert(from, schema.text(open, raw)));
+}
+
+/** Bold, italic, etc. on the selection: toggles the mark, or in revealed Markdown wraps it in `delimiter`. */
+export function formatSelection(view: EditorView, mark: string, delimiter: string): void {
+  if (inRawMarkdown(view)) wrapInRaw(view, delimiter, delimiter);
+  else toggleMark(schema.marks[mark])(view.state, view.dispatch);
+}
+
+/** Links the selection to `href`; with nothing selected, inserts `href` itself as the link text. */
+export function linkSelection(view: EditorView, href: string): void {
+  if (inRawMarkdown(view)) return wrapInRaw(view, '[', `](${href})`);
+  const { from, to, empty } = view.state.selection;
+  const link = schema.marks['link'].create({ href });
+  const tr = empty ? view.state.tr.insert(from, schema.text(href, [link])) : view.state.tr.addMark(from, to, link);
+  view.dispatch(tr);
+}
+
+/** Pastes the clipboard as literal text, without reading it as Markdown. */
+export function pastePlainText(view: EditorView): void {
+  void navigator.clipboard.readText().then((text) => text && view.dispatch(view.state.tr.insertText(text)));
 }

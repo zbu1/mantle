@@ -24,7 +24,18 @@ import {
   LucideStar,
   LucideTags,
   LucideX,
+  LucideZoomIn,
+  LucideZoomOut,
+  LucideRotateCcw,
+  LucideKeyboard,
+  LucideBug,
+  LucideUnfoldVertical,
+  LucideFoldVertical,
+  LucideArrowDownAZ,
+  LucideFileText,
 } from '@lucide/angular';
+import { openUrl } from '@tauri-apps/plugin-opener';
+import { ZoomState } from '../zoom-state';
 import { MenuItem } from '../menu/menu-item';
 import { DialogState } from '../dialog/dialog-state';
 import { QuickSwitcherState } from '../quick-switcher/quick-switcher-state';
@@ -36,11 +47,13 @@ import { FavoritesState } from '../../notes/favorites-state';
 import { VaultMetaState } from '../../notes/vault-meta-state';
 import { VaultRenameState } from '../../notes/vault-rename-state';
 import { VaultState } from '../../notes/vault-state';
-import { flattenVaultNotes } from '../../notes/vault-tree.model';
+import { SORT_MODES, flattenVaultNotes, folderPaths } from '../../notes/vault-tree.model';
 import { isTauri } from '../../core/tauri-env';
 import { SectionId, SidebarState } from '../../layout/sidebar/sidebar-state';
 import { CommandPaletteState } from './command-palette-state';
 import { CommandPaletteIcon, CommandPaletteItem, filterCommandPaletteItems } from './command-palette.model';
+
+export const ISSUES_URL = 'https://github.com/zbu1/mantle/issues/new';
 
 interface SectionDef {
   id: SectionId;
@@ -59,8 +72,8 @@ const SIDEBAR_SECTIONS: SectionDef[] = [
  * App-wide Command Palette bound to Ctrl+Shift+P — rendered once at the
  * layout root, like `Dialog`/`SettingsModal`.
  *
- * Only lists commands that are both real (not `MainMenu`'s Edit-menu stubs —
- * undo/redo/cut/copy/paste have no state to run against yet) and meaningfully
+ * Only lists commands that are both real and runnable from here (not the Edit
+ * menu's, which act on whatever had focus before the palette took it) and meaningfully
  * app-wide rather than needing a specific note/folder as its target (those
  * stay in their existing context menus). Each command also only appears when
  * it currently applies — e.g. "Save Note" only with a tab open — rather than
@@ -94,6 +107,15 @@ const SIDEBAR_SECTIONS: SectionDef[] = [
     LucideSettings,
     LucideInfo,
     LucideDoorOpen,
+    LucideZoomIn,
+    LucideZoomOut,
+    LucideRotateCcw,
+    LucideKeyboard,
+    LucideBug,
+    LucideUnfoldVertical,
+    LucideFoldVertical,
+    LucideArrowDownAZ,
+    LucideFileText,
   ],
   templateUrl: './command-palette.html',
 })
@@ -110,6 +132,7 @@ export class CommandPalette {
   private readonly dialogState = inject(DialogState);
   private readonly vaultMeta = inject(VaultMetaState);
   private readonly favorites = inject(FavoritesState);
+  private readonly zoom = inject(ZoomState);
 
   protected readonly query = this.state.query;
   protected readonly selectedIndex = signal(0);
@@ -287,6 +310,46 @@ export class CommandPalette {
       });
     }
 
+    const tree = this.vaultState.tree();
+    if (tree && this.vaultMeta.loaded()) {
+      items.push(
+        {
+          id: 'expand-all-folders',
+          label: 'Expand All Folders',
+          icon: 'unfold',
+          keywords: ['expand', 'open', 'folders', 'tree'],
+          run: () => this.vaultMeta.setCollapsedFolders([]),
+        },
+        {
+          id: 'collapse-all-folders',
+          label: 'Collapse All Folders',
+          icon: 'fold',
+          keywords: ['collapse', 'close', 'folders', 'tree'],
+          run: () => this.vaultMeta.setCollapsedFolders(folderPaths(tree)),
+        },
+        ...SORT_MODES.filter((mode) => mode.id !== this.vaultMeta.sortMode()).map((mode) => ({
+          id: `sort-${mode.id}`,
+          label: `Sort by ${mode.label}`,
+          icon: 'sort' as const,
+          keywords: ['sort', 'order', 'tree'],
+          run: () => this.vaultMeta.setSortMode(mode.id),
+        })),
+      );
+    }
+    items.push({
+      id: 'show-extensions',
+      label: this.sidebarState.showExtensions() ? 'Hide File Extensions' : 'Show File Extensions',
+      icon: 'file-text',
+      keywords: ['extensions', 'markdown', 'md', 'sidebar'],
+      run: () => this.sidebarState.showExtensions.update((show) => !show),
+    });
+
+    items.push(
+      { id: 'zoom-in', label: 'Zoom In', icon: 'zoom-in', keywords: ['zoom', 'bigger', 'larger'], run: () => this.zoom.zoomIn() },
+      { id: 'zoom-out', label: 'Zoom Out', icon: 'zoom-out', keywords: ['zoom', 'smaller'], run: () => this.zoom.zoomOut() },
+      { id: 'reset-zoom', label: 'Reset Zoom', icon: 'rotate-ccw', keywords: ['zoom', 'reset', 'actual'], run: () => this.zoom.reset() },
+    );
+
     items.push({
       id: 'fullscreen',
       label: 'Toggle Fullscreen',
@@ -307,6 +370,20 @@ export class CommandPalette {
       icon: 'settings',
       keywords: ['settings', 'preferences'],
       run: () => this.settingsModalState.open(),
+    });
+    items.push({
+      id: 'shortcuts',
+      label: 'Keyboard Shortcuts',
+      icon: 'keyboard',
+      keywords: ['keyboard', 'shortcuts', 'hotkeys', 'keys'],
+      run: () => this.settingsModalState.open('shortcuts'),
+    });
+    items.push({
+      id: 'report-issue',
+      label: 'Report an Issue',
+      icon: 'bug',
+      keywords: ['bug', 'issue', 'feedback', 'report'],
+      run: () => void (isTauri() ? openUrl(ISSUES_URL) : window.open(ISSUES_URL, '_blank', 'noopener')),
     });
     items.push({
       id: 'about',

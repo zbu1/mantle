@@ -306,13 +306,13 @@ export class VaultState {
     return created;
   }
 
-  /** Creates an "Untitled" note at the vault root (retrying on name collisions) and opens it in a new tab. */
-  async createAndOpenNote(): Promise<CreatedNote | null> {
+  /** Creates an "Untitled" note in `relDir` (the vault root by default; retrying on name collisions) and opens it in a new tab. */
+  async createAndOpenNote(relDir = ''): Promise<CreatedNote | null> {
     const base = 'Untitled';
     for (let i = 0; i < 50; i++) {
       const name = i === 0 ? base : `${base} ${i + 1}`;
       try {
-        const created = await this.createNote('', name);
+        const created = await this.createNote(relDir, name);
         this.tabsState.openInNewTab({ id: created.relPath, title: created.name });
         return created;
       } catch {

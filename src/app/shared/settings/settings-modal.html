@@ -128,8 +128,8 @@
               class="flex size-6 items-center justify-center rounded-md border border-border text-xs hover:bg-background">+</button>
           </div>
         </app-settings-row>
-        <app-settings-row label="Show File Extensions" description="Display .mntl / .mntl.enc suffixes in the sidebar.">
-          <app-toggle [checked]="showFileExtensions()" (changed)="showFileExtensions.set($event)" />
+        <app-settings-row label="Show File Extensions" description="Show the .md / .markdown of plain Markdown notes in the sidebar.">
+          <app-toggle [checked]="sidebarState.showExtensions()" (changed)="sidebarState.showExtensions.set($event)" />
         </app-settings-row>
         <app-settings-row label="Compact Spacing" description="Reduce padding throughout the interface.">
           <app-toggle [checked]="compactSpacing()" (changed)="compactSpacing.set($event)" />
@@ -193,8 +193,8 @@
             Reset to Default
           </button>
         </app-settings-row>
-        <app-settings-row label="Default Sort Order">
-          <select [value]="sidebarSortMode()" (change)="sidebarSortMode.set($any($event.target).value)"
+        <app-settings-row label="Sort Order" description="Saved with the vault.">
+          <select [value]="vaultMeta.sortMode()" [disabled]="!vaultMeta.loaded()" (change)="vaultMeta.setSortMode($any($event.target).value)"
             class="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-ring">
             <option value="name-asc">Name (A → Z)</option>
             <option value="name-desc">Name (Z → A)</option>
@@ -341,12 +341,12 @@
         <app-settings-row label="Hardware Acceleration">
           <app-toggle [checked]="hardwareAcceleration()" (changed)="hardwareAcceleration.set($event)" />
         </app-settings-row>
-        <app-settings-row label="Editor Zoom">
+        <app-settings-row label="Zoom" description="Ctrl+= and Ctrl+- also zoom; Ctrl+0 resets.">
           <div class="flex items-center gap-2">
-            <button type="button" (click)="stepZoomLevel(-10)"
+            <button type="button" (click)="zoom.zoomOut()"
               class="flex size-6 items-center justify-center rounded-md border border-border text-xs hover:bg-background">−</button>
-            <span class="w-10 text-center text-xs tabular-nums">{{ zoomLevel() }}%</span>
-            <button type="button" (click)="stepZoomLevel(10)"
+            <span class="w-10 text-center text-xs tabular-nums">{{ (zoom.level() * 100).toFixed(0) }}%</span>
+            <button type="button" (click)="zoom.zoomIn()"
               class="flex size-6 items-center justify-center rounded-md border border-border text-xs hover:bg-background">+</button>
           </div>
         </app-settings-row>

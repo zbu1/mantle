@@ -20,7 +20,16 @@ export type CommandPaletteIcon =
   | 'refresh-cw'
   | 'settings'
   | 'info'
-  | 'door-open';
+  | 'door-open'
+  | 'zoom-in'
+  | 'zoom-out'
+  | 'rotate-ccw'
+  | 'keyboard'
+  | 'bug'
+  | 'unfold'
+  | 'fold'
+  | 'sort'
+  | 'file-text';
 
 export interface CommandPaletteItem {
   id: string;

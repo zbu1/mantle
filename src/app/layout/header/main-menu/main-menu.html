@@ -20,7 +20,7 @@
 
       @if (activeCategory() === 'file') {
       <app-menu-surface #panel class="absolute left-0 top-full z-50 mt-1 w-64">
-        <app-menu-item label="New Note" [disabled]="!hasVault()" [active]="hoveredItem() === 'newNote'"
+        <app-menu-item label="New Note" shortcut="Ctrl+N" [disabled]="!hasVault()" [active]="hoveredItem() === 'newNote'"
           (hovered)="hoveredItem.set('newNote')" (selected)="newNote()">
           <svg menuItemIcon lucideFilePlus [size]="14"></svg>
         </app-menu-item>
@@ -30,17 +30,17 @@
         </app-menu-item>
 
         <app-menu-separator />
-        <app-menu-item label="Save" [disabled]="!hasActiveTab()" [active]="hoveredItem() === 'save'"
+        <app-menu-item label="Save" shortcut="Ctrl+S" [disabled]="!hasActiveTab()" [active]="hoveredItem() === 'save'"
           (hovered)="hoveredItem.set('save')" (selected)="saveActiveNote()">
           <svg menuItemIcon lucideSave [size]="14"></svg>
         </app-menu-item>
-        <app-menu-item label="Save All" [disabled]="!hasTabs()" [active]="hoveredItem() === 'saveAll'"
+        <app-menu-item label="Save All" shortcut="Ctrl+Shift+S" [disabled]="!hasTabs()" [active]="hoveredItem() === 'saveAll'"
           (hovered)="hoveredItem.set('saveAll')" (selected)="saveAll()">
           <svg menuItemIcon lucideSaveAll [size]="14"></svg>
         </app-menu-item>
 
         <app-menu-separator />
-        <app-menu-item label="Close Tab" [disabled]="!hasActiveTab()" [active]="hoveredItem() === 'closeTab'"
+        <app-menu-item label="Close Tab" shortcut="Ctrl+W" [disabled]="!hasActiveTab()" [active]="hoveredItem() === 'closeTab'"
           (hovered)="hoveredItem.set('closeTab')" (selected)="closeActiveTab()">
           <svg menuItemIcon lucideX [size]="14"></svg>
         </app-menu-item>
@@ -93,41 +93,41 @@
 
       @if (activeCategory() === 'edit') {
       <app-menu-surface #panel class="absolute left-0 top-full z-50 mt-1 w-56">
-        <app-menu-item label="Undo" [active]="hoveredItem() === 'undo'"
-          (hovered)="hoveredItem.set('undo')" (selected)="undo()">
+        <app-menu-item label="Undo" shortcut="Ctrl+Z" [disabled]="!editContext.canRun('undo')"
+          [active]="hoveredItem() === 'undo'" (hovered)="hoveredItem.set('undo')" (selected)="runEdit('undo')">
           <svg menuItemIcon lucideUndo2 [size]="14"></svg>
         </app-menu-item>
-        <app-menu-item label="Redo" [active]="hoveredItem() === 'redo'"
-          (hovered)="hoveredItem.set('redo')" (selected)="redo()">
+        <app-menu-item label="Redo" shortcut="Ctrl+Y" [disabled]="!editContext.canRun('redo')"
+          [active]="hoveredItem() === 'redo'" (hovered)="hoveredItem.set('redo')" (selected)="runEdit('redo')">
           <svg menuItemIcon lucideRedo2 [size]="14"></svg>
         </app-menu-item>
 
         <app-menu-separator />
-        <app-menu-item label="Cut" [active]="hoveredItem() === 'cut'"
-          (hovered)="hoveredItem.set('cut')" (selected)="cut()">
+        <app-menu-item label="Cut" shortcut="Ctrl+X" [disabled]="!editContext.canRun('cut')"
+          [active]="hoveredItem() === 'cut'" (hovered)="hoveredItem.set('cut')" (selected)="runEdit('cut')">
           <svg menuItemIcon lucideScissors [size]="14"></svg>
         </app-menu-item>
-        <app-menu-item label="Copy" [active]="hoveredItem() === 'copy'"
-          (hovered)="hoveredItem.set('copy')" (selected)="copy()">
+        <app-menu-item label="Copy" shortcut="Ctrl+C" [disabled]="!editContext.canRun('copy')"
+          [active]="hoveredItem() === 'copy'" (hovered)="hoveredItem.set('copy')" (selected)="runEdit('copy')">
           <svg menuItemIcon lucideCopy [size]="14"></svg>
         </app-menu-item>
-        <app-menu-item label="Paste" [active]="hoveredItem() === 'paste'"
-          (hovered)="hoveredItem.set('paste')" (selected)="paste()">
+        <app-menu-item label="Paste" shortcut="Ctrl+V" [disabled]="!editContext.canRun('paste')"
+          [active]="hoveredItem() === 'paste'" (hovered)="hoveredItem.set('paste')" (selected)="runEdit('paste')">
           <svg menuItemIcon lucideClipboardPaste [size]="14"></svg>
         </app-menu-item>
 
         <app-menu-separator />
-        <app-menu-item label="Select All" [active]="hoveredItem() === 'selectAll'"
-          (hovered)="hoveredItem.set('selectAll')" (selected)="selectAll()">
+        <app-menu-item label="Select All" shortcut="Ctrl+A" [disabled]="!editContext.canRun('selectAll')"
+          [active]="hoveredItem() === 'selectAll'" (hovered)="hoveredItem.set('selectAll')" (selected)="runEdit('selectAll')">
           <svg menuItemIcon lucideCheckCheck [size]="14"></svg>
         </app-menu-item>
 
         <app-menu-separator />
-        <app-menu-item label="Find in Note" [active]="hoveredItem() === 'findInNote'"
+        <app-menu-item label="Find in Note" [disabled]="true" [active]="hoveredItem() === 'findInNote'"
           (hovered)="hoveredItem.set('findInNote')" (selected)="findInNote()">
           <svg menuItemIcon lucideSearch [size]="14"></svg>
         </app-menu-item>
-        <app-menu-item label="Find in Vault" [active]="hoveredItem() === 'findInVault'"
+        <app-menu-item label="Find in Vault" [disabled]="true" [active]="hoveredItem() === 'findInVault'"
           (hovered)="hoveredItem.set('findInVault')" (selected)="findInVault()">
           <svg menuItemIcon lucideFileSearch [size]="14"></svg>
         </app-menu-item>
@@ -203,16 +203,16 @@
           (hovered)="hoveredItem.set('reload')" (selected)="reload()">
           <svg menuItemIcon lucideRefreshCw [size]="14"></svg>
         </app-menu-item>
-        <app-menu-item label="Zoom In" [active]="hoveredItem() === 'zoomIn'"
-          (hovered)="hoveredItem.set('zoomIn')" (selected)="zoomIn()">
+        <app-menu-item label="Zoom In" shortcut="Ctrl+=" [active]="hoveredItem() === 'zoomIn'"
+          (hovered)="hoveredItem.set('zoomIn')" (selected)="closeMenu(); zoom.zoomIn()">
           <svg menuItemIcon lucideZoomIn [size]="14"></svg>
         </app-menu-item>
-        <app-menu-item label="Zoom Out" [active]="hoveredItem() === 'zoomOut'"
-          (hovered)="hoveredItem.set('zoomOut')" (selected)="zoomOut()">
+        <app-menu-item label="Zoom Out" shortcut="Ctrl+-" [active]="hoveredItem() === 'zoomOut'"
+          (hovered)="hoveredItem.set('zoomOut')" (selected)="closeMenu(); zoom.zoomOut()">
           <svg menuItemIcon lucideZoomOut [size]="14"></svg>
         </app-menu-item>
-        <app-menu-item label="Reset Zoom" [active]="hoveredItem() === 'resetZoom'"
-          (hovered)="hoveredItem.set('resetZoom')" (selected)="resetZoom()">
+        <app-menu-item label="Reset Zoom" shortcut="Ctrl+0" [active]="hoveredItem() === 'resetZoom'"
+          (hovered)="hoveredItem.set('resetZoom')" (selected)="closeMenu(); zoom.reset()">
           <svg menuItemIcon lucideRotateCcw [size]="14"></svg>
         </app-menu-item>
       </app-menu-surface>

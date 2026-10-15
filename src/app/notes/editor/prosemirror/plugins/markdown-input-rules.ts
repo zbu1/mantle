@@ -139,7 +139,8 @@ const boldStarRule = markInputRule(
 );
 const boldUnderscoreRule = markInputRule(
   /(?:^|\s)(__(?!\s+__)((?:[^_]+))__(?!\s+__))$/,
-  schema.marks['strong']
+  schema.marks['strong'],
+  () => ({ markup: '__' })
 );
 const strikeRule = markInputRule(
   /(?:^|\s)(~~(?!\s+~~)([^~]+)~~(?!\s+~~))$/,
@@ -152,7 +153,8 @@ const italicStarRule = markInputRule(
 );
 const italicUnderscoreRule = markInputRule(
   /(?:^|\s)(_(?!\s+_)((?:[^_]+))_(?!\s+_))$/,
-  schema.marks['em']
+  schema.marks['em'],
+  () => ({ markup: '_' })
 );
 
 export function buildMarkdownInputRules(): Plugin {

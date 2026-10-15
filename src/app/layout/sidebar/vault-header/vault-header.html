@@ -1,144 +1,119 @@
-<div class="flex items-center gap-1">
-  <label
-    class="flex h-7 min-w-0 flex-1 cursor-text items-center gap-1.5 rounded-md border border-border bg-background/60 px-2 text-xs transition-colors focus-within:border-ring/60 focus-within:bg-background"
-    [class.opacity-50]="!hasVault()">
-    <svg lucideSearch [size]="12" class="shrink-0 text-muted-foreground"></svg>
-    <input #field type="text" placeholder="Filter notes" autocomplete="off" spellcheck="false" aria-label="Filter notes"
-      [disabled]="!hasVault()" [value]="filter()" (input)="onFilterInput(field.value)"
-      (keydown.escape)="onFilterEscape($event, field)"
-      class="min-w-0 flex-1 border-0 bg-transparent p-0 text-foreground outline-none! placeholder:text-muted-foreground/70 focus-visible:shadow-none" />
-    @if (filter()) {
-    <button type="button" aria-label="Clear filter" (click)="clearFilter(field)"
-      class="-mr-1 inline-flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-surface hover:text-foreground">
-      <svg lucideX [size]="11"></svg>
-    </button>
-    }
-  </label>
-
-  <button type="button" title="New Note" aria-label="New Note" [disabled]="!hasVault()" (click)="onNewNote()"
+<div #toolbar class="relative mb-2 flex items-center gap-0.5">
+  <button type="button" title="New Note (Ctrl+N)" aria-label="New Note" [disabled]="!hasVault()" (click)="onNewNote()"
     class="inline-flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary transition-colors hover:bg-primary hover:text-primary-foreground disabled:pointer-events-none disabled:opacity-40">
     <svg lucidePlus [size]="15"></svg>
   </button>
+  <button type="button" title="New Folder" aria-label="New Folder" [disabled]="!hasVault()" (click)="onNewFolder()"
+    class="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-background/60 hover:text-foreground disabled:pointer-events-none disabled:opacity-40">
+    <svg lucideFolderPlus [size]="15"></svg>
+  </button>
 
-  <div class="relative">
-    <button #trigger type="button" title="More" aria-label="More" (click)="toggleMenu()" [attr.aria-expanded]="menuOpen()"
-      class="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-background/60 hover:text-foreground"
-      [class.bg-background/60]="menuOpen()" [class.text-foreground]="menuOpen()">
-      <svg lucideEllipsis [size]="16"></svg>
-    </button>
+  <button type="button" title="Sort" aria-label="Sort" [disabled]="!hasVault()" (click)="toggleMenu('sort')"
+    [attr.aria-expanded]="openMenu() === 'sort'"
+    class="inline-flex h-7 shrink-0 items-center gap-0.5 rounded-md pl-1.5 pr-1 text-muted-foreground hover:bg-background/60 hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+    [class.bg-background/60]="openMenu() === 'sort'" [class.text-foreground]="openMenu() === 'sort'">
+    <svg lucideArrowDownAZ [size]="15"></svg>
+    <svg lucideChevronDown [size]="10"></svg>
+  </button>
 
-    @if (menuOpen()) {
-    <app-menu-surface #panel [scrollable]="true" class="absolute right-0 top-full z-50 mt-1 w-60 max-h-[70vh]!">
-      <app-menu-item label="New Encrypted Note" [disabled]="!hasVault()" [active]="hoveredItem() === 'newEncrypted'"
-        (hovered)="hoveredItem.set('newEncrypted')" (selected)="onNewEncryptedNote()">
-        <svg menuItemIcon lucideLockKeyhole [size]="14"></svg>
-      </app-menu-item>
-      <app-menu-item label="New Folder" [disabled]="!hasVault()" [active]="hoveredItem() === 'newFolder'"
-        (hovered)="hoveredItem.set('newFolder')" (selected)="onNewFolder()">
-        <svg menuItemIcon lucideFolderPlus [size]="14"></svg>
-      </app-menu-item>
-
-      <app-menu-separator />
-      <div class="px-3 pb-0.5 pt-1 text-[11px] font-medium text-muted-foreground">Sort by</div>
-      <app-menu-item label="Name (A → Z)" [disabled]="!hasVault()" [active]="hoveredItem() === 'name-asc'"
-        (hovered)="hoveredItem.set('name-asc')" (selected)="setSortMode('name-asc')">
-        <svg menuItemIcon lucideArrowDownAZ [size]="14"></svg>
-        @if (sortMode() === 'name-asc') {
-        <svg menuItemTrailing lucideCheck [size]="14"></svg>
-        }
-      </app-menu-item>
-      <app-menu-item label="Name (Z → A)" [disabled]="!hasVault()" [active]="hoveredItem() === 'name-desc'"
-        (hovered)="hoveredItem.set('name-desc')" (selected)="setSortMode('name-desc')">
-        <svg menuItemIcon lucideArrowUpAZ [size]="14"></svg>
-        @if (sortMode() === 'name-desc') {
-        <svg menuItemTrailing lucideCheck [size]="14"></svg>
-        }
-      </app-menu-item>
-      <app-menu-item label="Date Modified" [disabled]="!hasVault()" [active]="hoveredItem() === 'modified'"
-        (hovered)="hoveredItem.set('modified')" (selected)="setSortMode('modified')">
-        <svg menuItemIcon lucideClock [size]="14"></svg>
-        @if (sortMode() === 'modified') {
-        <svg menuItemTrailing lucideCheck [size]="14"></svg>
-        }
-      </app-menu-item>
-      <app-menu-item label="Date Created" [disabled]="!hasVault()" [active]="hoveredItem() === 'created'"
-        (hovered)="hoveredItem.set('created')" (selected)="setSortMode('created')">
-        <svg menuItemIcon lucideCalendarPlus [size]="14"></svg>
-        @if (sortMode() === 'created') {
-        <svg menuItemTrailing lucideCheck [size]="14"></svg>
-        }
-      </app-menu-item>
-      <app-menu-item label="Manual Order" [disabled]="!hasVault()" [active]="hoveredItem() === 'manual'"
-        (hovered)="hoveredItem.set('manual')" (selected)="setSortMode('manual')">
-        <svg menuItemIcon lucideListOrdered [size]="14"></svg>
-        @if (sortMode() === 'manual') {
-        <svg menuItemTrailing lucideCheck [size]="14"></svg>
-        }
-      </app-menu-item>
-
-      <app-menu-separator />
-      <div class="px-3 pb-0.5 pt-1 text-[11px] font-medium text-muted-foreground">Sections</div>
-      <app-menu-item label="Favorites" [active]="hoveredItem() === 'sectionFavorites'"
-        (hovered)="hoveredItem.set('sectionFavorites')" (selected)="toggleSection('favorites')">
-        <svg menuItemIcon lucideStar [size]="14"></svg>
-        @if (sidebarState.isSectionExpanded('favorites')) {
-        <svg menuItemTrailing lucideCheck [size]="14"></svg>
-        }
-      </app-menu-item>
-      <app-menu-item label="Recent Files" [active]="hoveredItem() === 'sectionRecent'"
-        (hovered)="hoveredItem.set('sectionRecent')" (selected)="toggleSection('recent')">
-        <svg menuItemIcon lucideClock [size]="14"></svg>
-        @if (sidebarState.isSectionExpanded('recent')) {
-        <svg menuItemTrailing lucideCheck [size]="14"></svg>
-        }
-      </app-menu-item>
-      <app-menu-item label="Tags" [active]="hoveredItem() === 'sectionTags'"
-        (hovered)="hoveredItem.set('sectionTags')" (selected)="toggleSection('tags')">
-        <svg menuItemIcon lucideTags [size]="14"></svg>
-        @if (sidebarState.isSectionExpanded('tags')) {
-        <svg menuItemTrailing lucideCheck [size]="14"></svg>
-        }
-      </app-menu-item>
-      <app-menu-item label="Credential Profiles" [active]="hoveredItem() === 'sectionCredentials'"
-        (hovered)="hoveredItem.set('sectionCredentials')" (selected)="toggleSection('credentials')">
-        <svg menuItemIcon lucideKeyRound [size]="14"></svg>
-        @if (sidebarState.isSectionExpanded('credentials')) {
-        <svg menuItemTrailing lucideCheck [size]="14"></svg>
-        }
-      </app-menu-item>
-      <app-menu-item label="Show File Extensions" [active]="hoveredItem() === 'showExtensions'"
-        (hovered)="hoveredItem.set('showExtensions')" (selected)="toggleExtensions()">
-        <svg menuItemIcon lucideFileText [size]="14"></svg>
-        @if (showExtensions()) {
-        <svg menuItemTrailing lucideCheck [size]="14"></svg>
-        }
-      </app-menu-item>
-
-      <app-menu-separator />
-      <app-menu-item label="Expand All Folders" [disabled]="!hasVault()" [active]="hoveredItem() === 'expandAll'"
-        (hovered)="hoveredItem.set('expandAll')" (selected)="expandAllFolders()">
-        <svg menuItemIcon lucideUnfoldVertical [size]="14"></svg>
-      </app-menu-item>
-      <app-menu-item label="Collapse All Folders" [disabled]="!hasVault()" [active]="hoveredItem() === 'collapseAll'"
-        (hovered)="hoveredItem.set('collapseAll')" (selected)="collapseAllFolders()">
-        <svg menuItemIcon lucideFoldVertical [size]="14"></svg>
-      </app-menu-item>
-      <app-menu-item label="Reveal Vault in File Explorer" [disabled]="!hasVault()"
-        [active]="hoveredItem() === 'revealVault'" (hovered)="hoveredItem.set('revealVault')"
-        (selected)="revealVault()">
-        <svg menuItemIcon lucideFolderOpen [size]="14"></svg>
-      </app-menu-item>
-      <app-menu-item label="Lock All Profiles" [disabled]="credentialsState.profiles().length === 0"
-        [active]="hoveredItem() === 'lockAll'" (hovered)="hoveredItem.set('lockAll')" (selected)="lockAllProfiles()">
-        <svg menuItemIcon lucideLockKeyhole [size]="14"></svg>
-      </app-menu-item>
-
-      <app-menu-separator />
-      <app-menu-item label="Vault Settings…" [active]="hoveredItem() === 'vaultSettings'"
-        (hovered)="hoveredItem.set('vaultSettings')" (selected)="openVaultSettings()">
-        <svg menuItemIcon lucideSettings [size]="14"></svg>
-      </app-menu-item>
-    </app-menu-surface>
+  <button type="button" [title]="anyFolderExpanded() ? 'Collapse All Folders' : 'Expand All Folders'"
+    [attr.aria-label]="anyFolderExpanded() ? 'Collapse All Folders' : 'Expand All Folders'" [disabled]="!hasVault()"
+    (click)="toggleAllFolders()"
+    class="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-background/60 hover:text-foreground disabled:pointer-events-none disabled:opacity-40">
+    @if (anyFolderExpanded()) {
+    <svg lucideFoldVertical [size]="15"></svg>
+    } @else {
+    <svg lucideUnfoldVertical [size]="15"></svg>
     }
-  </div>
+  </button>
+
+  <button type="button" title="Display Options" aria-label="Display Options" (click)="toggleMenu('display')"
+    [attr.aria-expanded]="openMenu() === 'display'"
+    class="inline-flex h-7 shrink-0 items-center gap-0.5 rounded-md pl-1.5 pr-1 text-muted-foreground hover:bg-background/60 hover:text-foreground"
+    [class.bg-background/60]="openMenu() === 'display'" [class.text-foreground]="openMenu() === 'display'">
+    <svg lucideEye [size]="15"></svg>
+    <svg lucideChevronDown [size]="10"></svg>
+  </button>
+
+  <span class="flex-1"></span>
+
+  <button type="button" title="More" aria-label="More" (click)="toggleMenu('more')" [attr.aria-expanded]="openMenu() === 'more'"
+    class="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-background/60 hover:text-foreground"
+    [class.bg-background/60]="openMenu() === 'more'" [class.text-foreground]="openMenu() === 'more'">
+    <svg lucideEllipsis [size]="16"></svg>
+  </button>
+
+  @switch (openMenu()) {
+  @case ('sort') {
+  <app-menu-surface #panel class="absolute left-14 top-full z-50 mt-1 w-52">
+    <div class="px-3 pb-0.5 pt-1 text-[11px] font-medium text-muted-foreground">Sort by</div>
+    @for (mode of sortModes; track mode.id) {
+    <app-menu-item [label]="mode.label" [active]="hoveredItem() === mode.id" (hovered)="hoveredItem.set(mode.id)"
+      (selected)="setSortMode(mode.id)">
+      @if (vaultMeta.sortMode() === mode.id) {
+      <svg menuItemIcon lucideCheck [size]="14"></svg>
+      }
+    </app-menu-item>
+    }
+  </app-menu-surface>
+  }
+  @case ('display') {
+  <app-menu-surface #panel class="absolute left-28 top-full z-50 mt-1 w-56">
+    <div class="px-3 pb-0.5 pt-1 text-[11px] font-medium text-muted-foreground">Show in sidebar</div>
+    @for (section of sections; track section.id) {
+    <app-menu-item [label]="section.label" [active]="hoveredItem() === section.id" (hovered)="hoveredItem.set(section.id)"
+      (selected)="toggleSectionVisibility(section.id)">
+      @if (sidebarState.isSectionVisible(section.id)) {
+      <svg menuItemIcon lucideCheck [size]="14"></svg>
+      }
+    </app-menu-item>
+    }
+    <app-menu-separator />
+    <app-menu-item label="Show File Extensions" [active]="hoveredItem() === 'extensions'"
+      (hovered)="hoveredItem.set('extensions')" (selected)="toggleExtensions()">
+      @if (sidebarState.showExtensions()) {
+      <svg menuItemIcon lucideCheck [size]="14"></svg>
+      }
+    </app-menu-item>
+  </app-menu-surface>
+  }
+  @case ('more') {
+  <app-menu-surface #panel class="absolute right-0 top-full z-50 mt-1 w-60">
+    <app-menu-item label="New Encrypted Note" [disabled]="!hasVault()" [active]="hoveredItem() === 'newEncrypted'"
+      (hovered)="hoveredItem.set('newEncrypted')" (selected)="onNewEncryptedNote()">
+      <svg menuItemIcon lucideLockKeyhole [size]="14"></svg>
+    </app-menu-item>
+    <app-menu-separator />
+    <app-menu-item label="Reveal Vault in File Explorer" [disabled]="!hasVault()"
+      [active]="hoveredItem() === 'revealVault'" (hovered)="hoveredItem.set('revealVault')" (selected)="revealVault()">
+      <svg menuItemIcon lucideFolderOpen [size]="14"></svg>
+    </app-menu-item>
+    <app-menu-item label="Lock All Profiles" [disabled]="credentialsState.profiles().length === 0"
+      [active]="hoveredItem() === 'lockAll'" (hovered)="hoveredItem.set('lockAll')" (selected)="lockAllProfiles()">
+      <svg menuItemIcon lucideLockKeyhole [size]="14"></svg>
+    </app-menu-item>
+    <app-menu-separator />
+    <app-menu-item label="Vault Settings…" [active]="hoveredItem() === 'vaultSettings'"
+      (hovered)="hoveredItem.set('vaultSettings')" (selected)="openVaultSettings()">
+      <svg menuItemIcon lucideSettings [size]="14"></svg>
+    </app-menu-item>
+  </app-menu-surface>
+  }
+  }
 </div>
+
+<label
+  class="flex h-7 w-full min-w-0 cursor-text items-center gap-1.5 rounded-md border border-border bg-background/60 px-2 text-xs transition-colors focus-within:border-ring/60 focus-within:bg-background"
+  [class.opacity-50]="!hasVault()">
+  <svg lucideSearch [size]="12" class="shrink-0 text-muted-foreground"></svg>
+  <input #field type="text" placeholder="Filter notes" autocomplete="off" spellcheck="false" aria-label="Filter notes"
+    [disabled]="!hasVault()" [value]="filter()" (input)="onFilterInput(field.value)"
+    (keydown.escape)="onFilterEscape($event, field)"
+    class="min-w-0 flex-1 border-0 bg-transparent p-0 text-foreground outline-none! placeholder:text-muted-foreground/70 focus-visible:shadow-none" />
+  @if (filter()) {
+  <button type="button" aria-label="Clear filter" (click)="clearFilter(field)"
+    class="-mr-1 inline-flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-surface hover:text-foreground">
+    <svg lucideX [size]="11"></svg>
+  </button>
+  }
+</label>

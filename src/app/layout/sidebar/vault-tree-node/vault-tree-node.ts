@@ -14,6 +14,7 @@ import {
 } from '../../../notes/vault-tree.model';
 import { CredentialsState } from '../../../notes/credentials-state';
 import { TabsState } from '../../../notes/tabs-state';
+import { VaultMetaState } from '../../../notes/vault-meta-state';
 import { VaultDragState } from '../../../notes/vault-drag-state';
 import { VaultRenameState } from '../../../notes/vault-rename-state';
 import { VaultSelectionState } from '../../../notes/vault-selection-state';
@@ -88,14 +89,16 @@ export class VaultTreeNode {
   protected readonly credentialsState = inject(CredentialsState);
   private readonly tabsState = inject(TabsState);
   private readonly sidebarState = inject(SidebarState);
+  private readonly vaultMeta = inject(VaultMetaState);
 
   /** Left padding of a folder row at depth 0, and per level. Tighter than the secondary sections: the tree is the body. */
   protected readonly BASE_INDENT = 8;
   protected readonly INDENT_STEP = 14;
 
-  protected readonly expanded = signal(true);
   /** Folders are held open while filtering, so every match is in view. */
-  protected readonly isExpanded = computed(() => this.expanded() || this.filter().trim() !== '');
+  protected readonly isExpanded = computed(
+    () => !this.vaultMeta.collapsedFolders().has(this.node().relPath) || this.filter().trim() !== '',
+  );
 
   /** The note open in the active tab, which gets the ember rail. */
   protected readonly activeNoteId = computed(() => {
@@ -122,11 +125,11 @@ export class VaultTreeNode {
       const folder = this.asFolder();
       if (!request || !folder) return;
       if (request.relPath.startsWith(folder.relPath + '/')) {
-        untracked(() => this.expanded.set(true));
+        untracked(() => this.vaultMeta.setFolderCollapsed(folder.relPath, false));
       } else if (request.relPath === folder.relPath) {
         untracked(() => {
           this.sidebarState.folderRevealRequest.set(null);
-          this.expanded.set(true);
+          this.vaultMeta.setFolderCollapsed(folder.relPath, false);
           this.flashing.set(true);
           clearTimeout(flashTimer);
           flashTimer = setTimeout(() => this.flashing.set(false), REVEAL_FLASH_MS);
@@ -176,7 +179,7 @@ export class VaultTreeNode {
   }
 
   protected toggleExpanded(): void {
-    this.expanded.update((v) => !v);
+    this.vaultMeta.setFolderCollapsed(this.node().relPath, this.isExpanded());
   }
 
   /** A plain click still opens/closes the folder; ctrl/cmd- and shift-clicks select it. */
@@ -207,14 +210,14 @@ export class VaultTreeNode {
     return this.credentialsState.displayNameOf(note.profile);
   }
 
-  /** Sublabel for the note's hover tooltip: encryption state, and profile name if encrypted. */
-  /** The `.md` / `.markdown` shown after a plain Markdown file's name, or null for a Mantle note. */
+  /** The `.md` / `.markdown` shown after a plain Markdown file's name, if extensions are on; never for a Mantle note. */
   protected markdownExt(note: VaultNoteNode): string | null {
-    return markdownExtensionOf(note.relPath);
+    return this.sidebarState.showExtensions() ? markdownExtensionOf(note.relPath) : null;
   }
 
+  /** Sublabel for the note's hover tooltip: encryption state, and profile name if encrypted. */
   protected encryptionStatus(note: VaultNoteNode): string {
-    if (!note.encrypted) return this.markdownExt(note) ? 'Plain Markdown file' : 'Not encrypted';
+    if (!note.encrypted) return markdownExtensionOf(note.relPath) ? 'Plain Markdown file' : 'Not encrypted';
     return `${this.isLocked(note) ? 'Locked' : 'Unlocked'} · ${this.profileName(note)}`;
   }
 

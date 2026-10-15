@@ -11,7 +11,7 @@
     data-vault-tree [class.bg-primary/10]="dragState.hoveredDir() === ''"
     (dragenter)="onVaultBackgroundDragOver($event)" (dragover)="onVaultBackgroundDragOver($event)"
     (dragleave)="onVaultBackgroundDragLeave($event)" (drop)="onVaultBackgroundDrop($event)"
-    (contextmenu)="onVaultContextMenu($event)" (keydown)="onTreeKeydown($event)">
+    (contextmenu)="onVaultContextMenu($event)" (keydown)="onTreeKeydown($event)" (focusin)="onTreeFocusIn($event)">
     @if (visibleTree(); as tree) {
     @for (child of tree.children; track child.relPath) {
     <app-vault-tree-node [node]="child" [unlockedProfiles]="credentialsState.unlockedIds()" [filter]="filterQuery()"

@@ -34,6 +34,8 @@ export interface ContextMenuAction {
   checked?: boolean;
   danger?: boolean;
   disabled?: boolean;
+  /** Key combination shown at the row's end, e.g. `Ctrl+X`. */
+  shortcut?: string;
   action: () => void;
 }
 

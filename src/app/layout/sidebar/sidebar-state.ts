@@ -21,6 +21,8 @@ interface PersistedSidebarState {
   collapsed: boolean;
   sections: Record<SectionId, boolean>;
   hidden: SectionId[];
+  /** Show the `.md` / `.markdown` of plain Markdown notes in the tree. */
+  showExtensions: boolean;
 }
 
 const STORAGE_KEY = 'mantle.sidebar.v1';
@@ -40,6 +42,7 @@ const DEFAULT_STATE: PersistedSidebarState = {
   // section here back-fills existing users without a storage version bump.
   sections: { favorites: true, recent: true, tags: true, credentials: true },
   hidden: [],
+  showExtensions: false,
 };
 
 function clamp(value: number, min: number, max: number): number {
@@ -62,6 +65,7 @@ function readFromStorage(): PersistedSidebarState {
       hidden: Array.isArray(parsed.hidden)
         ? SIDEBAR_SECTIONS.map((s) => s.id).filter((id) => SECTION_IDS.has(id) && parsed.hidden.includes(id))
         : [],
+      showExtensions: parsed.showExtensions === true,
     };
   } catch {
     return DEFAULT_STATE;
@@ -77,6 +81,8 @@ export class SidebarState {
   readonly sections = signal<Record<SectionId, boolean>>(this.initial.sections);
   /** Sections the user has hidden from the sidebar entirely (as opposed to collapsed). */
   readonly hiddenSections = signal<readonly SectionId[]>(this.initial.hidden);
+  /** Show the `.md` / `.markdown` of plain Markdown notes in the tree. Mantle notes never show one. */
+  readonly showExtensions = signal(this.initial.showExtensions);
 
   // True while the sidebar is being drag-resized — used to suppress layout
   // transitions elsewhere (header toggle button, tab bar) so they don't lag
@@ -95,6 +101,7 @@ export class SidebarState {
         collapsed: this.collapsed(),
         sections: this.sections(),
         hidden: [...this.hiddenSections()],
+        showExtensions: this.showExtensions(),
       };
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
@@ -131,6 +138,19 @@ export class SidebarState {
     setTimeout(() => {
       if (this.folderRevealRequest() === request) this.folderRevealRequest.set(null);
     }, 1000);
+  }
+
+  /** Opens the sidebar on a note or file in the vault tree: its folders open and it scrolls into view. */
+  revealItem(relPath: string): void {
+    const dir = relPath.includes('/') ? relPath.slice(0, relPath.lastIndexOf('/')) : '';
+    if (dir) this.revealFolder(dir);
+    else this.collapsed.set(false);
+    // After the folders have rendered open.
+    setTimeout(() =>
+      document
+        .querySelector(`[data-vault-tree] [data-tree-path="${CSS.escape(relPath)}"]`)
+        ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }),
+    );
   }
 
   toggleSection(id: SectionId): void {

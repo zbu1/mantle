@@ -4,7 +4,7 @@ import {
   MarkdownSerializer,
   defaultMarkdownSerializer,
 } from 'prosemirror-markdown';
-import { Node as PMNode, Fragment } from 'prosemirror-model';
+import { Node as PMNode, Mark as PMMark, Fragment } from 'prosemirror-model';
 import { schema } from './schema';
 
 const md = markdownIt('commonmark', { html: false });
@@ -47,7 +47,7 @@ export const markdownParser = new MarkdownParser(schema, md, {
     getAttrs: (tok) => ({ params: tok.info }),
     noCloseToken: true,
   },
-  hr: { node: 'horizontal_rule' },
+  hr: { node: 'horizontal_rule', getAttrs: (tok) => ({ markup: tok.markup }) },
   hardbreak: { node: 'hard_break' },
   // Obsidian shows a single newline as a line break; CommonMark would join the lines.
   softbreak: { node: 'hard_break' },
@@ -64,8 +64,8 @@ export const markdownParser = new MarkdownParser(schema, md, {
     getAttrs: (tok) => ({ src: tok.attrGet('src'), embed: true, size: tok.meta.size }),
   },
 
-  em: { mark: 'em' },
-  strong: { mark: 'strong' },
+  em: { mark: 'em', getAttrs: (tok) => ({ markup: tok.markup }) },
+  strong: { mark: 'strong', getAttrs: (tok) => ({ markup: tok.markup }) },
   s: { mark: 'strike' },
   link: {
     mark: 'link',
@@ -77,9 +77,63 @@ export const markdownParser = new MarkdownParser(schema, md, {
   code_inline: { mark: 'code', noCloseToken: true },
 });
 
+/** The textblock without its revealed `## ` / `> ` prefix, which is never saved. */
+function withoutPrefix(node: PMNode): PMNode {
+  const first = node.firstChild;
+  return first && schema.marks['md_prefix'].isInSet(first.marks) ? node.cut(first.nodeSize) : node;
+}
+
+/**
+ * A code block's code and fence language. While its fences are revealed they're
+ * part of its text, `offset` past the opening one; fences that no longer read
+ * as fences are just code.
+ */
+export function codeBody(node: PMNode): { text: string; params: string; offset: number } {
+  const text = node.textContent;
+  if (!node.attrs['revealed']) return { text, params: node.attrs['params'], offset: 0 };
+  const lines = text.split('\n');
+  const open = /^(`{3,})([^`]*)$/.exec(lines[0]);
+  const close = lines.at(-1)!.trimEnd();
+  if (lines.length < 2 || !open || !/^`+$/.test(close) || close.length < open[1].length) {
+    return { text, params: '', offset: 0 };
+  }
+  return { text: lines.slice(1, -1).join('\n'), params: open[2].trim(), offset: lines[0].length + 1 };
+}
+
+const isImageSource = (node: PMNode | null | undefined): boolean =>
+  !!node && !!schema.marks['md_raw'].isInSet(node.marks) && node.marks.some((mark) => mark.attrs['image']);
+
+const delimiter = {
+  open: (_state: unknown, mark: PMMark) => mark.attrs['markup'] as string,
+  close: (_state: unknown, mark: PMMark) => mark.attrs['markup'] as string,
+  mixable: true,
+  expelEnclosingWhitespace: true,
+};
+
 export const markdownSerializer = new MarkdownSerializer(
   {
     ...defaultMarkdownSerializer.nodes,
+    paragraph(state, node) {
+      let inline = withoutPrefix(node);
+      const first = inline.firstChild;
+      // A fence typed into a paragraph is text until the editor makes it a code block;
+      // saved bare, it would swallow the rest of the note.
+      if (first?.isText && schema.marks['md_raw'].isInSet(first.marks) && /^(```|~~~)/.test(first.text!)) {
+        inline = inline.copy(Fragment.from(schema.text('\\' + first.text, first.marks)).append(inline.content.cut(first.nodeSize)));
+      }
+      state.renderInline(inline);
+      state.closeBlock(node);
+    },
+    heading(state, node) {
+      state.write(state.repeat('#', node.attrs['level']) + ' ');
+      state.renderInline(withoutPrefix(node), false);
+      state.closeBlock(node);
+    },
+    code_block(state, node, parent, index) {
+      const { text, params } = codeBody(node);
+      const folded = node.type.create({ params }, text ? schema.text(text) : null);
+      defaultMarkdownSerializer.nodes['code_block'](state, folded, parent, index);
+    },
     task_list(state, node) {
       state.renderList(node, '  ', () => '- ');
     },
@@ -88,6 +142,8 @@ export const markdownSerializer = new MarkdownSerializer(
       state.renderContent(node);
     },
     image(state, node, parent, index) {
+      // Its revealed source, just before it, is saved instead.
+      if (index > 0 && isImageSource(parent.child(index - 1))) return;
       const { src, size } = node.attrs;
       if (node.attrs['embed']) state.write(`![[${src}${size ? `|${size}` : ''}]]`);
       else defaultMarkdownSerializer.nodes['image'](state, node, parent, index);
@@ -105,6 +161,10 @@ export const markdownSerializer = new MarkdownSerializer(
   },
   {
     ...defaultMarkdownSerializer.marks,
+    em: delimiter,
+    strong: delimiter,
+    md_raw: { open: '', close: '', escape: false },
+    md_prefix: { open: '', close: '', escape: false },
     strike: { open: '~~', close: '~~', mixable: true, expelEnclosingWhitespace: true },
   }
 );

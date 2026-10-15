@@ -10,8 +10,9 @@ import { AttachmentsState } from '../../notes/attachments-state';
 import { CredentialsState } from '../../notes/credentials-state';
 import { NewEncryptedNoteState } from '../../notes/new-encrypted-note/new-encrypted-note-state';
 import { NoteEncryptionActions } from '../../notes/note-encryption-actions';
-import { normalizeTag, TAG_RULES, TagGroup } from '../../notes/tags';
-import { TagEditReport, TagsState } from '../../notes/tags-state';
+import { TagGroup } from '../../notes/tags';
+import { TagActions } from '../../notes/tag-actions';
+import { TagsState } from '../../notes/tags-state';
 import { COLLAPSE_THRESHOLD, SIDEBAR_SECTIONS, SidebarState } from './sidebar-state';
 import { NotesState } from '../../notes/notes-state';
 import { TabsState } from '../../notes/tabs-state';
@@ -26,6 +27,7 @@ import { VaultSelectionState } from '../../notes/vault-selection-state';
 import {
   filterVaultTree,
   findFolder,
+  sortVaultTree,
   flattenAllNotes,
   flattenTreeNodes,
   topmostPaths,
@@ -44,6 +46,7 @@ import {
 import { ContextMenuState } from '../../shared/context-menu/context-menu-state';
 import { ContextMenuItem } from '../../shared/context-menu/context-menu.model';
 import { DialogState } from '../../shared/dialog/dialog-state';
+import { EditContextState, TreeEditCommand } from '../../shared/edit-context-state';
 
 interface RecentRow {
   note: VaultNoteNode;
@@ -81,13 +84,15 @@ export class Sidebar {
   private readonly favorites = inject(FavoritesState);
   protected readonly tagsState = inject(TagsState);
   private readonly attachments = inject(AttachmentsState);
+  private readonly editContext = inject(EditContextState);
+  private readonly tagActions = inject(TagActions);
 
   /** Text in the header's filter field; the tree shows only notes whose name contains it. Session-only. */
   protected readonly filterQuery = signal('');
 
   protected readonly visibleTree = computed(() => {
     const tree = this.vaultState.tree();
-    return tree ? filterVaultTree(tree, this.filterQuery()) : null;
+    return tree ? sortVaultTree(filterVaultTree(tree, this.filterQuery()), this.vaultMeta.sortMode(), this.vaultMeta.order()) : null;
   });
 
   /** Every tree node by relPath, for telling what kind of item a selected path is. */
@@ -158,6 +163,11 @@ export class Sidebar {
       });
     });
 
+    this.editContext.registerTree({
+      can: (command) => this.canRunTreeCommand(command),
+      run: (command) => this.runTreeCommand(command),
+    });
+
     // Drop selected items that no longer exist once the tree changes (deleted/moved externally).
     effect(() => {
       const validPaths = this.nodesByPath();
@@ -221,55 +231,11 @@ export class Sidebar {
 
   protected onTagContextMenu(event: MouseEvent, group: TagGroup): void {
     const items: ContextMenuItem[] = [
-      { kind: 'item', label: 'Rename Tag…', icon: 'rename', action: () => void this.renameTag(group) },
+      { kind: 'item', label: 'Rename Tag…', icon: 'rename', action: () => void this.tagActions.rename(group.name) },
       { kind: 'separator' },
-      { kind: 'item', label: 'Remove Tag from All Notes', icon: 'delete', danger: true, action: () => void this.removeTag(group) },
+      { kind: 'item', label: 'Remove Tag from All Notes', icon: 'delete', danger: true, action: () => void this.tagActions.remove(group.name, group.notes.length) },
     ];
     this.contextMenuState.open(event, items);
-  }
-
-  private async renameTag(group: TagGroup): Promise<void> {
-    const to = await this.dialogState.prompt(
-      `Rename #${group.name} in every note that has it. Renaming it to a tag that already exists merges the two.`,
-      { title: 'Rename Tag', confirmLabel: 'Rename', initialValue: group.name, placeholder: 'tag' },
-    );
-    if (to === null || to.trim() === group.name) return;
-    const normalized = normalizeTag(to);
-    if (!normalized) {
-      await this.dialogState.alert(`"${to.trim()}" isn't a valid tag. ${TAG_RULES}.`, { title: 'Rename Failed', tone: 'error' });
-      return;
-    }
-    try {
-      await this.reportLockedSkips(await this.tagsState.renameTag(group.name, normalized), 'renamed');
-    } catch (err) {
-      await this.dialogState.alert(err instanceof Error ? err.message : String(err), { title: 'Rename Failed', tone: 'error' });
-    }
-  }
-
-  private async removeTag(group: TagGroup): Promise<void> {
-    const count = group.notes.length;
-    const confirmed = await this.dialogState.confirm(
-      `Remove #${group.name} from ${count === 1 ? '1 note' : `${count} notes`}? The notes themselves are kept.`,
-      { title: 'Remove Tag', tone: 'warning', confirmLabel: 'Remove Tag' },
-    );
-    if (!confirmed) return;
-    try {
-      await this.reportLockedSkips(await this.tagsState.removeTag(group.name), 'removed');
-    } catch (err) {
-      await this.dialogState.alert(err instanceof Error ? err.message : String(err), { title: 'Remove Failed', tone: 'error' });
-    }
-  }
-
-  /** Locked notes can't be read, so a vault-wide tag edit can't reach them; say so rather than imply it did. */
-  private async reportLockedSkips(report: TagEditReport, verb: string): Promise<void> {
-    const skipped = report.lockedSkipped;
-    if (skipped === 0) return;
-    await this.dialogState.alert(
-      `The tag was ${verb} in ${report.updated.length === 1 ? '1 note' : `${report.updated.length} notes`}, but ` +
-        `${skipped === 1 ? '1 encrypted note is' : `${skipped} encrypted notes are`} in a locked profile and ` +
-        `couldn't be checked. Unlock ${skipped === 1 ? 'its profile' : 'their profiles'} and do this again to include ${skipped === 1 ? 'it' : 'them'}.`,
-      { title: 'Some Notes Were Skipped', tone: 'warning' },
-    );
   }
 
   protected onOpenNote(note: VaultNoteNode): void {
@@ -340,12 +306,14 @@ export class Sidebar {
     const items: ContextMenuItem[] = [
       { kind: 'item', label: 'Open', icon: 'open', action: () => this.onOpenNote(note) },
       { kind: 'item', label: 'Open in New Tab', icon: 'open-new-tab', action: () => this.onOpenNoteInBackground(note) },
+      // Planned: split panes.
+      { kind: 'item', label: 'Open to the Right', disabled: true, action: () => undefined },
       { kind: 'separator' },
       { kind: 'item', label: 'Show in File Explorer', icon: 'reveal', action: () => void this.vaultState.revealInFileExplorer(note.relPath) },
       { kind: 'separator' },
       { kind: 'item', label: 'Duplicate', icon: 'duplicate', action: () => void this.vaultState.duplicateNote(note.relPath) },
-      { kind: 'item', label: 'Copy', icon: 'copy', action: () => this.clipboardState.copy(note) },
-      { kind: 'item', label: 'Cut', icon: 'cut', action: () => this.clipboardState.cut(note) },
+      { kind: 'item', label: 'Copy', icon: 'copy', shortcut: 'Ctrl+C', action: () => this.clipboardState.copy([note.relPath]) },
+      { kind: 'item', label: 'Cut', icon: 'cut', shortcut: 'Ctrl+X', action: () => this.clipboardState.cut([note.relPath]) },
       ...(note.relPath.includes('/')
         ? [
             {
@@ -361,6 +329,9 @@ export class Sidebar {
       { kind: 'separator' },
       { kind: 'item', label: 'Rename', icon: 'rename', action: () => this.renameState.renamingPath.set(note.relPath) },
       this.favoriteMenuItem(note.relPath),
+      // Planned: per-note icon and color.
+      { kind: 'item', label: 'Set Icon…', disabled: true, action: () => undefined },
+      { kind: 'item', label: 'Set Color…', disabled: true, action: () => undefined },
       { kind: 'separator' },
       { kind: 'item', label: 'Delete', icon: 'delete', danger: true, action: () => void this.deleteNote(note) },
     ];
@@ -377,7 +348,31 @@ export class Sidebar {
     const nodes = this.nodesByPath();
     const allNotes = selected.every((path) => nodes.get(path)?.type === 'note');
     const what = `${selected.length} ${allNotes ? 'Notes' : 'Items'}`;
-    const items: ContextMenuItem[] = [];
+    // Folders don't open in a tab; notes and files do.
+    const openable = selected.flatMap((path) => {
+      const node = nodes.get(path);
+      return node && node.type !== 'folder' ? [node] : [];
+    });
+    const items: ContextMenuItem[] = [
+      {
+        kind: 'item',
+        label: openable.length === selected.length ? `Open ${what}` : `Open ${openable.length} of ${what}`,
+        icon: 'open-new-tab',
+        disabled: openable.length === 0,
+        action: () => openable.forEach((node) => this.tabsState.openNoteInBackground({ id: node.relPath, title: node.name })),
+      },
+      { kind: 'separator' },
+      {
+        kind: 'item',
+        label: 'Copy',
+        icon: 'copy',
+        shortcut: 'Ctrl+C',
+        disabled: !this.canRunTreeCommand('copy'),
+        action: () => this.runTreeCommand('copy'),
+      },
+      { kind: 'item', label: 'Cut', icon: 'cut', shortcut: 'Ctrl+X', action: () => this.runTreeCommand('cut') },
+      { kind: 'separator' },
+    ];
     if (selected.some((path) => path.includes('/'))) {
       items.push({
         kind: 'item',
@@ -632,6 +627,7 @@ export class Sidebar {
     const affected = tree ? [...flattenVaultNotes(tree)].filter(([notePath]) => notePath.startsWith(oldPrefix)) : [];
     try {
       const moved = await this.vaultState.moveFolder(relPath, destRelDir);
+      this.vaultMeta.renameFolder(relPath, moved.relPath);
       const newPrefix = `${moved.relPath}/`;
       for (const [oldNotePath, name] of affected) {
         const newNotePath = newPrefix + oldNotePath.slice(oldPrefix.length);
@@ -664,6 +660,7 @@ export class Sidebar {
     const affected = tree ? [...flattenVaultNotes(tree)].filter(([notePath]) => notePath.startsWith(oldPrefix)) : [];
     try {
       const renamed = await this.vaultState.renameFolder(relPath, newName);
+      this.vaultMeta.renameFolder(relPath, renamed.relPath);
       const newPrefix = `${renamed.relPath}/`;
       for (const [oldNotePath, name] of affected) {
         const newNotePath = newPrefix + oldNotePath.slice(oldPrefix.length);
@@ -719,6 +716,7 @@ export class Sidebar {
       this.tabsState.closeTab(tab.id);
     }
     for (const relPath of flattenVaultNotes(folder).keys()) this.vaultMeta.forgetNote(relPath);
+    this.vaultMeta.forgetFolder(folder.relPath);
   }
 
   /** Deletes every selected item: notes, folders (with their contents) and files. */
@@ -758,32 +756,69 @@ export class Sidebar {
     await this.attachments.delete(attachments);
   }
 
-  /**
-   * Ctrl/Cmd+A in the tree: select every direct child of the folder holding
-   * the focused item (the vault root when nothing in the tree is focused).
-   */
+  /** Ctrl/Cmd+A, C, X and V in the tree: the Edit menu's commands, for its items. */
   protected onTreeKeydown(event: KeyboardEvent): void {
-    if (event.key.toLowerCase() !== 'a' || !(event.ctrlKey || event.metaKey) || event.shiftKey || event.altKey) return;
-    const target = event.target as HTMLElement;
-    if (target.closest('input, textarea')) return;
+    if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.altKey) return;
+    const command = ({ a: 'selectAll', c: 'copy', x: 'cut', v: 'paste' } as const)[event.key.toLowerCase()];
+    if (!command || (event.target as HTMLElement).closest('input, textarea')) return;
     event.preventDefault();
-    const focused = target.closest<HTMLElement>('[data-tree-path]')?.dataset['treePath'];
-    const tree = this.visibleTree();
-    const folder = tree && findFolder(tree, focused ? dirOf(focused) : '');
-    if (folder) this.selectionState.selectAll(folder.children.map((child) => child.relPath));
+    this.onTreeFocusIn(event);
+    if (this.canRunTreeCommand(command)) this.runTreeCommand(command);
+  }
+
+  /**
+   * The tree item that last had focus, which Paste and Select All work
+   * around. Kept past the tree losing focus, so the Edit menu can use it.
+   */
+  private lastFocusedTreePath: string | undefined;
+
+  protected onTreeFocusIn(event: Event): void {
+    this.lastFocusedTreePath = (event.target as HTMLElement).closest<HTMLElement>('[data-tree-path]')?.dataset['treePath'];
+  }
+
+  private canRunTreeCommand(command: TreeEditCommand): boolean {
+    const selected = [...this.selectionState.selected()];
+    switch (command) {
+      case 'copy':
+        return selected.length > 0 && selected.every((path) => this.nodesByPath().get(path)?.type === 'note');
+      case 'cut':
+        return selected.length > 0;
+      case 'paste':
+        return !!this.clipboardState.entry();
+      default:
+        return !!this.visibleTree();
+    }
+  }
+
+  private runTreeCommand(command: TreeEditCommand): void {
+    const selected = [...this.selectionState.selected()];
+    if (command === 'copy') this.clipboardState.copy(selected);
+    else if (command === 'cut') this.clipboardState.cut(selected);
+    else if (command === 'paste') {
+      // Into the focused folder, or beside the focused item; the vault root otherwise.
+      const focused = this.lastFocusedTreePath;
+      void this.pasteInto(focused === undefined ? '' : this.nodesByPath().get(focused)?.type === 'folder' ? focused : dirOf(focused));
+    } else {
+      // Every direct child of the folder holding the focused item.
+      const focused = this.lastFocusedTreePath;
+      const tree = this.visibleTree();
+      const folder = tree && findFolder(tree, focused ? dirOf(focused) : '');
+      if (folder) this.selectionState.selectAll(folder.children.map((child) => child.relPath));
+    }
   }
 
   private async pasteInto(destRelDir: string): Promise<void> {
     const clip = this.clipboardState.entry();
     if (!clip) return;
-    if (clip.mode === 'copy') {
-      await this.vaultState.copyNote(clip.relPath, destRelDir);
-    } else {
-      const moved = await this.vaultState.moveNote(clip.relPath, destRelDir);
-      this.notesState.renameNoteId(clip.relPath, moved.relPath);
-      this.tabsState.renameNoteId(clip.relPath, moved.relPath, moved.name);
-      this.vaultMeta.renameNote(clip.relPath, moved.relPath);
-      this.clipboardState.clear();
+    try {
+      if (clip.mode === 'copy') {
+        for (const relPath of clip.relPaths) await this.vaultState.copyNote(relPath, destRelDir);
+      } else {
+        this.clipboardState.clear();
+        await this.onNotesDropped({ relPaths: clip.relPaths, destRelDir });
+      }
+    } catch (err) {
+      await this.dialogState.alert(String(err), { title: 'Paste Failed', tone: 'error' });
     }
   }
 

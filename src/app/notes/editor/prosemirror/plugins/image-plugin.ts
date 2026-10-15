@@ -80,6 +80,11 @@ export function relinkImages(view: EditorView, sources: Readonly<Record<string, 
   view.state.doc.descendants((node, pos) => {
     const to = node.type === schema.nodes['image'] ? sources[node.attrs['src']] : undefined;
     if (to) tr.setNodeMarkup(pos, undefined, { ...node.attrs, src: to });
+    // A revealed source is what gets saved, so it follows too.
+    if (node.isText && node.marks.some((mark) => mark.type === schema.marks['md_raw'] && mark.attrs['image'])) {
+      const text = Object.entries(sources).reduce((acc, [from, next]) => acc.split(from).join(next), node.text!);
+      if (text !== node.text) tr.insertText(text, tr.mapping.map(pos), tr.mapping.map(pos + node.nodeSize));
+    }
   });
   if (tr.docChanged) view.dispatch(tr.setMeta('addToHistory', false));
 }

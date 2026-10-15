@@ -39,8 +39,9 @@ pub struct VaultMeta {
     #[serde(default)]
     pub favorites: Vec<String>,
     /// Manual child order per folder, keyed by the folder's `rel_path`
-    /// (`""` for the vault root). A folder with no entry here sorts
-    /// alphabetically — today's `scan_vault` behavior, unchanged. Once a
+    /// (`""` for the vault root), listing its children's file names. Used
+    /// when `sort_mode` is `manual`; a folder with no entry here, and any
+    /// child it doesn't list, sorts alphabetically. Once a
     /// folder gains an entry it should list all of its current children;
     /// the frontend is responsible for appending newly-discovered children
     /// and dropping ones that no longer exist when it reconciles against a
@@ -51,6 +52,12 @@ pub struct VaultMeta {
     /// matching the current default in `VaultTreeNode`.
     #[serde(default)]
     pub collapsed_folders: Vec<String>,
+    /// How the sidebar tree sorts: `name-asc`, `name-desc`, `modified`,
+    /// `created` or `manual`. A string, so a mode added later doesn't make
+    /// an older build fail to read the whole file; the frontend falls back
+    /// to `name-asc` for one it doesn't know.
+    #[serde(default = "default_sort_mode")]
+    pub sort_mode: String,
     /// Recently opened notes, most recent first. The frontend owns dedupe
     /// and the size cap; this is stored as-is.
     #[serde(default)]
@@ -70,6 +77,10 @@ fn current_version() -> u32 {
     CURRENT_VERSION
 }
 
+fn default_sort_mode() -> String {
+    "name-asc".to_string()
+}
+
 impl Default for VaultMeta {
     fn default() -> Self {
         Self {
@@ -77,6 +88,7 @@ impl Default for VaultMeta {
             favorites: Vec::new(),
             order: HashMap::new(),
             collapsed_folders: Vec::new(),
+            sort_mode: default_sort_mode(),
             recent_notes: Vec::new(),
         }
     }
@@ -156,6 +168,7 @@ mod tests {
             favorites: vec!["Work/todo.mntl".to_string()],
             order: HashMap::from([("Work".to_string(), vec!["todo.mntl".to_string(), "notes.mntl".to_string()])]),
             collapsed_folders: vec!["Archive".to_string()],
+            sort_mode: "modified".to_string(),
             recent_notes: vec![
                 RecentNote { rel_path: "Work/todo.mntl".to_string(), opened_at: 1_758_000_000_000 },
                 RecentNote { rel_path: "notes.mntl.enc".to_string(), opened_at: 1_757_900_000_000 },

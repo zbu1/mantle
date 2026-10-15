@@ -1,6 +1,7 @@
 import { Node as PMNode } from 'prosemirror-model';
 import { EditorView, NodeView, ViewMutationRecord } from 'prosemirror-view';
 import { fenceLanguage, languageName } from '../code-languages';
+import { codeBody } from '../markdown-converter';
 import { codeBlockContext } from '../plugins/code-block-plugin';
 
 const COPY_ICON =
@@ -40,7 +41,7 @@ export class CodeBlockView implements NodeView {
     copy.innerHTML = COPY_ICON;
     copy.className = `${BUTTON} opacity-0 group-hover/code:opacity-100 focus-visible:opacity-100`;
     copy.addEventListener('click', () => {
-      void navigator.clipboard.writeText(this.node.textContent);
+      void navigator.clipboard.writeText(codeBody(this.node).text);
       copy.innerHTML = CHECK_ICON;
       clearTimeout(this.copiedTimer);
       this.copiedTimer = setTimeout(() => (copy.innerHTML = COPY_ICON), 1200);

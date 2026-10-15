@@ -26,6 +26,9 @@ const BASE = 'flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs';
         <ng-content select="[menuItemIcon]" />
       </span>
       <span class="flex-1 truncate">{{ label() }}</span>
+      @if (shortcut()) {
+        <span class="shrink-0 text-[10px] tracking-wide text-muted-foreground">{{ shortcut() }}</span>
+      }
       <span class="flex shrink-0 items-center justify-center">
         <ng-content select="[menuItemTrailing]" />
       </span>
@@ -47,6 +50,8 @@ export class MenuItem {
    * `active`, so mouse and keyboard always agree on a single highlighted item.
    */
   readonly active = input(false);
+  /** Key combination shown at the row's end, e.g. `Ctrl+Z`. */
+  readonly shortcut = input<string | null>(null);
 
   readonly selected = output<void>();
   /** Emits when the pointer enters the row (i.e. the mouse moved onto it). */
