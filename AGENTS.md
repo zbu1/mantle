@@ -134,7 +134,15 @@ Things to know before touching this code:
   keep the flag (`reseal_note`); decrypting a note clears it.
   `FavoritesState` routes each favorite to the right place and moves any
   `.mntl.enc` path found in `state.json` into the note once it's unlocked.
-- Encrypted-note filenames are deliberately plaintext on disk for now.
+- **Hidden notes** (`src-tauri/src/hidden.rs`): a profile's "Hide locations" /
+  "Hide names" settings seal each note's real folder and name in its
+  `NoteFrontmatter` (`location`, `name`) and flag its header `hidden`. The
+  frontend knows an unlocked hidden note only by its *virtual* path; resolve
+  every incoming note path with `hidden::resolve_note`, never
+  `resolve_rel_path`, and write through `hidden::seal_at` whenever a write may
+  change whether or where a note is hidden. A rewrite in place keeps the flag
+  (`vault::sealed_hidden`). Hidden notes and virtual folders stay out of
+  `state.json` and persisted tabs.
 - The design gives at-rest confidentiality of the vault directory; it does not
   resist an attacker who can read a running Mantle process's memory.
 
@@ -153,7 +161,7 @@ Package manager is **pnpm** (see `pnpm-lock.yaml`), not npm.
 
 - Frontend tests use Jest with `jest-preset-angular` (config in `jest.config.ts`, setup in `setup-jest.ts`).
 - Test files live next to the code they test (e.g. `header.spec.ts` next to `header.ts`).
-- Rust: `#[cfg(test)]` unit tests in `src-tauri/src/vault.rs` (path traversal, note classification, compound `.mntl.enc` extension handling, scanning), `src-tauri/src/vault_meta.rs` (default-on-missing, round trip, forward-compatible parsing), `src-tauri/src/credentials.rs` (slugs, registry, unlock), `src-tauri/src/notes_crypto.rs` (encrypt/decrypt conversion), `src-tauri/src/tags.rs` (vault-wide rename/remove), and `src-tauri/src/attachments.rs` (image storage, link scanning, path resolution); `crates/mntl-core/tests/crypto_tests.rs` covers the key hierarchy and the envelope format, and `crates/mntl-core/src/tags.rs` has unit tests for tag validation and Markdown frontmatter editing.
+- Rust: `#[cfg(test)]` unit tests in `src-tauri/src/vault.rs` (path traversal, note classification, compound `.mntl.enc` extension handling, scanning), `src-tauri/src/vault_meta.rs` (default-on-missing, round trip, forward-compatible parsing), `src-tauri/src/credentials.rs` (slugs, registry, unlock), `src-tauri/src/notes_crypto.rs` (encrypt/decrypt conversion), `src-tauri/src/tags.rs` (vault-wide rename/remove), `src-tauri/src/hidden.rs` (hiding and un-hiding a profile's notes), and `src-tauri/src/attachments.rs` (image storage, link scanning, path resolution); `crates/mntl-core/tests/crypto_tests.rs` covers the key hierarchy and the envelope format, and `crates/mntl-core/src/tags.rs` has unit tests for tag validation and Markdown frontmatter editing.
 - Rust tests that need an unlocked profile use `SessionKeys::unlock_for_test` and cheap `KdfParams`, rather than paying for a production-cost Argon2id derivation per test.
 
 ## Conventions

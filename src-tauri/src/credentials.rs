@@ -87,6 +87,15 @@ pub struct CredentialProfile {
     /// Base64 tag over the master key. Not the password check (AES-KW already
     /// is); this distinguishes a wrong password from a corrupt record.
     pub verifier: String,
+    /// Whether this profile's notes sit in the vault root, their real folder
+    /// sealed inside them. Visible anyway from how its notes are stored, so
+    /// not secret.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hide_locations: bool,
+    /// Whether this profile's notes get random file names, their real name
+    /// sealed inside them.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hide_names: bool,
 }
 
 /// The contents of `.mantle/profiles.json`.
@@ -113,11 +122,11 @@ impl Default for ProfileRegistry {
 }
 
 impl ProfileRegistry {
-    fn find(&self, id: &str) -> Option<&CredentialProfile> {
+    pub(crate) fn find(&self, id: &str) -> Option<&CredentialProfile> {
         self.profiles.iter().find(|p| p.id == id)
     }
 
-    fn find_mut(&mut self, id: &str) -> Option<&mut CredentialProfile> {
+    pub(crate) fn find_mut(&mut self, id: &str) -> Option<&mut CredentialProfile> {
         self.profiles.iter_mut().find(|p| p.id == id)
     }
 }
@@ -151,7 +160,7 @@ fn read_registry_at(path: &Path) -> Result<ProfileRegistry, String> {
 /// The extra backup is not: losing `state.json` costs a user their collapsed
 /// folders, whereas losing `profiles.json` costs them every encrypted note in
 /// the vault.
-fn save_registry(vault_root: &str, registry: &ProfileRegistry) -> Result<(), String> {
+pub(crate) fn save_registry(vault_root: &str, registry: &ProfileRegistry) -> Result<(), String> {
     let path = registry_path(vault_root)?;
     let dir = path.parent().ok_or("Invalid profiles path")?;
     fs::create_dir_all(dir).map_err(|e| format!("Failed to create {STATE_DIR}: {e}"))?;
@@ -186,6 +195,19 @@ struct SessionKeysInner {
     /// Registry entries taken out by undoing a profile's creation, by id, so
     /// redo can put the very same profile back. Holds no secret.
     removed: HashMap<String, CredentialProfile>,
+    /// Where each hidden note of an unlocked profile really is on disk, by
+    /// the virtual path the frontend knows it by. Rebuilt by every scan.
+    hidden: HashMap<String, HiddenNote>,
+    /// Hidden notes deleted this session, by virtual path, so undoing the
+    /// delete can find their disk file in the trash.
+    trashed: HashMap<String, HiddenNote>,
+}
+
+/// A hidden note's disk file (vault-relative) and its profile.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct HiddenNote {
+    pub disk: String,
+    pub profile: String,
 }
 
 impl SessionKeys {
@@ -204,6 +226,8 @@ impl SessionKeys {
         if inner.vault_root.as_deref() != Some(canonical.as_path()) {
             inner.keys.clear();
             inner.removed.clear();
+            inner.hidden.clear();
+            inner.trashed.clear();
             inner.vault_root = Some(canonical);
         }
         Ok(f(&mut inner))
@@ -222,10 +246,56 @@ impl SessionKeys {
         })
     }
 
-    /// Forget one profile's key, leaving the rest unlocked.
+    /// Forget one profile's key, leaving the rest unlocked — and where its
+    /// hidden notes are, which only its key could tell.
     pub(crate) fn lock_one(&self, vault_root: &str, profile_id: &str) -> Result<(), String> {
         self.with_vault(vault_root, |inner| {
             inner.keys.remove(profile_id);
+            inner.hidden.retain(|_, note| note.profile != profile_id);
+            inner.trashed.retain(|_, note| note.profile != profile_id);
+        })
+    }
+
+    /// Replace the hidden-note map with the one a scan found.
+    pub(crate) fn set_hidden(&self, vault_root: &str, hidden: HashMap<String, HiddenNote>) -> Result<(), String> {
+        self.with_vault(vault_root, |inner| inner.hidden = hidden)
+    }
+
+    /// The hidden note known by the virtual path `rel_path`, if it is one.
+    pub(crate) fn hidden_note(&self, vault_root: &str, rel_path: &str) -> Result<Option<HiddenNote>, String> {
+        self.with_vault(vault_root, |inner| inner.hidden.get(rel_path).cloned())
+    }
+
+    /// Every hidden note, by virtual path.
+    pub(crate) fn hidden_notes(&self, vault_root: &str) -> Result<HashMap<String, HiddenNote>, String> {
+        self.with_vault(vault_root, |inner| inner.hidden.clone())
+    }
+
+    /// Record that the hidden note at `rel_path` is now `note`, or no longer hidden.
+    pub(crate) fn put_hidden(&self, vault_root: &str, rel_path: &str, note: Option<HiddenNote>) -> Result<(), String> {
+        self.with_vault(vault_root, |inner| {
+            match note {
+                Some(note) => inner.hidden.insert(rel_path.to_string(), note),
+                None => inner.hidden.remove(rel_path),
+            };
+        })
+    }
+
+    /// Move the hidden note at `rel_path` from the map to the trashed list.
+    pub(crate) fn trash_hidden(&self, vault_root: &str, rel_path: &str) -> Result<(), String> {
+        self.with_vault(vault_root, |inner| {
+            if let Some(note) = inner.hidden.remove(rel_path) {
+                inner.trashed.insert(rel_path.to_string(), note);
+            }
+        })
+    }
+
+    /// The trashed hidden notes at `rel_path` or inside it, taken off the list.
+    pub(crate) fn take_trashed(&self, vault_root: &str, rel_path: &str) -> Result<Vec<HiddenNote>, String> {
+        self.with_vault(vault_root, |inner| {
+            let inside = |rel: &String| rel == rel_path || rel.starts_with(&format!("{rel_path}/"));
+            let found: Vec<String> = inner.trashed.keys().filter(|rel| inside(rel)).cloned().collect();
+            found.iter().filter_map(|rel| inner.trashed.remove(rel)).collect()
         })
     }
 
@@ -251,6 +321,8 @@ impl SessionKeys {
     pub fn lock_all(&self) -> Result<(), String> {
         let mut inner = self.0.lock().map_err(|e| e.to_string())?;
         inner.keys.clear();
+        inner.hidden.clear();
+        inner.trashed.clear();
         inner.vault_root = None;
         Ok(())
     }
@@ -314,6 +386,8 @@ pub struct ProfileInfo {
     pub display_name: String,
     pub unlocked: bool,
     pub kdf: KdfParams,
+    pub hide_locations: bool,
+    pub hide_names: bool,
 }
 
 fn to_info(profile: &CredentialProfile, unlocked: bool) -> ProfileInfo {
@@ -322,6 +396,8 @@ fn to_info(profile: &CredentialProfile, unlocked: bool) -> ProfileInfo {
         display_name: profile.display_name.clone(),
         unlocked,
         kdf: profile.kdf.clone(),
+        hide_locations: profile.hide_locations,
+        hide_names: profile.hide_names,
     }
 }
 
@@ -399,6 +475,8 @@ fn create_profile_inner(
         kdf: kdf.clone(),
         wrapped_master_key: BASE64.encode(wrapped),
         verifier: compute_verifier(&master_key),
+        hide_locations: false,
+        hide_names: false,
     };
 
     registry.profiles.push(profile.clone());
@@ -604,9 +682,9 @@ pub fn undo_create_credential_profile(
     keys: State<SessionKeys>,
 ) -> Result<(), String> {
     logged("undo_create_credential_profile", || {
-        let in_use = crate::vault::note_paths(&vault_root)?.iter().any(|rel| {
-            rel.ends_with(crate::vault::EXT_ENCRYPTED)
-                && crate::vault::resolve_rel_path(&vault_root, rel)
+        let in_use = crate::vault::note_paths(&vault_root, &keys)?.iter().any(|(_, disk)| {
+            disk.ends_with(crate::vault::EXT_ENCRYPTED)
+                && crate::vault::resolve_rel_path(&vault_root, disk)
                     .ok()
                     .and_then(|path| crate::vault::read_profile_id(&path))
                     .as_deref()
@@ -722,6 +800,8 @@ mod tests {
             kdf: test_kdf(),
             wrapped_master_key: BASE64.encode([0u8; 40]),
             verifier: String::new(),
+            hide_locations: false,
+            hide_names: false,
         }
     }
 

@@ -28,6 +28,14 @@ export interface VaultFolderNode extends Timestamps {
   name: string;
   relPath: string;
   children: VaultNode[];
+  /**
+   * A folder with no folder on disk, there only because hidden notes are
+   * sealed as being in it. It disappears with its last note, and is never
+   * recorded in `state.json`.
+   */
+  virtual?: boolean;
+  /** On the vault root only: how many hidden notes each locked profile has, which the tree can't list. */
+  lockedHidden?: Record<string, number>;
 }
 
 export interface VaultNoteNode extends Timestamps {
@@ -53,6 +61,12 @@ export interface VaultNoteNode extends Timestamps {
    * in `VaultMetaState` instead; use `FavoritesState` to ask either way.
    */
   favorite?: boolean;
+  /**
+   * A hidden note: its profile seals where it is and what it's called, so
+   * this is listed (and known by its relPath) only while that profile is
+   * unlocked. Never recorded in `state.json` or the persisted tabs.
+   */
+  hidden?: boolean;
 }
 
 /** Any other file the user keeps in the vault — an image, a PDF. Opens in a read-only preview tab. */
@@ -225,6 +239,18 @@ export function flattenTreeNodes(root: VaultFolderNode): Map<string, VaultNode> 
   };
   visit(root);
   return nodes;
+}
+
+/**
+ * The relPaths that mustn't be recorded in plaintext — hidden notes and
+ * virtual folders — so `state.json` and the persisted tabs can leave them out.
+ */
+export function hiddenTreePaths(root: VaultFolderNode): Set<string> {
+  const paths = new Set<string>();
+  for (const node of flattenTreeNodes(root).values()) {
+    if ((node.type === 'note' && node.hidden) || (node.type === 'folder' && node.virtual)) paths.add(node.relPath);
+  }
+  return paths;
 }
 
 /** `relPaths` minus any path inside another of them — a folder carries its contents along. */

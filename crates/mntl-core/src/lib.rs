@@ -161,6 +161,21 @@ pub fn encrypt_note(
     profile_id: &str,
     plaintext: &[u8],
 ) -> Result<Vec<u8>, MntlError> {
+    encrypt_note_as(mk, profile_id, false, plaintext)
+}
+
+/// [`encrypt_note`], with [`EncryptedHeader::hidden`] set as given: `true` for
+/// a note whose real location and name are sealed in its frontmatter.
+///
+/// # Errors
+///
+/// As [`encrypt_note`].
+pub fn encrypt_note_as(
+    mk: &MasterKey,
+    profile_id: &str,
+    hidden: bool,
+    plaintext: &[u8],
+) -> Result<Vec<u8>, MntlError> {
     // 1. Generate random 256-bit CEK and 192-bit Nonce
     let mut cek = Zeroizing::new([0u8; 32]);
     OsRng.fill_bytes(cek.as_mut_slice());
@@ -180,7 +195,7 @@ pub fn encrypt_note(
         wrapped_key: BASE64.encode(wrapped_key),
     };
 
-    let header = EncryptedHeader::new(profile_id, crypto_meta);
+    let header = EncryptedHeader { hidden, ..EncryptedHeader::new(profile_id, crypto_meta) };
     let header_json = serde_json::to_vec(&header)?;
 
     // 4. Encrypt payload with XChaCha20-Poly1305 using header_json as Associated Data (AD)

@@ -12,6 +12,8 @@ export interface HistoryStep {
   label: string;
   undo(): Promise<unknown>;
   redo(): Promise<unknown>;
+  /** The vault paths the step acts on, so `dropTouching` can find it. */
+  paths?: readonly string[];
 }
 
 const MAX_STEPS = 100;
@@ -54,6 +56,19 @@ export class VaultHistoryState {
   clear(): void {
     this.undoStack.set([]);
     this.redoStack.set([]);
+  }
+
+  /**
+   * Forgets every step on one of `relPaths`, or on a folder holding one —
+   * for hidden notes whose profile was just locked, which no step can reach
+   * any more.
+   */
+  dropTouching(relPaths: readonly string[]): void {
+    if (relPaths.length === 0) return;
+    const touches = (step: HistoryStep) =>
+      (step.paths ?? []).some((path) => relPaths.some((relPath) => relPath === path || relPath.startsWith(`${path}/`)));
+    this.undoStack.update((steps) => steps.filter((step) => !touches(step)));
+    this.redoStack.update((steps) => steps.filter((step) => !touches(step)));
   }
 
   undo(): Promise<void> {

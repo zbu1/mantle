@@ -36,6 +36,8 @@ export class CredentialProfileRow implements OnDestroy {
   readonly profileId = input.required<string | null>();
   readonly displayName = input.required<string>();
   readonly notes = input.required<readonly VaultNoteNode[]>();
+  /** Its hidden notes the list can't show, because the profile is locked. */
+  readonly hiddenCount = input(0);
   readonly unlocked = input(false);
   /**
    * True for notes naming a profile this vault has no record of. They can't be
@@ -54,7 +56,7 @@ export class CredentialProfileRow implements OnDestroy {
   private readonly settingsModalState = inject(SettingsModalState);
 
   protected readonly expanded = signal(false);
-  protected readonly noteCount = computed(() => this.notes().length);
+  protected readonly noteCount = computed(() => this.notes().length + this.hiddenCount());
 
   /** True while the lock icon is armed, waiting for a confirming second click. */
   protected readonly confirmingLock = signal(false);

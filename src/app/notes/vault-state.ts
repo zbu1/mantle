@@ -4,7 +4,7 @@ import { listen } from '@tauri-apps/api/event';
 import { join } from '@tauri-apps/api/path';
 import { open, save } from '@tauri-apps/plugin-dialog';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
-import { flattenVaultNotes, withNoteFields, withRenamedNote, VaultFolderNode } from './vault-tree.model';
+import { flattenVaultNotes, hiddenTreePaths, withNoteFields, withRenamedNote, VaultFolderNode } from './vault-tree.model';
 import { TabsState } from './tabs-state';
 import { VaultMetaState } from './vault-meta-state';
 import { VaultRootState } from './vault-root-state';
@@ -54,6 +54,15 @@ export class VaultState {
 
   /** True while the welcome screen is shown over an open vault ("Manage Vaults"). Cleared when the vault changes. */
   readonly managing = signal(false);
+
+  /** How many hidden notes each locked profile has, by profile id: the tree can't list them. */
+  readonly lockedHidden = computed<Readonly<Record<string, number>>>(() => this.tree()?.lockedHidden ?? {});
+
+  /** Hidden notes and virtual folders in the tree, which are never recorded in plaintext. */
+  readonly hiddenPaths = computed(() => {
+    const tree = this.tree();
+    return tree ? hiddenTreePaths(tree) : new Set<string>();
+  });
 
   /** Baseline from the last scan, used to detect externally-added/removed notes. Reset across vault switches. */
   private previousRoot: string | null = null;
@@ -107,6 +116,14 @@ export class VaultState {
     effect(() => {
       this.tree();
       untracked(() => this.recordPendingRecent());
+    });
+
+    effect(() => {
+      const hidden = this.hiddenPaths();
+      untracked(() => {
+        this.tabsState.setHiddenNoteIds(hidden);
+        this.vaultMeta.setHiddenPaths(hidden);
+      });
     });
 
     // Keep a native filesystem watcher pointed at the current vault so
@@ -443,11 +460,18 @@ export class VaultState {
     return this.moveFolder(sourceRelPath, destRelDir);
   }
 
-  /** Reveals `relPath` (or the vault root, if empty) in the OS file explorer. */
+  /**
+   * Reveals `relPath` (or the vault root, if empty) in the OS file explorer.
+   * A hidden note's file isn't at its relPath, so the backend says where it is.
+   */
   async revealInFileExplorer(relPath: string): Promise<void> {
     const root = this.rootPath();
     if (!root) return;
-    const absolute = relPath ? await join(root, ...relPath.split('/')) : root;
+    const absolute = relPath.endsWith('.mntl.enc')
+      ? await invoke<string>('note_disk_path', { vaultRoot: root, relPath })
+      : relPath
+        ? await join(root, ...relPath.split('/'))
+        : root;
     await revealItemInDir(absolute);
   }
 }

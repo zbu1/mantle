@@ -571,7 +571,7 @@ pub(crate) fn unreferenced(
     let profiles: HashMap<String, Option<String>> =
         found.iter().map(|rel| (rel.clone(), sealed_profile(vault_root, rel))).collect();
 
-    for note in note_paths(vault_root)? {
+    for (note, _) in note_paths(vault_root, keys)? {
         if found.is_empty() {
             break;
         }
@@ -644,7 +644,7 @@ fn save_for_note(
     if !note_rel.ends_with(EXT_ENCRYPTED) {
         return store(vault_root, bytes, ext, None);
     }
-    let header = read_header_prefix(&resolve_rel_path(vault_root, note_rel)?)?;
+    let header = read_header_prefix(&crate::hidden::resolve_note(vault_root, note_rel, keys)?)?;
     let (profile_id, mk) = master_key_for(vault_root, &header, keys)?;
     store(vault_root, bytes, ext, Some((&profile_id, &mk)))
 }

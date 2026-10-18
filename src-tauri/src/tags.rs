@@ -12,7 +12,8 @@
 use crate::credentials::SessionKeys;
 use crate::logging::logged;
 use crate::vault::{
-    clean_tags, is_markdown_note, master_key_for, write_atomic, EXT_ENCRYPTED, EXT_PLAIN,
+    clean_tags, is_markdown_note, master_key_for, note_paths, resolve_rel_path, sealed_hidden, write_atomic,
+    EXT_ENCRYPTED,
 };
 use serde::Serialize;
 use std::collections::HashMap;
@@ -69,11 +70,9 @@ pub(crate) fn edit_tag_in_vault(
         return Err("The vault folder no longer exists".to_string());
     }
 
-    let mut notes = Vec::new();
-    collect_note_files(&root, "", &mut notes).map_err(|e| format!("Failed to list notes: {e}"))?;
-
     let mut report = TagEditReport::default();
-    for (path, rel_path) in notes {
+    for (rel_path, disk) in note_paths(vault_root, keys)? {
+        let path = resolve_rel_path(vault_root, &disk)?;
         match edit_note_tags(vault_root, &path, &rel_path, |tags| edited_tags(tags, from, to), keys) {
             Ok(true) => report.updated.push(rel_path),
             Ok(false) => {}
@@ -102,32 +101,11 @@ fn set_note_tags_inner(
     keys: &SessionKeys,
 ) -> Result<(), String> {
     for (rel_path, tags) in tags_by_note {
-        let path = crate::vault::resolve_rel_path(vault_root, rel_path)?;
+        let path = crate::hidden::resolve_note(vault_root, rel_path, keys)?;
         match edit_note_tags(vault_root, &path, rel_path, |_| Some(clean_tags(tags)), keys) {
             Ok(_) => {}
             Err(NoteEditError::Locked) => return Err(format!("\"{rel_path}\" is locked")),
             Err(NoteEditError::Failed(e)) => return Err(format!("Failed to update \"{rel_path}\": {e}")),
-        }
-    }
-    Ok(())
-}
-
-/// Every note file under `dir`, skipping dot-prefixed entries as a scan does.
-fn collect_note_files(dir: &Path, rel_dir: &str, out: &mut Vec<(PathBuf, String)>) -> std::io::Result<()> {
-    for entry in fs::read_dir(dir)? {
-        let entry = entry?;
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if name.starts_with('.') {
-            continue;
-        }
-        let rel_path = if rel_dir.is_empty() { name.clone() } else { format!("{rel_dir}/{name}") };
-        let file_type = entry.file_type()?;
-        if file_type.is_dir() {
-            collect_note_files(&entry.path(), &rel_path, out)?;
-        } else if file_type.is_file()
-            && (name.ends_with(EXT_ENCRYPTED) || name.ends_with(EXT_PLAIN) || is_markdown_note(&name))
-        {
-            out.push((entry.path(), rel_path));
         }
     }
     Ok(())
@@ -187,8 +165,8 @@ fn edit_note_tags(
         let encoded = zeroize::Zeroizing::new(
             mntl_core::encode_note(&frontmatter, &body).map_err(|e| e.to_string())?,
         );
-        let resealed =
-            mntl_core::encrypt_note(&mk, &profile_id, encoded.as_bytes()).map_err(|e| e.to_string())?;
+        let resealed = mntl_core::encrypt_note_as(&mk, &profile_id, sealed_hidden(&blob), encoded.as_bytes())
+            .map_err(|e| e.to_string())?;
         write_atomic(path, &resealed)?;
         return Ok(true);
     }

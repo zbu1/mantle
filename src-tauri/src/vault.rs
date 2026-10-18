@@ -10,13 +10,16 @@
 //! Reading and writing an encrypted note requires its credential profile to be
 //! unlocked in [`crate::credentials::SessionKeys`]. Everything structural —
 //! rename, move, duplicate, copy, delete — works regardless, because those
-//! operations never look at a note's contents.
+//! operations never look at a note's contents. The exception is a hidden note
+//! (see [`crate::hidden`]), whose path is sealed inside it: a scan only lists
+//! it while its profile is unlocked, and moving it means resealing it.
 
 use crate::attachments::{reseal_attachments, Relink};
-use crate::credentials::SessionKeys;
+use crate::credentials::{HiddenNote, SessionKeys};
+use crate::hidden::{self, resolve_note};
 use crate::logging::logged;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -85,6 +88,14 @@ pub enum VaultNode {
         children: Vec<VaultNode>,
         modified: u64,
         created: u64,
+        /// A folder with no folder on disk, there only because hidden notes
+        /// are sealed as being in it.
+        #[serde(rename = "virtual", skip_serializing_if = "std::ops::Not::not")]
+        is_virtual: bool,
+        /// On the vault root only: how many hidden notes each locked profile
+        /// has, which the tree can't list.
+        #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+        locked_hidden: BTreeMap<String, usize>,
     },
     #[serde(rename_all = "camelCase")]
     Note {
@@ -111,6 +122,10 @@ pub enum VaultNode {
         modified: u64,
         /// Created, in milliseconds since the Unix epoch (0 where the file system doesn't record it).
         created: u64,
+        /// Whether this note is hidden: listed at the path sealed inside it,
+        /// which isn't where its file is.
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        hidden: bool,
     },
     /// Any other file — an image, a PDF — kept in the vault by the user.
     #[serde(rename_all = "camelCase")]
@@ -130,6 +145,20 @@ fn file_times(meta: std::io::Result<fs::Metadata>) -> (u64, u64) {
 fn node_name(node: &VaultNode) -> &str {
     match node {
         VaultNode::Folder { name, .. } | VaultNode::Note { name, .. } | VaultNode::File { name, .. } => name,
+    }
+}
+
+fn node_rel_path(node: &VaultNode) -> &str {
+    match node {
+        VaultNode::Folder { rel_path, .. } | VaultNode::Note { rel_path, .. } | VaultNode::File { rel_path, .. } => rel_path,
+    }
+}
+
+fn node_times(node: &VaultNode) -> (u64, u64) {
+    match node {
+        VaultNode::Folder { modified, created, .. }
+        | VaultNode::Note { modified, created, .. }
+        | VaultNode::File { modified, created, .. } => (*modified, *created),
     }
 }
 
@@ -179,10 +208,13 @@ pub(crate) fn read_header_prefix(path: &Path) -> Result<Vec<u8>, String> {
 /// file must never make a whole vault fail to open. Such a note simply shows
 /// up with no profile, which the UI presents as an orphan.
 pub(crate) fn read_profile_id(path: &Path) -> Option<String> {
-    let buf = read_header_prefix(path).ok()?;
-    mntl_core::extract_encrypted_header(&buf)
-        .ok()
-        .map(|h| h.credential_profile)
+    read_header(path).map(|h| h.credential_profile)
+}
+
+/// The header of the `.mntl.enc` file at `path`, or `None` if it's malformed,
+/// as for [`read_profile_id`].
+pub(crate) fn read_header(path: &Path) -> Option<mntl_core::EncryptedHeader> {
+    mntl_core::extract_encrypted_header(&read_header_prefix(path).ok()?).ok()
 }
 
 /// Largest frontmatter block a scan reads to find a plaintext note's tags.
@@ -259,11 +291,24 @@ fn read_plaintext_tags(path: &Path, file_name: &str) -> Option<Vec<String>> {
     mntl_core::extract_unencrypted_header(&prefix).ok().map(|h| h.tags)
 }
 
+/// The hidden notes a scan came across, which it lists at their sealed path
+/// rather than where their files are.
+#[derive(Default)]
+struct HiddenScan {
+    /// Those of unlocked profiles: disk path, profile, sealed frontmatter and times.
+    open: Vec<(String, String, mntl_core::NoteFrontmatter, u64, u64)>,
+    /// How many each locked profile has.
+    locked: BTreeMap<String, usize>,
+    /// Every hidden note's disk path, which no listed path may take.
+    disk: HashSet<String>,
+}
+
 fn scan_dir(
     abs_dir: &Path,
     rel_dir: &Path,
     vault_root: &str,
     keys: &SessionKeys,
+    hidden: &mut HiddenScan,
 ) -> std::io::Result<Vec<VaultNode>> {
     let mut folders = Vec::new();
     let mut notes = Vec::new();
@@ -284,21 +329,29 @@ fn scan_dir(
         }
         let (modified, created) = file_times(entry.metadata());
         if file_type.is_dir() {
-            let children = scan_dir(&entry.path(), &child_rel, vault_root, keys)?;
+            let children = scan_dir(&entry.path(), &child_rel, vault_root, keys, hidden)?;
             folders.push(VaultNode::Folder {
                 name,
                 rel_path: to_slash(&child_rel),
                 children,
                 modified,
                 created,
+                is_virtual: false,
+                locked_hidden: BTreeMap::new(),
             });
         } else if file_type.is_file() {
             if let Some((title, encrypted)) = classify_note_file(&name) {
-                let profile = if encrypted {
-                    read_profile_id(&entry.path())
-                } else {
-                    None
-                };
+                let header = if encrypted { read_header(&entry.path()) } else { None };
+                let profile = header.as_ref().map(|h| h.credential_profile.clone());
+                if let Some(profile) = profile.clone().filter(|_| header.as_ref().is_some_and(|h| h.hidden)) {
+                    let rel = to_slash(&child_rel);
+                    match read_sealed_frontmatter(&entry.path(), Some(&profile), vault_root, keys) {
+                        Some(frontmatter) => hidden.open.push((rel.clone(), profile, frontmatter, modified, created)),
+                        None => *hidden.locked.entry(profile).or_default() += 1,
+                    }
+                    hidden.disk.insert(rel);
+                    continue;
+                }
                 let (tags, favorite) =
                     read_note_tags(&entry.path(), &name, profile.as_deref(), vault_root, keys);
                 notes.push(VaultNode::Note {
@@ -310,6 +363,7 @@ fn scan_dir(
                     favorite,
                     modified,
                     created,
+                    hidden: false,
                 });
             } else {
                 notes.push(VaultNode::File { name, rel_path: to_slash(&child_rel), modified, created });
@@ -317,10 +371,106 @@ fn scan_dir(
         }
     }
 
-    folders.sort_by(|a, b| node_name(a).cmp(node_name(b)));
-    notes.sort_by(|a, b| node_name(a).cmp(node_name(b)));
     folders.extend(notes);
+    sort_nodes(&mut folders);
     Ok(folders)
+}
+
+/// Folders first, then everything else, each by name.
+fn sort_nodes(nodes: &mut [VaultNode]) {
+    nodes.sort_by(|a, b| {
+        let folder = |n: &VaultNode| matches!(n, VaultNode::Folder { .. });
+        folder(b).cmp(&folder(a)).then_with(|| node_name(a).cmp(node_name(b)))
+    });
+}
+
+/// Put each unlocked hidden note into `root` (the vault root's children) at
+/// its sealed location under its sealed name, adding virtual folders on the
+/// way. A path that's already taken gets " (2)", " (3)"… in the tree only;
+/// renaming the note fixes it. Returns where each one's file really is, by
+/// the path it was listed at.
+fn insert_hidden(root: &mut Vec<VaultNode>, hidden: HiddenScan) -> HashMap<String, HiddenNote> {
+    let mut map = HashMap::new();
+    let mut open = hidden.open;
+    open.sort_by(|a, b| a.0.cmp(&b.0));
+    for (disk, profile, frontmatter, modified, created) in open {
+        let (_, disk_stem, _) = split_rel_note_path(&disk);
+        let location = frontmatter
+            .location
+            .clone()
+            .filter(|l| l.is_empty() || hidden::check_components(l).is_ok())
+            .unwrap_or_default();
+        let name = frontmatter
+            .name
+            .clone()
+            .filter(|n| !n.is_empty() && !n.contains(['/', '\\', ':']))
+            .unwrap_or(disk_stem);
+
+        let mut folder = &mut *root;
+        let mut rel_dir = String::new();
+        for part in location.split('/').filter(|p| !p.is_empty()) {
+            rel_dir = if rel_dir.is_empty() { part.to_string() } else { format!("{rel_dir}/{part}") };
+            let index = match folder.iter().position(|n| matches!(n, VaultNode::Folder { name, .. } if name == part)) {
+                Some(index) => index,
+                None => {
+                    folder.push(VaultNode::Folder {
+                        name: part.to_string(),
+                        rel_path: rel_dir.clone(),
+                        children: Vec::new(),
+                        modified: 0,
+                        created: 0,
+                        is_virtual: true,
+                        locked_hidden: BTreeMap::new(),
+                    });
+                    folder.len() - 1
+                }
+            };
+            folder = match &mut folder[index] {
+                VaultNode::Folder { children, .. } => children,
+                _ => unreachable!(),
+            };
+        }
+
+        let taken = |rel: &str| {
+            folder.iter().any(|n| node_rel_path(n) == rel) || (rel != disk && hidden.disk.contains(rel))
+        };
+        let (mut title, mut rel) = (name.clone(), join_rel_note_path(&rel_dir, &name, EXT_ENCRYPTED));
+        let mut n = 1;
+        while taken(&rel) {
+            n += 1;
+            title = format!("{name} ({n})");
+            rel = join_rel_note_path(&rel_dir, &title, EXT_ENCRYPTED);
+        }
+        folder.push(VaultNode::Note {
+            name: title,
+            rel_path: rel.clone(),
+            encrypted: true,
+            profile: Some(profile.clone()),
+            tags: Some(frontmatter.tags),
+            favorite: frontmatter.favorite,
+            modified,
+            created,
+            hidden: true,
+        });
+        map.insert(rel, HiddenNote { disk, profile });
+    }
+    settle(root);
+    map
+}
+
+/// Sort every folder again after [`insert_hidden`], giving each virtual
+/// folder its newest child's times. Returns the newest times among `nodes`.
+fn settle(nodes: &mut [VaultNode]) -> (u64, u64) {
+    for node in nodes.iter_mut() {
+        if let VaultNode::Folder { children, modified, created, is_virtual, .. } = node {
+            let newest = settle(children);
+            if *is_virtual {
+                (*modified, *created) = newest;
+            }
+        }
+    }
+    sort_nodes(nodes);
+    nodes.iter().map(node_times).fold((0, 0), |(m, c), (nm, nc)| (m.max(nm), c.max(nc)))
 }
 
 /// Resolve a vault-relative path to an absolute path, guarding against path
@@ -437,7 +587,11 @@ pub(crate) fn scan_vault_inner(vault_root: &str, keys: &SessionKeys) -> Result<V
             "Vault root does not exist or is not a directory: {vault_root}"
         ));
     }
-    let children = scan_dir(&root, Path::new(""), vault_root, keys).map_err(|e| e.to_string())?;
+    let mut hidden = HiddenScan::default();
+    let mut children =
+        scan_dir(&root, Path::new(""), vault_root, keys, &mut hidden).map_err(|e| e.to_string())?;
+    let locked_hidden = std::mem::take(&mut hidden.locked);
+    keys.set_hidden(vault_root, insert_hidden(&mut children, hidden))?;
     Ok(VaultNode::Folder {
         name: root
             .file_name()
@@ -447,12 +601,16 @@ pub(crate) fn scan_vault_inner(vault_root: &str, keys: &SessionKeys) -> Result<V
         children,
         modified: 0,
         created: 0,
+        is_virtual: false,
+        locked_hidden,
     })
 }
 
-/// Every note in the vault, vault-relative, skipping hidden folders as a scan
-/// does — without reading any of them.
-pub(crate) fn note_paths(vault_root: &str) -> Result<Vec<String>, String> {
+/// Every note in the vault, skipping hidden folders as a scan does — without
+/// reading any of them. Each comes as the path the frontend knows it by (a
+/// hidden note's virtual path, while its profile is unlocked) and the
+/// vault-relative path of its file.
+pub(crate) fn note_paths(vault_root: &str, keys: &SessionKeys) -> Result<Vec<(String, String)>, String> {
     fn walk(dir: &Path, rel_dir: &str, out: &mut Vec<String>) {
         let Ok(entries) = fs::read_dir(dir) else { return };
         for entry in entries.flatten() {
@@ -470,7 +628,12 @@ pub(crate) fn note_paths(vault_root: &str) -> Result<Vec<String>, String> {
     }
     let mut out = Vec::new();
     walk(&resolve_rel_dir(vault_root, "")?, "", &mut out);
-    Ok(out)
+    let by_disk: HashMap<String, String> =
+        keys.hidden_notes(vault_root)?.into_iter().map(|(rel, note)| (note.disk, rel)).collect();
+    Ok(out
+        .into_iter()
+        .map(|disk| (by_disk.get(&disk).cloned().unwrap_or_else(|| disk.clone()), disk))
+        .collect())
 }
 
 /// The master key for the profile a `.mntl.enc` blob names, or the
@@ -570,7 +733,7 @@ pub(crate) fn read_note_inner(
     rel_path: &str,
     keys: &SessionKeys,
 ) -> Result<NoteDocument, String> {
-    let path = resolve_rel_path(vault_root, rel_path)?;
+    let path = resolve_note(vault_root, rel_path, keys)?;
 
     if rel_path.ends_with(EXT_ENCRYPTED) {
         let bytes = fs::read(&path).map_err(|e| format!("Failed to read note: {e}"))?;
@@ -630,7 +793,7 @@ pub(crate) fn write_note_inner(
     properties: Option<&[NoteProperty]>,
     keys: &SessionKeys,
 ) -> Result<HashMap<String, String>, String> {
-    let path = resolve_rel_path(vault_root, rel_path)?;
+    let path = resolve_note(vault_root, rel_path, keys)?;
     let tags = clean_tags(tags);
     let properties = properties.map(clean_properties);
 
@@ -717,6 +880,7 @@ fn reseal_note(
     let _guard = RESEAL_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let blob = fs::read(path).map_err(|e| format!("Failed to read note: {e}"))?;
     let (profile_id, mk) = master_key_for(vault_root, &blob, keys)?;
+    let hidden = sealed_hidden(&blob);
     let document = mntl_core::decrypt_note(&mk, &blob).map_err(|e| e.to_string())?;
     let document =
         std::str::from_utf8(&document).map_err(|_| "Decrypted note is not UTF-8".to_string())?;
@@ -728,9 +892,15 @@ fn reseal_note(
     );
     // `encrypt_note` generates a fresh content key and nonce on every call,
     // so nothing from the previous version of the file is reused.
-    let blob =
-        mntl_core::encrypt_note(&mk, &profile_id, encoded.as_bytes()).map_err(|e| e.to_string())?;
+    let blob = mntl_core::encrypt_note_as(&mk, &profile_id, hidden, encoded.as_bytes())
+        .map_err(|e| e.to_string())?;
     write_atomic(path, &blob)
+}
+
+/// Whether the `.mntl.enc` blob's header says the note is hidden, so a
+/// rewrite in place can say so again.
+pub(crate) fn sealed_hidden(blob: &[u8]) -> bool {
+    mntl_core::extract_encrypted_header(blob).is_ok_and(|h| h.hidden)
 }
 
 /// Mark an encrypted note as a favorite, or not. The flag is sealed in the
@@ -756,7 +926,7 @@ pub(crate) fn set_note_favorite_inner(
     if !rel_path.ends_with(EXT_ENCRYPTED) {
         return Err("Only an encrypted note keeps its favorite in the note".to_string());
     }
-    let path = resolve_rel_path(vault_root, rel_path)?;
+    let path = resolve_note(vault_root, rel_path, keys)?;
     reseal_note(vault_root, &path, keys, |frontmatter, _| frontmatter.favorite = favorite)
 }
 
@@ -819,11 +989,17 @@ pub struct CreatedNote {
 }
 
 #[tauri::command]
-pub fn create_note(vault_root: String, rel_dir: String, name: String) -> Result<CreatedNote, String> {
+pub fn create_note(
+    vault_root: String,
+    rel_dir: String,
+    name: String,
+    keys: State<SessionKeys>,
+) -> Result<CreatedNote, String> {
     logged("create_note", || {
         if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains(':') {
             return Err("Invalid note name".to_string());
         }
+        hidden::ensure_rel_dir(&vault_root, &rel_dir, &keys)?;
         let rel_path = join_rel_note_path(&rel_dir, &name, EXT_PLAIN);
         let path = resolve_rel_path(&vault_root, &rel_path)?;
         if path.exists() {
@@ -839,37 +1015,65 @@ pub fn create_note(vault_root: String, rel_dir: String, name: String) -> Result<
 }
 
 #[tauri::command]
-pub fn rename_note(vault_root: String, rel_path: String, new_name: String) -> Result<CreatedNote, String> {
-    // Works for encrypted notes too: a rename is a pure `fs::rename` that
-    // never inspects content, so it needs no key and no unlocked profile.
-    logged("rename_note", || {
-        if new_name.is_empty() || new_name.contains('/') || new_name.contains('\\') || new_name.contains(':') {
-            return Err("Invalid note name".to_string());
+pub fn rename_note(
+    vault_root: String,
+    rel_path: String,
+    new_name: String,
+    keys: State<SessionKeys>,
+) -> Result<CreatedNote, String> {
+    logged("rename_note", || rename_note_inner(&vault_root, &rel_path, &new_name, &keys))
+}
+
+pub(crate) fn rename_note_inner(
+    vault_root: &str,
+    rel_path: &str,
+    new_name: &str,
+    keys: &SessionKeys,
+) -> Result<CreatedNote, String> {
+    if new_name.is_empty() || new_name.contains('/') || new_name.contains('\\') || new_name.contains(':') {
+        return Err("Invalid note name".to_string());
+    }
+    // Preserve the note's own extension: renaming an encrypted note must
+    // not silently turn it into a `.mntl`.
+    let (dir_rel, _, ext) = split_rel_note_path(rel_path);
+    let dest_rel = join_rel_note_path(&dir_rel, new_name, ext);
+    let exists = || format!("A note named \"{new_name}\" already exists in this folder");
+
+    // A hidden note's name is sealed inside it, so renaming it reseals it.
+    if let Some(note) = keys.hidden_note(vault_root, rel_path)? {
+        if dest_rel != rel_path && hidden::taken(vault_root, &dest_rel, keys)? {
+            return Err(exists());
         }
-        let source = resolve_rel_path(&vault_root, &rel_path)?;
-        // Preserve the note's own extension: renaming an encrypted note must
-        // not silently turn it into a `.mntl`.
-        let (dir_rel, _, ext) = split_rel_note_path(&rel_path);
-        let dest_rel = join_rel_note_path(&dir_rel, &new_name, ext);
-        let dest = resolve_rel_path(&vault_root, &dest_rel)?;
-        if dest != source && dest.exists() {
-            return Err(format!("A note named \"{new_name}\" already exists in this folder"));
-        }
-        fs::rename(&source, &dest).map_err(|e| format!("Failed to rename note: {e}"))?;
-        Ok(CreatedNote {
-            name: new_name,
-            rel_path: dest_rel,
-        })
+        hidden::relocate(vault_root, keys, rel_path, &note, &dest_rel)?;
+        return Ok(CreatedNote { name: new_name.to_string(), rel_path: dest_rel });
+    }
+
+    // Otherwise it works for encrypted notes too: a rename is a pure
+    // `fs::rename` that never inspects content, so it needs no key.
+    let source = resolve_rel_path(vault_root, rel_path)?;
+    let dest = resolve_rel_path(vault_root, &dest_rel)?;
+    if dest != source && (dest.exists() || keys.hidden_note(vault_root, &dest_rel)?.is_some()) {
+        return Err(exists());
+    }
+    fs::rename(&source, &dest).map_err(|e| format!("Failed to rename note: {e}"))?;
+    Ok(CreatedNote {
+        name: new_name.to_string(),
+        rel_path: dest_rel,
     })
 }
 
 #[tauri::command]
-pub fn delete_note(vault_root: String, rel_path: String) -> Result<(), String> {
+pub fn delete_note(vault_root: String, rel_path: String, keys: State<SessionKeys>) -> Result<(), String> {
     logged("delete_note", || {
-        let path = resolve_rel_path(&vault_root, &rel_path)?;
+        let hidden = keys.hidden_note(&vault_root, &rel_path)?;
+        let path = resolve_note(&vault_root, &rel_path, &keys)?;
         // Send to the OS recycle bin/trash rather than unlinking outright, so a
         // deleted note stays recoverable through the normal OS trash UI.
-        trash::delete(&path).map_err(|e| format!("Failed to delete note: {e}"))
+        trash::delete(&path).map_err(|e| format!("Failed to delete note: {e}"))?;
+        if hidden.is_some() {
+            keys.trash_hidden(&vault_root, &rel_path)?;
+        }
+        Ok(())
     })
 }
 
@@ -891,12 +1095,28 @@ pub fn open_vault_file(app: tauri::AppHandle, vault_root: String, rel_path: Stri
 }
 
 #[tauri::command]
-pub fn delete_folder(vault_root: String, rel_path: String) -> Result<(), String> {
-    logged("delete_folder", || {
-        let path = resolve_rel_path(&vault_root, &rel_path)?;
+pub fn delete_folder(vault_root: String, rel_path: String, keys: State<SessionKeys>) -> Result<(), String> {
+    logged("delete_folder", || delete_folder_inner(&vault_root, &rel_path, &keys))
+}
+
+/// Trash a folder, real or virtual, and every unlocked hidden note inside.
+pub(crate) fn delete_folder_inner(vault_root: &str, rel_path: &str, keys: &SessionKeys) -> Result<(), String> {
+    for (rel, note) in hidden::hidden_inside(vault_root, keys, rel_path)? {
+        if note.disk.starts_with(&format!("{rel_path}/")) {
+            // Its file is in the real folder, and goes with it.
+            keys.put_hidden(vault_root, &rel, None)?;
+            continue;
+        }
+        let path = resolve_rel_path(vault_root, &note.disk)?;
+        trash::delete(&path).map_err(|e| format!("Failed to delete note: {e}"))?;
+        keys.trash_hidden(vault_root, &rel)?;
+    }
+    if resolve_rel_dir(vault_root, "")?.join(rel_path).exists() {
+        let path = resolve_rel_path(vault_root, rel_path)?;
         // Same recycle-bin behavior as delete_note; trash::delete handles directories recursively.
-        trash::delete(&path).map_err(|e| format!("Failed to delete folder: {e}"))
-    })
+        trash::delete(&path).map_err(|e| format!("Failed to delete folder: {e}"))?;
+    }
+    Ok(())
 }
 
 /// Put deleted vault items back from the OS trash, for undoing a delete. Each
@@ -904,12 +1124,12 @@ pub fn delete_folder(vault_root: String, rel_path: String) -> Result<(), String>
 /// overwriting, when something new sits at the path or the item is gone from
 /// the trash.
 #[tauri::command]
-pub fn restore_from_trash(vault_root: String, rel_paths: Vec<String>) -> Result<(), String> {
-    logged("restore_from_trash", || restore_from_trash_inner(&vault_root, &rel_paths))
+pub fn restore_from_trash(vault_root: String, rel_paths: Vec<String>, keys: State<SessionKeys>) -> Result<(), String> {
+    logged("restore_from_trash", || restore_from_trash_inner(&vault_root, &rel_paths, &keys))
 }
 
 #[cfg(any(target_os = "windows", all(unix, not(target_os = "macos"))))]
-fn restore_from_trash_inner(vault_root: &str, rel_paths: &[String]) -> Result<(), String> {
+fn restore_from_trash_inner(vault_root: &str, rel_paths: &[String], keys: &SessionKeys) -> Result<(), String> {
     // The trash reports plain paths; ours may carry Windows' `\\?\` prefix.
     fn key(path: &Path) -> String {
         let text = path.to_string_lossy();
@@ -918,24 +1138,40 @@ fn restore_from_trash_inner(vault_root: &str, rel_paths: &[String]) -> Result<()
     }
     let mut trashed = trash::os_limited::list().map_err(|e| format!("Failed to read the trash: {e}"))?;
     trashed.sort_by_key(|item| std::cmp::Reverse(item.time_deleted));
-    let mut items = Vec::new();
+    // A hidden note, or one inside a deleted folder, is restored by its disk
+    // file; the path the frontend knew it by may never have been on disk.
+    let mut wanted = Vec::new();
     for rel_path in rel_paths {
-        let path = resolve_rel_path(vault_root, rel_path)?;
+        let hidden = keys.take_trashed(vault_root, rel_path)?;
+        let required = hidden.is_empty();
+        wanted.extend(hidden.into_iter().map(|note| (note.disk, true)));
+        wanted.push((rel_path.clone(), required));
+    }
+    let mut items = Vec::new();
+    for (rel_path, required) in wanted {
+        let path = match resolve_rel_path(vault_root, &rel_path) {
+            Ok(path) => path,
+            Err(_) if !required => continue,
+            Err(e) => return Err(e),
+        };
         if path.exists() {
+            if !required {
+                continue;
+            }
             return Err(format!("\"{rel_path}\" already exists"));
         }
         let wanted = key(&path);
-        let index = trashed
-            .iter()
-            .position(|item| key(&item.original_path()) == wanted)
-            .ok_or_else(|| format!("\"{rel_path}\" is no longer in the trash"))?;
-        items.push(trashed.remove(index));
+        match trashed.iter().position(|item| key(&item.original_path()) == wanted) {
+            Some(index) => items.push(trashed.remove(index)),
+            None if required => return Err(format!("\"{rel_path}\" is no longer in the trash")),
+            None => {}
+        }
     }
     trash::os_limited::restore_all(items).map_err(|e| format!("Failed to restore from the trash: {e}"))
 }
 
 #[cfg(not(any(target_os = "windows", all(unix, not(target_os = "macos")))))]
-fn restore_from_trash_inner(_vault_root: &str, _rel_paths: &[String]) -> Result<(), String> {
+fn restore_from_trash_inner(_vault_root: &str, _rel_paths: &[String], _keys: &SessionKeys) -> Result<(), String> {
     Err("Restoring from the trash isn't supported on this system".to_string())
 }
 
@@ -1019,73 +1255,60 @@ pub(crate) fn join_rel_note_path(dir_rel: &str, stem: &str, ext: &str) -> String
     }
 }
 
-/// Find a non-colliding filename for `stem` + `ext` inside `dir_abs`.
-/// If `force_suffix` is true (or the plain name already collides), tries
-/// "stem copy", "stem copy 2", etc. Returns the absolute path and the
-/// resulting vault-relative path.
-pub(crate) fn unique_sibling_note_path(
-    dir_abs: &Path,
-    dir_rel: &str,
-    stem: &str,
-    ext: &str,
-    force_suffix: bool,
-) -> (PathBuf, String) {
-    if !force_suffix {
-        let path = dir_abs.join(format!("{stem}{ext}"));
-        if !path.exists() {
-            return (path, join_rel_note_path(dir_rel, stem, ext));
-        }
-    }
-
-    let mut n = 1;
-    loop {
-        let candidate_stem = if n == 1 { format!("{stem} copy") } else { format!("{stem} copy {n}") };
-        let path = dir_abs.join(format!("{candidate_stem}{ext}"));
-        if !path.exists() {
-            return (path, join_rel_note_path(dir_rel, &candidate_stem, ext));
-        }
-        n += 1;
-    }
-}
-
 #[tauri::command]
-pub fn duplicate_note(vault_root: String, rel_path: String) -> Result<CreatedNote, String> {
-    // Duplicating an encrypted note copies its bytes verbatim, so the copy
-    // temporarily shares the original's content key and nonce. That is not
-    // nonce reuse in the dangerous sense — the plaintexts are identical, so
-    // the ciphertexts already were — and the first edit to either copy
-    // regenerates both.
+pub fn duplicate_note(vault_root: String, rel_path: String, keys: State<SessionKeys>) -> Result<CreatedNote, String> {
     logged("duplicate_note", || {
-        let source = resolve_rel_path(&vault_root, &rel_path)?;
-        let dir_abs = source.parent().ok_or("Invalid rel_path")?.to_path_buf();
-        let (dir_rel, stem, ext) = split_rel_note_path(&rel_path);
-
-        let (dest_abs, dest_rel) = unique_sibling_note_path(&dir_abs, &dir_rel, &stem, ext, true);
-        fs::copy(&source, &dest_abs).map_err(|e| format!("Failed to duplicate note: {e}"))?;
-        Ok(CreatedNote {
-            // Not `dest_abs.file_stem()`: on "note copy.mntl.enc" that yields
-            // "note copy.mntl", since `file_stem` strips one extension only.
-            name: note_display_name(&dest_rel),
-            rel_path: dest_rel,
-        })
+        let (dir_rel, _, _) = split_rel_note_path(&rel_path);
+        copy_note_inner(&vault_root, &rel_path, &dir_rel, true, &keys)
     })
 }
 
 #[tauri::command]
-pub fn copy_note(vault_root: String, source_rel_path: String, dest_rel_dir: String) -> Result<CreatedNote, String> {
-    // See `duplicate_note` on copying encrypted bytes verbatim.
-    logged("copy_note", || {
-        let source = resolve_rel_path(&vault_root, &source_rel_path)?;
-        let dest_dir_abs = resolve_rel_dir(&vault_root, &dest_rel_dir)?;
-        let (_, stem, ext) = split_rel_note_path(&source_rel_path);
+pub fn copy_note(
+    vault_root: String,
+    source_rel_path: String,
+    dest_rel_dir: String,
+    keys: State<SessionKeys>,
+) -> Result<CreatedNote, String> {
+    logged("copy_note", || copy_note_inner(&vault_root, &source_rel_path, &dest_rel_dir, false, &keys))
+}
 
-        let (dest_abs, dest_rel) =
-            unique_sibling_note_path(&dest_dir_abs, &dest_rel_dir, &stem, ext, false);
-        fs::copy(&source, &dest_abs).map_err(|e| format!("Failed to copy note: {e}"))?;
-        Ok(CreatedNote {
-            name: note_display_name(&dest_rel),
-            rel_path: dest_rel,
-        })
+/// Copy a note into `dest_rel_dir`, as "name copy" if `force_suffix` or the
+/// name is taken.
+///
+/// Copying an encrypted note copies its bytes verbatim, so the copy
+/// temporarily shares the original's content key and nonce. That is not
+/// nonce reuse in the dangerous sense — the plaintexts are identical, so
+/// the ciphertexts already were — and the first edit to either copy
+/// regenerates both. A hidden note is resealed instead, under a new disk
+/// name and its new sealed path.
+pub(crate) fn copy_note_inner(
+    vault_root: &str,
+    source_rel_path: &str,
+    dest_rel_dir: &str,
+    force_suffix: bool,
+    keys: &SessionKeys,
+) -> Result<CreatedNote, String> {
+    let (_, stem, ext) = split_rel_note_path(source_rel_path);
+    if let Some(note) = keys.hidden_note(vault_root, source_rel_path)? {
+        if !dest_rel_dir.is_empty() {
+            hidden::check_components(dest_rel_dir)?;
+        }
+        let dest_rel = hidden::unique_note_path(vault_root, keys, dest_rel_dir, &stem, ext, force_suffix)?;
+        hidden::copy(vault_root, keys, &note, &dest_rel)?;
+        return Ok(CreatedNote { name: note_display_name(&dest_rel), rel_path: dest_rel });
+    }
+
+    let source = resolve_rel_path(vault_root, source_rel_path)?;
+    hidden::ensure_rel_dir(vault_root, dest_rel_dir, keys)?;
+    let dest_rel = hidden::unique_note_path(vault_root, keys, dest_rel_dir, &stem, ext, force_suffix)?;
+    let dest_abs = resolve_rel_path(vault_root, &dest_rel)?;
+    fs::copy(&source, &dest_abs).map_err(|e| format!("Failed to copy note: {e}"))?;
+    Ok(CreatedNote {
+        // Not `dest_abs.file_stem()`: on "note copy.mntl.enc" that yields
+        // "note copy.mntl", since `file_stem` strips one extension only.
+        name: note_display_name(&dest_rel),
+        rel_path: dest_rel,
     })
 }
 
@@ -1097,99 +1320,141 @@ pub struct CreatedFolder {
 }
 
 #[tauri::command]
-pub fn create_folder(vault_root: String, rel_dir: String, name: String) -> Result<CreatedFolder, String> {
-    logged("create_folder", || {
-        if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains(':') {
-            return Err("Invalid folder name".to_string());
+pub fn create_folder(
+    vault_root: String,
+    rel_dir: String,
+    name: String,
+    keys: State<SessionKeys>,
+) -> Result<CreatedFolder, String> {
+    logged("create_folder", || create_folder_inner(&vault_root, &rel_dir, &name, &keys))
+}
+
+pub(crate) fn create_folder_inner(
+    vault_root: &str,
+    rel_dir: &str,
+    name: &str,
+    keys: &SessionKeys,
+) -> Result<CreatedFolder, String> {
+    if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains(':') {
+        return Err("Invalid folder name".to_string());
+    }
+    let dest_dir_abs = hidden::ensure_rel_dir(vault_root, rel_dir, keys)?;
+    let rel_path = if rel_dir.is_empty() { name.to_string() } else { format!("{rel_dir}/{name}") };
+    let path = dest_dir_abs.join(name);
+    if path.exists() || hidden::folder_exists(vault_root, keys, &rel_path)? {
+        return Err(format!("A folder named \"{name}\" already exists in this location"));
+    }
+    fs::create_dir(&path).map_err(|e| format!("Failed to create folder: {e}"))?;
+    Ok(CreatedFolder { name: name.to_string(), rel_path })
+}
+
+#[tauri::command]
+pub fn rename_folder(
+    vault_root: String,
+    rel_path: String,
+    new_name: String,
+    keys: State<SessionKeys>,
+) -> Result<CreatedFolder, String> {
+    logged("rename_folder", || rename_folder_inner(&vault_root, &rel_path, &new_name, &keys))
+}
+
+/// Rename a folder, real or virtual, resealing the unlocked hidden notes in it.
+pub(crate) fn rename_folder_inner(
+    vault_root: &str,
+    rel_path: &str,
+    new_name: &str,
+    keys: &SessionKeys,
+) -> Result<CreatedFolder, String> {
+    if new_name.is_empty() || new_name.contains('/') || new_name.contains('\\') || new_name.contains(':') {
+        return Err("Invalid folder name".to_string());
+    }
+    hidden::check_components(rel_path)?;
+    let dir_rel = rel_path.rsplit_once('/').map(|(dir, _)| dir.to_string()).unwrap_or_default();
+    let dest_rel = if dir_rel.is_empty() { new_name.to_string() } else { format!("{dir_rel}/{new_name}") };
+    // A case-only rename finds the folder itself on a case-insensitive disk.
+    let same = dest_rel.to_lowercase() == rel_path.to_lowercase();
+    if !same && hidden::folder_exists(vault_root, keys, &dest_rel)? {
+        return Err(format!("A folder named \"{new_name}\" already exists in this location"));
+    }
+    hidden::move_folder_tree(vault_root, keys, rel_path, &dest_rel)?;
+    Ok(CreatedFolder { name: new_name.to_string(), rel_path: dest_rel })
+}
+
+#[tauri::command]
+pub fn move_note(
+    vault_root: String,
+    source_rel_path: String,
+    dest_rel_dir: String,
+    keys: State<SessionKeys>,
+) -> Result<CreatedNote, String> {
+    logged("move_note", || move_note_inner(&vault_root, &source_rel_path, &dest_rel_dir, &keys))
+}
+
+/// Move a note into `dest_rel_dir`. Like `rename_note`, a pure `fs::rename`
+/// that needs no key — except for a hidden note, which is resealed.
+pub(crate) fn move_note_inner(
+    vault_root: &str,
+    source_rel_path: &str,
+    dest_rel_dir: &str,
+    keys: &SessionKeys,
+) -> Result<CreatedNote, String> {
+    let (_, stem, ext) = split_rel_note_path(source_rel_path);
+    if let Some(note) = keys.hidden_note(vault_root, source_rel_path)? {
+        if !dest_rel_dir.is_empty() {
+            hidden::check_components(dest_rel_dir)?;
         }
-        let dest_dir_abs = resolve_rel_dir(&vault_root, &rel_dir)?;
-        let rel_path = if rel_dir.is_empty() {
-            name.clone()
-        } else {
-            format!("{rel_dir}/{name}")
-        };
-        let path = dest_dir_abs.join(&name);
-        if path.exists() {
-            return Err(format!("A folder named \"{name}\" already exists in this location"));
-        }
-        fs::create_dir(&path).map_err(|e| format!("Failed to create folder: {e}"))?;
-        Ok(CreatedFolder { name, rel_path })
+        let dest_rel = hidden::unique_note_path(vault_root, keys, dest_rel_dir, &stem, ext, false)?;
+        hidden::relocate(vault_root, keys, source_rel_path, &note, &dest_rel)?;
+        return Ok(CreatedNote { name: note_display_name(&dest_rel), rel_path: dest_rel });
+    }
+
+    let source = resolve_rel_path(vault_root, source_rel_path)?;
+    hidden::ensure_rel_dir(vault_root, dest_rel_dir, keys)?;
+    let dest_rel = hidden::unique_note_path(vault_root, keys, dest_rel_dir, &stem, ext, false)?;
+    let dest_abs = resolve_rel_path(vault_root, &dest_rel)?;
+    fs::rename(&source, &dest_abs).map_err(|e| format!("Failed to move note: {e}"))?;
+    Ok(CreatedNote {
+        name: note_display_name(&dest_rel),
+        rel_path: dest_rel,
     })
 }
 
 #[tauri::command]
-pub fn rename_folder(vault_root: String, rel_path: String, new_name: String) -> Result<CreatedFolder, String> {
-    logged("rename_folder", || {
-        if new_name.is_empty() || new_name.contains('/') || new_name.contains('\\') || new_name.contains(':') {
-            return Err("Invalid folder name".to_string());
-        }
-        let source = resolve_rel_path(&vault_root, &rel_path)?;
-        let dir_rel = rel_path.rsplit_once('/').map(|(dir, _)| dir.to_string()).unwrap_or_default();
-        let dest_rel = if dir_rel.is_empty() {
-            new_name.clone()
-        } else {
-            format!("{dir_rel}/{new_name}")
-        };
-        let dest = resolve_rel_path(&vault_root, &dest_rel)?;
-        if dest != source && dest.exists() {
-            return Err(format!("A folder named \"{new_name}\" already exists in this location"));
-        }
-        fs::rename(&source, &dest).map_err(|e| format!("Failed to rename folder: {e}"))?;
-        Ok(CreatedFolder {
-            name: new_name,
-            rel_path: dest_rel,
-        })
-    })
+pub fn move_folder(
+    vault_root: String,
+    source_rel_path: String,
+    dest_rel_dir: String,
+    keys: State<SessionKeys>,
+) -> Result<CreatedFolder, String> {
+    logged("move_folder", || move_folder_inner(&vault_root, &source_rel_path, &dest_rel_dir, &keys))
 }
 
-#[tauri::command]
-pub fn move_note(vault_root: String, source_rel_path: String, dest_rel_dir: String) -> Result<CreatedNote, String> {
-    // Like `rename_note`, a move is a pure `fs::rename` and needs no key.
-    logged("move_note", || {
-        let source = resolve_rel_path(&vault_root, &source_rel_path)?;
-        let dest_dir_abs = resolve_rel_dir(&vault_root, &dest_rel_dir)?;
-        let (_, stem, ext) = split_rel_note_path(&source_rel_path);
+/// Move a folder (real or virtual) or a file that isn't a note into
+/// `dest_rel_dir`, keeping its name.
+pub(crate) fn move_folder_inner(
+    vault_root: &str,
+    source_rel_path: &str,
+    dest_rel_dir: &str,
+    keys: &SessionKeys,
+) -> Result<CreatedFolder, String> {
+    hidden::check_components(source_rel_path)?;
+    let name = source_rel_path.rsplit('/').next().unwrap_or(source_rel_path).to_string();
+    let dest_rel = if dest_rel_dir.is_empty() { name.clone() } else { format!("{dest_rel_dir}/{name}") };
 
-        let (dest_abs, dest_rel) =
-            unique_sibling_note_path(&dest_dir_abs, &dest_rel_dir, &stem, ext, false);
-        fs::rename(&source, &dest_abs).map_err(|e| format!("Failed to move note: {e}"))?;
-        Ok(CreatedNote {
-            name: note_display_name(&dest_rel),
-            rel_path: dest_rel,
-        })
-    })
-}
-
-#[tauri::command]
-pub fn move_folder(vault_root: String, source_rel_path: String, dest_rel_dir: String) -> Result<CreatedFolder, String> {
-    logged("move_folder", || {
-        let source = resolve_rel_path(&vault_root, &source_rel_path)?;
-        let dest_dir_abs = resolve_rel_dir(&vault_root, &dest_rel_dir)?;
-        let name = source
-            .file_name()
-            .ok_or("Invalid rel_path")?
-            .to_string_lossy()
-            .into_owned();
-        let dest_abs = dest_dir_abs.join(&name);
-
-        if dest_abs == source {
-            return Ok(CreatedFolder { name, rel_path: source_rel_path });
-        }
-        if dest_abs.starts_with(&source) {
-            return Err("Cannot move a folder into itself or one of its subfolders".to_string());
-        }
-        if dest_abs.exists() {
-            return Err(format!("\"{name}\" already exists in the destination folder"));
-        }
-
-        let dest_rel = if dest_rel_dir.is_empty() {
-            name.clone()
-        } else {
-            format!("{dest_rel_dir}/{name}")
-        };
-        fs::rename(&source, &dest_abs).map_err(|e| format!("Failed to move folder: {e}"))?;
-        Ok(CreatedFolder { name, rel_path: dest_rel })
-    })
+    if dest_rel == source_rel_path {
+        return Ok(CreatedFolder { name, rel_path: dest_rel });
+    }
+    if dest_rel_dir == source_rel_path || dest_rel_dir.starts_with(&format!("{source_rel_path}/")) {
+        return Err("Cannot move a folder into itself or one of its subfolders".to_string());
+    }
+    if !dest_rel_dir.is_empty() && !hidden::folder_exists(vault_root, keys, dest_rel_dir)? {
+        return Err("Destination folder does not exist".to_string());
+    }
+    if hidden::folder_exists(vault_root, keys, &dest_rel)? {
+        return Err(format!("\"{name}\" already exists in the destination folder"));
+    }
+    hidden::move_folder_tree(vault_root, keys, source_rel_path, &dest_rel)?;
+    Ok(CreatedFolder { name, rel_path: dest_rel })
 }
 
 #[cfg(test)]
@@ -1288,11 +1553,11 @@ mod tests {
         fs::create_dir_all(root.join("Work")).unwrap();
         let root_str = root.to_string_lossy().into_owned();
 
-        let created = create_folder(root_str.clone(), String::new(), "Archive".to_string()).unwrap();
+        let created = create_folder_inner(&root_str.clone(), &String::new(), &"Archive".to_string(), &SessionKeys::default()).unwrap();
         assert_eq!(created.rel_path, "Archive");
         assert!(root.join("Archive").is_dir());
 
-        let nested = create_folder(root_str, "Work".to_string(), "Drafts".to_string()).unwrap();
+        let nested = create_folder_inner(&root_str, &"Work".to_string(), &"Drafts".to_string(), &SessionKeys::default()).unwrap();
         assert_eq!(nested.rel_path, "Work/Drafts");
         assert!(root.join("Work").join("Drafts").is_dir());
 
@@ -1305,9 +1570,9 @@ mod tests {
         fs::create_dir_all(root.join("Archive")).unwrap();
         let root_str = root.to_string_lossy().into_owned();
 
-        assert!(create_folder(root_str.clone(), String::new(), "Archive".to_string()).is_err());
-        assert!(create_folder(root_str.clone(), String::new(), "a/b".to_string()).is_err());
-        assert!(create_folder(root_str, String::new(), String::new()).is_err());
+        assert!(create_folder_inner(&root_str.clone(), &String::new(), &"Archive".to_string(), &SessionKeys::default()).is_err());
+        assert!(create_folder_inner(&root_str.clone(), &String::new(), &"a/b".to_string(), &SessionKeys::default()).is_err());
+        assert!(create_folder_inner(&root_str, &String::new(), &String::new(), &SessionKeys::default()).is_err());
 
         let _ = fs::remove_dir_all(&root);
     }
@@ -1320,13 +1585,13 @@ mod tests {
         fs::write(root.join("Work").join("taken.mntl"), "---\nv: 2\n---\n").unwrap();
         let root_str = root.to_string_lossy().into_owned();
 
-        let renamed = rename_note(root_str.clone(), "Work/todo.mntl".to_string(), "done".to_string()).unwrap();
+        let renamed = rename_note_inner(&root_str.clone(), &"Work/todo.mntl".to_string(), &"done".to_string(), &SessionKeys::default()).unwrap();
         assert_eq!(renamed.rel_path, "Work/done.mntl");
         assert!(root.join("Work").join("done.mntl").is_file());
         assert!(!root.join("Work").join("todo.mntl").exists());
 
-        assert!(rename_note(root_str.clone(), "Work/done.mntl".to_string(), "taken".to_string()).is_err());
-        assert!(rename_note(root_str, "Work/done.mntl".to_string(), "a/b".to_string()).is_err());
+        assert!(rename_note_inner(&root_str.clone(), &"Work/done.mntl".to_string(), &"taken".to_string(), &SessionKeys::default()).is_err());
+        assert!(rename_note_inner(&root_str, &"Work/done.mntl".to_string(), &"a/b".to_string(), &SessionKeys::default()).is_err());
 
         let _ = fs::remove_dir_all(&root);
     }
@@ -1339,13 +1604,13 @@ mod tests {
         fs::write(root.join("Work").join("todo.mntl"), "---\nv: 2\n---\n").unwrap();
         let root_str = root.to_string_lossy().into_owned();
 
-        let renamed = rename_folder(root_str.clone(), "Work".to_string(), "Projects".to_string()).unwrap();
+        let renamed = rename_folder_inner(&root_str.clone(), &"Work".to_string(), &"Projects".to_string(), &SessionKeys::default()).unwrap();
         assert_eq!(renamed.rel_path, "Projects");
         assert!(root.join("Projects").join("todo.mntl").is_file());
         assert!(!root.join("Work").exists());
 
-        assert!(rename_folder(root_str.clone(), "Projects".to_string(), "Archive".to_string()).is_err());
-        assert!(rename_folder(root_str, "Projects".to_string(), "a/b".to_string()).is_err());
+        assert!(rename_folder_inner(&root_str.clone(), &"Projects".to_string(), &"Archive".to_string(), &SessionKeys::default()).is_err());
+        assert!(rename_folder_inner(&root_str, &"Projects".to_string(), &"a/b".to_string(), &SessionKeys::default()).is_err());
 
         let _ = fs::remove_dir_all(&root);
     }
@@ -1360,16 +1625,16 @@ mod tests {
         let root_str = root.to_string_lossy().into_owned();
 
         // moving into itself or a subfolder of itself is rejected
-        assert!(move_folder(root_str.clone(), "Work".to_string(), "Work".to_string()).is_err());
-        assert!(move_folder(root_str.clone(), "Work".to_string(), "Work/Nested".to_string()).is_err());
+        assert!(move_folder_inner(&root_str.clone(), &"Work".to_string(), &"Work".to_string(), &SessionKeys::default()).is_err());
+        assert!(move_folder_inner(&root_str.clone(), &"Work".to_string(), &"Work/Nested".to_string(), &SessionKeys::default()).is_err());
 
         // colliding with an existing folder at the destination is rejected
-        assert!(move_folder(root_str.clone(), "Work".to_string(), "Archive".to_string()).is_err());
+        assert!(move_folder_inner(&root_str.clone(), &"Work".to_string(), &"Archive".to_string(), &SessionKeys::default()).is_err());
 
-        let moved = move_folder(root_str.clone(), "Work".to_string(), "".to_string()).unwrap();
+        let moved = move_folder_inner(&root_str.clone(), &"Work".to_string(), &"".to_string(), &SessionKeys::default()).unwrap();
         assert_eq!(moved.rel_path, "Work");
 
-        let moved = move_folder(root_str.clone(), "Work".to_string(), "Nonexistent".to_string());
+        let moved = move_folder_inner(&root_str.clone(), &"Work".to_string(), &"Nonexistent".to_string(), &SessionKeys::default());
         assert!(moved.is_err());
 
         let _ = fs::remove_dir_all(&root);
@@ -1382,7 +1647,7 @@ mod tests {
         fs::write(root.join("Work").join("todo.mntl"), "---\nv: 2\n---\n").unwrap();
         let root_str = root.to_string_lossy().into_owned();
 
-        delete_folder(root_str, "Work".to_string()).unwrap();
+        delete_folder_inner(&root_str, &"Work".to_string(), &SessionKeys::default()).unwrap();
         assert!(!root.join("Work").exists());
 
         let _ = fs::remove_dir_all(&root);
@@ -1605,7 +1870,7 @@ tags: [x]
         let root_str = root.to_string_lossy().into_owned();
         fs::write(root.join("readme.md"), "hi").unwrap();
 
-        let renamed = rename_note(root_str, "readme.md".to_string(), "intro".to_string()).unwrap();
+        let renamed = rename_note_inner(&root_str, &"readme.md".to_string(), &"intro".to_string(), &SessionKeys::default()).unwrap();
         assert_eq!(renamed.rel_path, "intro.md");
         assert!(root.join("intro.md").is_file());
     }
@@ -1649,16 +1914,17 @@ tags: [x]
     }
 
     #[test]
-    fn unique_sibling_note_path_preserves_enc_extension() {
+    fn unique_note_path_preserves_enc_extension() {
         let root = temp_dir("unique-sibling-enc");
         fs::write(root.join("secret.mntl.enc"), b"MENC").unwrap();
+        let root_str = root.to_string_lossy().into_owned();
+        let keys = SessionKeys::default();
 
-        let (abs, rel) = unique_sibling_note_path(&root, "", "secret", ".mntl.enc", true);
+        let rel = hidden::unique_note_path(&root_str, &keys, "", "secret", ".mntl.enc", true).unwrap();
         assert_eq!(rel, "secret copy.mntl.enc");
-        assert!(abs.ends_with("secret copy.mntl.enc"));
 
         // And a non-colliding plaintext name is returned untouched.
-        let (_, plain) = unique_sibling_note_path(&root, "Work", "todo", ".mntl", false);
+        let plain = hidden::unique_note_path(&root_str, &keys, "Work", "todo", ".mntl", false).unwrap();
         assert_eq!(plain, "Work/todo.mntl");
 
         let _ = fs::remove_dir_all(&root);
@@ -1670,11 +1936,7 @@ tags: [x]
         fs::write(root.join("secret.mntl.enc"), b"MENC placeholder").unwrap();
         let root_str = root.to_string_lossy().into_owned();
 
-        let renamed = rename_note(
-            root_str,
-            "secret.mntl.enc".to_string(),
-            "diary".to_string(),
-        )
+        let renamed = rename_note_inner(&root_str, &"secret.mntl.enc".to_string(), &"diary".to_string(), &SessionKeys::default())
         .unwrap();
 
         assert_eq!(renamed.rel_path, "diary.mntl.enc");
@@ -1691,7 +1953,7 @@ tags: [x]
         fs::write(root.join("secret.mntl.enc"), b"MENC placeholder").unwrap();
         let root_str = root.to_string_lossy().into_owned();
 
-        let copy = duplicate_note(root_str, "secret.mntl.enc".to_string()).unwrap();
+        let copy = copy_note_inner(&root_str, "secret.mntl.enc", "", true, &SessionKeys::default()).unwrap();
 
         assert_eq!(copy.rel_path, "secret copy.mntl.enc");
         assert_eq!(copy.name, "secret copy");
@@ -1707,11 +1969,7 @@ tags: [x]
         fs::write(root.join("secret.mntl.enc"), b"MENC placeholder").unwrap();
         let root_str = root.to_string_lossy().into_owned();
 
-        let moved = move_note(
-            root_str,
-            "secret.mntl.enc".to_string(),
-            "Work".to_string(),
-        )
+        let moved = move_note_inner(&root_str, &"secret.mntl.enc".to_string(), &"Work".to_string(), &SessionKeys::default())
         .unwrap();
 
         assert_eq!(moved.rel_path, "Work/secret.mntl.enc");
@@ -1794,7 +2052,10 @@ tags: [x]
             names(&json["children"][0]),
             ["folder:Trip/attachments", "note:Trip/notes.mntl", "file:Trip/plan.pdf"],
         );
-        assert_eq!(note_paths(&root.to_string_lossy()).unwrap(), ["Trip/notes.mntl"]);
+        assert_eq!(
+            note_paths(&root.to_string_lossy(), &SessionKeys::default()).unwrap(),
+            [("Trip/notes.mntl".to_string(), "Trip/notes.mntl".to_string())]
+        );
 
         let _ = fs::remove_dir_all(&root);
     }

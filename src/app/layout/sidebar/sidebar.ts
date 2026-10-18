@@ -299,6 +299,27 @@ export class Sidebar {
    * shows a "this note is locked" screen with its own unlock affordance
    * rather than prompting for a password immediately.
    */
+  /**
+   * One row per locked profile with hidden notes, which the tree leaves out,
+   * plus one for hidden notes whose profile isn't in this vault. Clicking a
+   * row opens its profile's unlock prompt.
+   */
+  protected readonly hiddenRows = computed(() => {
+    type Row = { profileId: string; label: string; count: number };
+    const rows: Row[] = [];
+    const unknown: Row = { profileId: '', label: 'unknown profile', count: 0 };
+    for (const [profileId, count] of Object.entries(this.vaultState.lockedHidden())) {
+      const profile = this.credentialsState.profileById(profileId);
+      if (profile) rows.push({ profileId, label: profile.displayName, count });
+      else Object.assign(unknown, { profileId, count: unknown.count + count });
+    }
+    return unknown.count > 0 ? [...rows, unknown] : rows;
+  });
+
+  protected onHiddenRowClicked(profileId: string): void {
+    void this.credentialsState.promptUnlock(profileId);
+  }
+
   protected onLockedClicked(note: VaultNoteNode): void {
     this.onOpenNote(note);
   }

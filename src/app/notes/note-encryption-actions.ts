@@ -231,6 +231,7 @@ export class NoteEncryptionActions {
       await this.vaultState.refresh();
       this.history.record({
         label: `Encrypt "${note.name}"`,
+        paths: [note.relPath, created.relPath],
         undo: async () => this.decrypt(this.noteAt(created.relPath), { skipConfirm: true }),
         redo: async () => this.encrypt(this.noteAt(note.relPath), profileId),
       });
@@ -263,6 +264,24 @@ export class NoteEncryptionActions {
       if (!confirmed) return false;
     }
 
+    // The note goes back to plaintext beside its siblings; a hidden one may
+    // find its real name taken there.
+    const tree = this.vaultState.tree();
+    const dir = dirOf(note.relPath);
+    const pathOf = (name: string) => (dir ? `${dir}/${name}.mntl` : `${name}.mntl`);
+    const taken = new Set(tree ? flattenTreeNodes(tree).keys() : []);
+    let name: string | undefined;
+    if (taken.has(pathOf(note.name))) {
+      let n = 2;
+      while (taken.has(pathOf(`${note.name} ${n}`))) n++;
+      const choice = await this.dialogState.choose(
+        `"${pathOf(note.name)}" already exists. Decrypt "${note.name}" as "${note.name} ${n}" instead?`,
+        { title: 'Note Already Exists', confirmLabel: 'Rename', altLabel: 'Skip', cancelLabel: 'Cancel' },
+      );
+      if (choice !== 'confirm') return false;
+      name = `${note.name} ${n}`;
+    }
+
     await this.notesState.flushPending([note.relPath]);
     // Decrypting clears the sealed flag; a plaintext note's favorite lives in state.json.
     const wasFavorite = this.favorites.isFavorite(note.relPath);
@@ -271,6 +290,7 @@ export class NoteEncryptionActions {
       const created = await invoke<CreatedNote>('decrypt_note_to_plaintext', {
         vaultRoot: root,
         relPath: note.relPath,
+        name,
       });
       this.retarget(note.relPath, created);
       if (wasFavorite) this.vaultMeta.addFavorites([created.relPath]);
@@ -280,6 +300,7 @@ export class NoteEncryptionActions {
       if (profileId) {
         this.history.record({
           label: `Decrypt "${note.name}"`,
+          paths: [note.relPath, created.relPath],
           undo: async () => this.encrypt(this.noteAt(created.relPath), profileId),
           redo: async () => this.decrypt(this.noteAt(note.relPath), { skipConfirm: true }),
         });
@@ -308,17 +329,19 @@ export class NoteEncryptionActions {
     await this.notesState.flushPending([note.relPath]);
 
     try {
-      await invoke('move_note_to_profile', { vaultRoot: root, relPath: note.relPath, profileId });
+      const created = await invoke<CreatedNote>('move_note_to_profile', { vaultRoot: root, relPath: note.relPath, profileId });
+      this.retarget(note.relPath, created);
       // The content is unchanged but the entry was decrypted under the old
       // profile's key, so re-read it rather than trusting what's cached.
-      this.notesState.reload(note.relPath);
+      this.notesState.reload(created.relPath);
       logInfo(`Moved "${note.relPath}" to profile "${profileId}"`);
       await this.vaultState.refresh();
       const from = note.profile;
       if (from) {
         this.history.record({
           label: `Move "${note.name}" to Another Profile`,
-          undo: async () => this.moveToProfile(this.noteAt(note.relPath), from),
+          paths: [note.relPath, created.relPath],
+          undo: async () => this.moveToProfile(this.noteAt(created.relPath), from),
           redo: async () => this.moveToProfile(this.noteAt(note.relPath), profileId),
         });
       }

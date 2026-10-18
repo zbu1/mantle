@@ -22,7 +22,14 @@
       (noteRenamed)="onNoteRenamed($event)" (folderRenamed)="onFolderRenamed($event)"
       (openFile)="onOpenFile($event)" (fileContextMenu)="onFileContextMenu($event)" />
     }
-    @if (tree.children.length === 0) {
+    @for (row of hiddenRows(); track row.label) {
+    <button type="button" (click)="onHiddenRowClicked(row.profileId)"
+      class="mt-0.5 flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground">
+      <svg lucideLock [size]="12" class="shrink-0"></svg>
+      <span class="truncate">{{ row.count === 1 ? '1 hidden note' : row.count + ' hidden notes' }} · {{ row.label }}</span>
+    </button>
+    }
+    @if (tree.children.length === 0 && hiddenRows().length === 0) {
     @if (filterQuery().trim()) {
     <div class="px-2 py-1 text-xs text-muted-foreground">No notes match “{{ filterQuery().trim() }}”.</div>
     } @else {

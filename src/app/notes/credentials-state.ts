@@ -3,7 +3,9 @@ import { invoke } from '@tauri-apps/api/core';
 import { logError, logInfo, formatError } from '../core/logger';
 import { DialogState } from '../shared/dialog/dialog-state';
 import { NotesState } from './notes-state';
+import { TabsState } from './tabs-state';
 import { VaultHistoryState } from './vault-history-state';
+import { VaultMetaState } from './vault-meta-state';
 import { VaultState } from './vault-state';
 import { VaultNoteNode, flattenEncryptedNotes } from './vault-tree.model';
 
@@ -20,13 +22,42 @@ export interface CredentialProfile {
   displayName: string;
   unlocked: boolean;
   kdf: KdfParams;
+  /** Whether its notes' files sit in the vault root, their real folder sealed inside them. */
+  hideLocations: boolean;
+  /** Whether its notes' files get random names, their real name sealed inside them. */
+  hideNames: boolean;
 }
 
 /** Encrypted notes naming a profile that isn't in this vault's registry. */
 export interface OrphanGroup {
   profileId: string | null;
   notes: VaultNoteNode[];
+  /** Its hidden notes, which can't be listed: without the profile there's no unlocking them. */
+  hiddenCount: number;
 }
+
+/** Mirrors `HidingClash` in `hidden.rs`: a note whose real path is taken, so it can't be un-hidden onto it. */
+interface HidingClash {
+  relPath: string;
+  suggestion: string;
+}
+
+/** Mirrors `HidingReport` in `hidden.rs`. */
+interface HidingReport {
+  renamed: { name: string; relPath: string }[];
+  renamedFrom: string[];
+  failed: { relPath: string; error: string }[];
+}
+
+/** What hiding a profile's note locations and names does, behind the `?` in its settings. */
+export const HIDING_HELP =
+  'Hide locations: the profile\'s note files sit in the vault root instead of their folders, and each ' +
+  'note\'s real folder is sealed inside it. Folders left empty are removed.\n\n' +
+  'Hide names: the files get random names, and each note\'s real name is sealed inside it.\n\n' +
+  'While the profile is locked its hidden notes are left out of the tree; unlocked, they show where they belong. ' +
+  'Turning either on or off converts every note in the profile, so it has to be unlocked.\n\n' +
+  "Old names aren't erased: hiding a note writes a new file and removes the old one, but the old name can " +
+  'survive in sync history, file system journals and backups.';
 
 /** Minimum password length accepted when creating a profile. */
 const MIN_PASSWORD_LENGTH = 8;
@@ -46,6 +77,8 @@ export class CredentialsState {
   private readonly notesState = inject(NotesState);
   private readonly dialogState = inject(DialogState);
   private readonly history = inject(VaultHistoryState);
+  private readonly tabsState = inject(TabsState);
+  private readonly vaultMeta = inject(VaultMetaState);
 
   readonly profiles = signal<CredentialProfile[]>([]);
   readonly loading = signal(false);
@@ -96,9 +129,22 @@ export class CredentialsState {
       if (existing) existing.push(note);
       else groups.set(note.profile, [note]);
     }
+    const hidden = this.vaultState.lockedHidden();
+    for (const profileId of Object.keys(hidden)) {
+      if (!known.has(profileId) && !groups.has(profileId)) groups.set(profileId, []);
+    }
 
-    return [...groups].map(([profileId, notes]) => ({ profileId, notes }));
+    return [...groups].map(([profileId, notes]) => ({
+      profileId,
+      notes,
+      hiddenCount: profileId === null ? 0 : (hidden[profileId] ?? 0),
+    }));
   });
+
+  /** How many hidden notes `profileId` has that the tree can't list, because it's locked. */
+  hiddenCountOf(profileId: string): number {
+    return this.vaultState.lockedHidden()[profileId] ?? 0;
+  }
 
   constructor() {
     // Opening a different vault invalidates every unlocked key. The backend
@@ -182,9 +228,21 @@ export class CredentialsState {
     }
 
     this.notesState.markLocked(paths, profileId);
+    this.forgetHidden(this.membersByProfile().get(profileId) ?? []);
     await this.refresh();
-    // Rescan so the tree drops the tags it read from this profile's notes.
+    // Rescan so the tree drops the tags it read from this profile's notes, and its hidden notes.
     await this.vaultState.refresh();
+  }
+
+  /**
+   * A just-locked profile's hidden notes leave the tree, so their tabs close
+   * — a locked panel would point at a path that's no longer there — and the
+   * undo steps on them go.
+   */
+  private forgetHidden(notes: readonly VaultNoteNode[]): void {
+    const hidden = notes.filter((note) => note.hidden).map((note) => note.relPath);
+    for (const relPath of hidden) this.tabsState.closeByNoteId(relPath);
+    this.history.dropTouching(hidden);
   }
 
   async lockAll(): Promise<void> {
@@ -199,6 +257,7 @@ export class CredentialsState {
 
     for (const profile of this.profiles()) {
       this.notesState.markLocked(this.notePathsFor(profile.id), profile.id);
+      this.forgetHidden(this.membersByProfile().get(profile.id) ?? []);
     }
     await this.refresh();
     await this.vaultState.refresh();
@@ -387,6 +446,81 @@ export class CredentialsState {
 
     if (submitted) logInfo(`Changed password for credential profile "${profileId}"`);
     return submitted;
+  }
+
+  /**
+   * Turn hiding note locations and/or names on or off for a profile, which
+   * converts every one of its notes, as one undo step. The profile has to be
+   * unlocked. Un-hiding a note whose real path is taken asks, per note,
+   * whether to rename it, skip it (it stays hidden) or cancel. Resolves
+   * whether the settings changed.
+   */
+  async setHiding(profileId: string, hideLocations: boolean, hideNames: boolean): Promise<boolean> {
+    const root = this.vaultState.rootPath();
+    const profile = this.profileById(profileId);
+    if (!root || !profile) return false;
+    if (profile.hideLocations === hideLocations && profile.hideNames === hideNames) return true;
+    if (!this.isUnlocked(profileId) && !(await this.promptUnlock(profileId))) return false;
+    const before = { hideLocations: profile.hideLocations, hideNames: profile.hideNames };
+
+    // The notes are rewritten, so debounced edits go to disk first.
+    await this.notesState.flushPending(this.notePathsFor(profileId));
+    const renames: Record<string, string> = {};
+    const skip: string[] = [];
+    try {
+      const clashes = await invoke<HidingClash[]>('hiding_clashes', { vaultRoot: root, profileId, hideLocations, hideNames });
+      for (const clash of clashes) {
+        const choice = await this.dialogState.choose(
+          `"${clash.relPath}" already exists, so this note can't go back there. Rename it to "${clash.suggestion}", ` +
+            `or skip it and leave it hidden?`,
+          { title: 'Note Already Exists', confirmLabel: 'Rename', altLabel: 'Skip', cancelLabel: 'Cancel All' },
+        );
+        if (choice === null) return false;
+        if (choice === 'alt') skip.push(clash.relPath);
+        else renames[clash.relPath] = clash.suggestion;
+      }
+    } catch (err) {
+      await this.dialogState.alert(String(err), { title: "Couldn't Change Hidden Notes", tone: 'error' });
+      return false;
+    }
+
+    let report: HidingReport;
+    try {
+      report = await invoke<HidingReport>('set_profile_hiding', {
+        vaultRoot: root,
+        profileId,
+        hideLocations,
+        hideNames,
+        renames,
+        skip,
+      });
+    } catch (err) {
+      logError(`Failed to change what "${profileId}" hides: ${formatError(err)}`);
+      await this.dialogState.alert(String(err), { title: "Couldn't Change Hidden Notes", tone: 'error' });
+      return false;
+    }
+    report.renamed.forEach((created, i) => {
+      const from = report.renamedFrom[i];
+      this.notesState.renameNoteId(from, created.relPath);
+      this.tabsState.renameNoteId(from, created.relPath, created.name);
+      this.vaultMeta.renameNote(from, created.relPath);
+    });
+    logInfo(`Changed what profile "${profileId}" hides`);
+    await this.refresh();
+    await this.vaultState.refresh();
+    if (report.failed.length > 0) {
+      for (const f of report.failed) logError(`Failed to convert "${f.relPath}": ${f.error}`);
+      await this.dialogState.alert(report.failed.map((f) => `${f.relPath}: ${f.error}`).join('\n'), {
+        title: `${report.failed.length} Notes Not Converted`,
+        tone: 'error',
+      });
+    }
+    this.history.record({
+      label: `Change Hidden Notes of "${profile.displayName}"`,
+      undo: () => this.setHiding(profileId, before.hideLocations, before.hideNames),
+      redo: () => this.setHiding(profileId, hideLocations, hideNames),
+    });
+    return true;
   }
 
   /**

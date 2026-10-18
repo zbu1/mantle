@@ -9,10 +9,11 @@ import {
 } from '@lucide/angular';
 import { ContextMenuState } from '../context-menu/context-menu-state';
 import { DialogState } from '../dialog/dialog-state';
+import { HelpPopover } from '../help-popover/help-popover';
 import { Toggle } from '../toggle/toggle';
 import { SettingsRow } from './settings-row';
 import { AttachmentsState } from '../../notes/attachments-state';
-import { CredentialsState } from '../../notes/credentials-state';
+import { CredentialsState, HIDING_HELP } from '../../notes/credentials-state';
 import { NoteEncryptionActions } from '../../notes/note-encryption-actions';
 import { TabsState } from '../../notes/tabs-state';
 import { VaultMetaState } from '../../notes/vault-meta-state';
@@ -32,6 +33,7 @@ import { VaultNoteNode } from '../../notes/vault-tree.model';
   imports: [
     SettingsRow,
     Toggle,
+    HelpPopover,
     LucideChevronDown,
     LucideEllipsis,
     LucideLock,
@@ -53,6 +55,8 @@ export class ProfileSettingsPanel {
   private readonly attachments = inject(AttachmentsState);
   private readonly vaultState = inject(VaultState);
   private readonly vaultMeta = inject(VaultMetaState);
+
+  protected readonly hidingHelp = HIDING_HELP;
 
   protected readonly profile = computed(() => this.credentialsState.profileById(this.profileId()));
   protected readonly notes = computed(() => this.credentialsState.membersByProfile().get(this.profileId()) ?? []);
@@ -122,6 +126,16 @@ export class ProfileSettingsPanel {
     const id = this.profileId();
     if (this.unlocked()) await this.credentialsState.lock(id);
     else await this.credentialsState.promptUnlock(id);
+  }
+
+  /** Converts every note of the profile, so the toggles stay off until it's done. */
+  protected async setHiding(hideLocations: boolean, hideNames: boolean): Promise<void> {
+    this.working.set(true);
+    try {
+      await this.credentialsState.setHiding(this.profileId(), hideLocations, hideNames);
+    } finally {
+      this.working.set(false);
+    }
   }
 
   protected async changePassword(): Promise<void> {

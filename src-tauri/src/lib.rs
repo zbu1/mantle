@@ -1,5 +1,6 @@
 mod attachments;
 mod credentials;
+mod hidden;
 mod logging;
 mod notes_crypto;
 mod tags;
@@ -62,6 +63,9 @@ pub fn run() {
             credentials::delete_credential_profile,
             credentials::undo_create_credential_profile,
             credentials::redo_create_credential_profile,
+            hidden::set_profile_hiding,
+            hidden::hiding_clashes,
+            hidden::note_disk_path,
             notes_crypto::encrypt_note_to_profile,
             notes_crypto::decrypt_note_to_plaintext,
             notes_crypto::move_note_to_profile,

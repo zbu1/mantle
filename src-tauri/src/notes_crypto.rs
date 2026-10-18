@@ -12,10 +12,11 @@
 
 use crate::attachments::{reseal_attachments, unreferenced, Relink};
 use crate::credentials::SessionKeys;
+use crate::hidden;
 use crate::logging::logged;
 use crate::vault::{
-    is_markdown_note, join_rel_note_path, master_key_for, note_display_name, resolve_rel_dir,
-    resolve_rel_path, split_rel_note_path, write_atomic, CreatedNote, EXT_ENCRYPTED, EXT_PLAIN,
+    is_markdown_note, join_rel_note_path, master_key_for, note_display_name, resolve_rel_path,
+    split_rel_note_path, write_atomic, CreatedNote, EXT_ENCRYPTED, EXT_PLAIN,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -122,7 +123,8 @@ fn reseal_document(
 ///
 /// 1. Validate the source really is a `.mntl` document (or re-encode a
 ///    Markdown file as one).
-/// 2. Write the ciphertext atomically and fsync it.
+/// 2. Write the ciphertext atomically and fsync it — hidden, if the profile
+///    hides (see [`hidden::seal_at`]).
 /// 3. **Read it back and decrypt it**, checking it matches. One extra read,
 ///    and the difference between "we deleted your note and hope the ciphertext
 ///    is good" and "we proved it before deleting anything".
@@ -158,9 +160,8 @@ fn encrypt_note_inner(
         let source = resolve_rel_path(vault_root, rel_path)?;
         let (dir_rel, stem, _) = split_rel_note_path(rel_path);
         let dest_rel = join_rel_note_path(&dir_rel, &stem, EXT_ENCRYPTED);
-        let dest = resolve_rel_path(vault_root, &dest_rel)?;
 
-        if dest.exists() {
+        if hidden::taken(vault_root, &dest_rel, keys)? {
             return Err(format!(
                 "\"{stem}\" already exists as an encrypted note in this folder"
             ));
@@ -173,18 +174,9 @@ fn encrypt_note_inner(
         let mode = if is_markdown_note(rel_path) { Relink::Import } else { Relink::Convert };
         let (document, _) = reseal_document(vault_root, rel_path, &document, Some((profile_id, &mk)), keys, mode)?;
 
-        let blob =
-            mntl_core::encrypt_note(&mk, profile_id, document.as_bytes()).map_err(|e| e.to_string())?;
-        write_atomic(&dest, &blob)?;
-
-        // Prove the new file is readable before destroying the only readable copy.
-        let written = fs::read(&dest).map_err(|e| format!("Failed to verify encrypted note: {e}"))?;
-        let roundtrip = mntl_core::decrypt_note(&mk, &written)
-            .map_err(|e| format!("Failed to verify encrypted note: {e}"))?;
-        if roundtrip.as_slice() != document.as_bytes() {
-            let _ = fs::remove_file(&dest);
-            return Err("Encrypted note failed verification; the original is untouched".to_string());
-        }
+        // `seal_at` proves the new file is readable before we destroy the only readable copy.
+        hidden::seal_at(vault_root, keys, profile_id, &mk, &dest_rel, &document, None)
+            .map_err(|e| format!("{e}; the original is untouched"))?;
 
         shred(&source)?;
 
@@ -337,30 +329,41 @@ fn convert_markdown_inner(
 ///
 /// The leftover ciphertext reveals nothing without the key, so it is simply
 /// removed — no shredding needed.
+///
+/// A hidden note goes back to its real path, or under `name` (a file stem)
+/// in its folder when that's taken.
 #[tauri::command]
 pub fn decrypt_note_to_plaintext(
     vault_root: String,
     rel_path: String,
+    name: Option<String>,
     keys: State<SessionKeys>,
 ) -> Result<CreatedNote, String> {
     logged("decrypt_note_to_plaintext", || {
-        decrypt_note_inner(&vault_root, &rel_path, &keys)
+        decrypt_note_inner(&vault_root, &rel_path, name.as_deref(), &keys)
     })
 }
 
 fn decrypt_note_inner(
     vault_root: &str,
     rel_path: &str,
+    name: Option<&str>,
     keys: &SessionKeys,
 ) -> Result<CreatedNote, String> {
     {
         if !rel_path.ends_with(EXT_ENCRYPTED) {
             return Err("This note is not encrypted".to_string());
         }
+        if name.is_some_and(|n| n.is_empty() || n.contains(['/', '\\', ':'])) {
+            return Err("Invalid note name".to_string());
+        }
 
-        let source = resolve_rel_path(vault_root, rel_path)?;
+        let source = hidden::resolve_note(vault_root, rel_path, keys)?;
         let (dir_rel, stem, _) = split_rel_note_path(rel_path);
+        let stem = name.map_or(stem, str::to_string);
         let dest_rel = join_rel_note_path(&dir_rel, &stem, EXT_PLAIN);
+        // A hidden note's folder may only be virtual.
+        hidden::ensure_rel_dir(vault_root, &dir_rel, keys)?;
         let dest = resolve_rel_path(vault_root, &dest_rel)?;
 
         if dest.exists() {
@@ -380,11 +383,14 @@ fn decrypt_note_inner(
         // A plaintext note's favorite lives in `.mantle/state.json`, where the
         // frontend moves it; a stale sealed flag would come back on re-encrypting.
         frontmatter.favorite = false;
+        frontmatter.location = None;
+        frontmatter.name = None;
         let (body, _, _) = reseal_attachments(vault_root, rel_path, &body, None, keys, Relink::Convert)?;
         let document = Zeroizing::new(mntl_core::encode_note(&frontmatter, &body).map_err(|e| e.to_string())?);
 
         write_atomic(&dest, document.as_bytes())?;
         fs::remove_file(&source).map_err(|e| format!("Failed to remove the encrypted note: {e}"))?;
+        keys.put_hidden(vault_root, rel_path, None)?;
 
         Ok(CreatedNote {
             name: stem,
@@ -396,8 +402,9 @@ fn decrypt_note_inner(
 /// Re-home an encrypted note to a different credential profile.
 ///
 /// Requires **both** profiles unlocked: the source's to read the note, the
-/// destination's to seal it again. The filename does not change, so no tree or
-/// tab churn follows.
+/// destination's to seal it again. The note keeps its path, so no tree or tab
+/// churn follows — though its file moves if one profile hides and the other
+/// doesn't, and un-hiding it onto a taken path needs another `name`.
 ///
 /// This fully re-encrypts rather than rewrapping the existing content key
 /// under the new master key. It has to: the profile id lives in the header,
@@ -408,10 +415,11 @@ pub fn move_note_to_profile(
     vault_root: String,
     rel_path: String,
     profile_id: String,
+    name: Option<String>,
     keys: State<SessionKeys>,
-) -> Result<(), String> {
+) -> Result<CreatedNote, String> {
     logged("move_note_to_profile", || {
-        move_note_inner(&vault_root, &rel_path, &profile_id, &keys)
+        move_note_inner(&vault_root, &rel_path, &profile_id, name.as_deref(), &keys)
     })
 }
 
@@ -419,8 +427,9 @@ fn move_note_inner(
     vault_root: &str,
     rel_path: &str,
     profile_id: &str,
+    name: Option<&str>,
     keys: &SessionKeys,
-) -> Result<(), String> {
+) -> Result<CreatedNote, String> {
     {
         if !rel_path.ends_with(EXT_ENCRYPTED) {
             return Err("Only an encrypted note can be moved between profiles".to_string());
@@ -430,13 +439,19 @@ fn move_note_inner(
             .get(vault_root, profile_id)?
             .ok_or_else(|| format!("Unlock \"{profile_id}\" before moving notes into it"))?;
 
-        let path = resolve_rel_path(vault_root, rel_path)?;
+        let disk = hidden::disk_rel(vault_root, rel_path, keys)?;
+        let path = resolve_rel_path(vault_root, &disk)?;
         let blob = fs::read(&path).map_err(|e| format!("Failed to read note: {e}"))?;
         let (current_profile, source_key) = master_key_for(vault_root, &blob, keys)?;
 
         if current_profile == profile_id {
-            return Ok(());
+            return Ok(CreatedNote { name: note_display_name(rel_path), rel_path: rel_path.to_string() });
         }
+        let target = match name {
+            Some(name) if name.is_empty() || name.contains(['/', '\\', ':']) => return Err("Invalid note name".to_string()),
+            Some(name) => join_rel_note_path(&split_rel_note_path(rel_path).0, name, EXT_ENCRYPTED),
+            None => rel_path.to_string(),
+        };
 
         let document = mntl_core::decrypt_note(&source_key, &blob).map_err(|e| e.to_string())?;
         let document =
@@ -449,10 +464,8 @@ fn move_note_inner(
             keys,
             Relink::Convert,
         )?;
-        let resealed = mntl_core::encrypt_note(&destination_key, profile_id, document.as_bytes())
-            .map_err(|e| e.to_string())?;
-
-        write_atomic(&path, &resealed)
+        hidden::seal_at(vault_root, keys, profile_id, &destination_key, &target, &document, Some((rel_path, &disk)))?;
+        Ok(CreatedNote { name: note_display_name(&target), rel_path: target })
     }
 }
 
@@ -487,22 +500,22 @@ fn create_encrypted_note_inner(
             .get(vault_root, profile_id)?
             .ok_or_else(|| format!("Unlock \"{profile_id}\" before creating notes in it"))?;
 
-        // Resolving the directory first surfaces a bad `rel_dir` before we
-        // build a path from it.
-        resolve_rel_dir(vault_root, rel_dir)?;
+        // Checking the directory first surfaces a bad `rel_dir` before we
+        // build a path from it. It may be a virtual folder.
+        if !rel_dir.is_empty() && !hidden::folder_exists(vault_root, keys, rel_dir)? {
+            return Err("Destination folder does not exist".to_string());
+        }
         let rel_path = join_rel_note_path(rel_dir, name, EXT_ENCRYPTED);
-        let path = resolve_rel_path(vault_root, &rel_path)?;
+        hidden::check_components(&rel_path)?;
 
-        if path.exists() {
+        if hidden::taken(vault_root, &rel_path, keys)? {
             return Err(format!(
                 "A note named \"{name}\" already exists in this folder"
             ));
         }
 
         let document = mntl_core::encode_unencrypted_note("").map_err(|e| e.to_string())?;
-        let blob =
-            mntl_core::encrypt_note(&mk, profile_id, document.as_bytes()).map_err(|e| e.to_string())?;
-        write_atomic(&path, &blob)?;
+        hidden::seal_at(vault_root, keys, profile_id, &mk, &rel_path, &document, None)?;
 
         Ok(CreatedNote {
             name: note_display_name(&rel_path),
@@ -561,7 +574,7 @@ mod tests {
         );
 
         let decrypted =
-            decrypt_note_inner(&root_str, "secret.mntl.enc", &keys).unwrap();
+            decrypt_note_inner(&root_str, "secret.mntl.enc", None, &keys).unwrap();
         assert_eq!(decrypted.rel_path, "secret.mntl");
         assert_eq!(
             read_note_inner(&root_str, "secret.mntl", &keys).unwrap().content,
@@ -581,7 +594,7 @@ mod tests {
         encrypt_note_inner(&root_str, "secret.mntl", "my-diary", &keys).unwrap();
         crate::vault::set_note_favorite_inner(&root_str, "secret.mntl.enc", true, &keys).unwrap();
 
-        decrypt_note_inner(&root_str, "secret.mntl.enc", &keys).unwrap();
+        decrypt_note_inner(&root_str, "secret.mntl.enc", None, &keys).unwrap();
         let plaintext = fs::read_to_string(root.join("secret.mntl")).unwrap();
         let (frontmatter, body) = mntl_core::decode_note(&plaintext).unwrap();
         assert!(!frontmatter.favorite);
@@ -816,7 +829,7 @@ mod tests {
         write_plain(&root.join("secret.mntl"), BODY);
         encrypt_note_inner(&root_str, "secret.mntl", "my-diary", &keys).unwrap();
 
-        move_note_inner(&root_str, "secret.mntl.enc", "work", &keys).unwrap();
+        move_note_inner(&root_str, "secret.mntl.enc", "work", None, &keys).unwrap();
 
         let blob = fs::read(root.join("secret.mntl.enc")).unwrap();
         let header = mntl_core::extract_encrypted_header(&blob).unwrap();
@@ -843,12 +856,12 @@ mod tests {
 
         // Source locked, destination unlocked.
         keys.lock_one(&root_str, "my-diary").unwrap();
-        let err = move_note_inner(&root_str, "secret.mntl.enc", "work", &keys).unwrap_err();
+        let err = move_note_inner(&root_str, "secret.mntl.enc", "work", None, &keys).unwrap_err();
         assert_eq!(err, format!("{LOCKED_ERR_PREFIX}my-diary"));
 
         // Destination locked.
         keys.lock_one(&root_str, "work").unwrap();
-        let err = move_note_inner(&root_str, "secret.mntl.enc", "work", &keys).unwrap_err();
+        let err = move_note_inner(&root_str, "secret.mntl.enc", "work", None, &keys).unwrap_err();
         assert!(err.contains("Unlock"), "got: {err}");
 
         let _ = fs::remove_dir_all(&root);
@@ -914,14 +927,14 @@ mod tests {
         assert!(content.contains("|200]]"));
         assert!(root.join("attachments/cat.png").is_file(), "the original stays");
 
-        move_note_inner(&root_str, "secret.mntl.enc", "work", &keys).unwrap();
+        move_note_inner(&root_str, "secret.mntl.enc", "work", None, &keys).unwrap();
         let content = read_note_inner(&root_str, "secret.mntl.enc", &keys).unwrap().content;
         let moved = src_of(&content, 0);
         assert_ne!(moved, sealed);
         let header = mntl_core::extract_encrypted_header(&fs::read(root.join(&moved)).unwrap()).unwrap();
         assert_eq!(header.credential_profile, "work");
 
-        decrypt_note_inner(&root_str, "secret.mntl.enc", &keys).unwrap();
+        decrypt_note_inner(&root_str, "secret.mntl.enc", None, &keys).unwrap();
         let content = read_note_inner(&root_str, "secret.mntl", &keys).unwrap().content;
         let plain = src_of(&content, 0);
         assert!(plain.ends_with(".png") && !plain.ends_with(".enc"), "{content}");

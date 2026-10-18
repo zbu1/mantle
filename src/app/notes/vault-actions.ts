@@ -1,5 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { invoke } from '@tauri-apps/api/core';
+import { DialogState } from '../shared/dialog/dialog-state';
 import { AttachmentsState } from './attachments-state';
 import { NotesState, titleFromRelPath } from './notes-state';
 import { TabsState } from './tabs-state';
@@ -33,6 +34,7 @@ export class VaultActions {
   private readonly vaultMeta = inject(VaultMetaState);
   private readonly attachments = inject(AttachmentsState);
   private readonly history = inject(VaultHistoryState);
+  private readonly dialogState = inject(DialogState);
 
   async createNote(relDir: string, name: string): Promise<CreatedNote> {
     const created = await this.vaultState.createNote(relDir, name);
@@ -75,6 +77,7 @@ export class VaultActions {
     const node = { type: kind, relPath: created.relPath, name: created.name, children: [] } as unknown as VaultNode;
     this.history.record({
       label: `Create "${created.name}"`,
+      paths: [created.relPath],
       undo: () => this.trash([node]),
       redo: () => (canUndoDelete || !recreate ? this.restore([created.relPath]) : recreate()),
     });
@@ -82,9 +85,11 @@ export class VaultActions {
 
   async rename(kind: 'note' | 'folder', relPath: string, newName: string): Promise<string> {
     const oldName = kind === 'note' ? titleFromRelPath(relPath) : fileNameOf(relPath);
+    if (kind === 'folder' && !(await this.confirmLockedHidden("won't move with it"))) return relPath;
     const renamed = await this.renameOnly(kind, relPath, newName);
     this.history.record({
       label: `Rename "${oldName}"`,
+      paths: [relPath, renamed],
       undo: () => this.renameOnly(kind, renamed, oldName),
       redo: () => this.renameOnly(kind, relPath, newName),
     });
@@ -110,10 +115,12 @@ export class VaultActions {
       if (kind === 'folder' && (destRelDir === relPath || destRelDir.startsWith(`${relPath}/`))) return [];
       return [{ kind, relPath, destRelDir }];
     });
+    if (items.some((item) => item.kind === 'folder') && !(await this.confirmLockedHidden("won't move with them"))) return;
     let moved = await this.moveEach(items);
     if (moved.length === 0) return;
     this.history.record({
       label: `Move ${quoted(moved.map((item) => ({ name: fileNameOf(item.from) })), 'items')}`,
+      paths: moved.flatMap((item) => [item.from, item.to]),
       undo: async () => {
         // Moving back must land on the old path, not beside something new that took it.
         await this.vaultState.refresh();
@@ -148,6 +155,7 @@ export class VaultActions {
    */
   async delete(items: readonly VaultNode[], attachments: readonly string[] = []): Promise<void> {
     const paths = items.map((item) => item.relPath);
+    if (items.some((item) => item.type === 'folder') && !(await this.confirmLockedHidden("won't be deleted"))) return;
     const favorites = this.vaultMeta
       .favorites()
       .filter((relPath) => paths.some((path) => relPath === path || relPath.startsWith(`${path}/`)));
@@ -156,6 +164,7 @@ export class VaultActions {
     if (!canUndoDelete) return;
     this.history.record({
       label: `Delete ${quoted(items, 'items')}`,
+      paths,
       undo: async () => {
         await this.restore([...paths, ...attachments]);
         this.vaultMeta.addFavorites(favorites);
@@ -214,6 +223,21 @@ export class VaultActions {
     for (const tab of this.tabsState.tabs().filter((t) => inside(t.noteId))) {
       this.tabsState.renameNoteId(tab.noteId, moved(tab.noteId), tab.title);
     }
+  }
+
+  /**
+   * Hidden notes of locked profiles may be inside a folder being renamed,
+   * moved or deleted, and can't be updated: say so first. Resolves whether to
+   * go ahead. On unlock they show under the old path, as a virtual folder.
+   */
+  private async confirmLockedHidden(outcome: string): Promise<boolean> {
+    const count = Object.values(this.vaultState.lockedHidden()).reduce((sum, n) => sum + n, 0);
+    if (count === 0) return true;
+    return this.dialogState.confirm(
+      `${count === 1 ? '1 hidden note' : `${count} hidden notes`} in locked profiles may be inside and ${outcome}. ` +
+        'Unlock their profiles first to include them.',
+      { title: 'Hidden Notes May Be Left Behind', tone: 'warning', confirmLabel: 'Continue' },
+    );
   }
 
   private nodesByPath(): Map<string, VaultNode> {

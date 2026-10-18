@@ -52,12 +52,19 @@
 </div>
 }
 
-<h3 class="mb-1 mt-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Privacy</h3>
-<app-settings-row label="Encrypt Filenames" description="Coming soon — not yet implemented.">
-  <app-toggle [checked]="false" [disabled]="true" />
+<h3 class="mb-1 mt-4 flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+  Privacy
+  <app-help-popover [text]="hidingHelp" label="What does hiding do?" />
+</h3>
+<app-settings-row label="Hide Locations"
+  [description]="unlocked() ? 'Note files sit in the vault root; their folders are sealed inside them.' : 'Unlock the profile to change this.'">
+  <app-toggle [checked]="p.hideLocations" [disabled]="!unlocked() || working()"
+    (changed)="setHiding($event, p.hideNames)" />
 </app-settings-row>
-<app-settings-row label="Encrypt Filepaths" description="Coming soon — not yet implemented.">
-  <app-toggle [checked]="false" [disabled]="true" />
+<app-settings-row label="Hide Names"
+  [description]="unlocked() ? 'Note files get random names; their real names are sealed inside them.' : 'Unlock the profile to change this.'">
+  <app-toggle [checked]="p.hideNames" [disabled]="!unlocked() || working()"
+    (changed)="setHiding(p.hideLocations, $event)" />
 </app-settings-row>
 
 <h3 class="mb-1 mt-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">

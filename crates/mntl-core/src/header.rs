@@ -105,6 +105,14 @@ pub struct EncryptedHeader {
     pub credential_profile: String,
     /// Encryption metadata for the note.
     pub crypto: CryptoMeta,
+    /// Whether the note's real location and name are sealed in its
+    /// [`NoteFrontmatter`] rather than given by where the file sits, so a
+    /// locked vault can leave it out of the tree. Omitted when false, which
+    /// keeps every other header byte for byte what it was before this field
+    /// existed, so no [`ENVELOPE_VERSION`] bump; and being AAD, it can't be
+    /// forged or stripped.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hidden: bool,
 }
 
 impl EncryptedHeader {
@@ -114,6 +122,7 @@ impl EncryptedHeader {
             v: ENVELOPE_VERSION,
             credential_profile: profile_id.into(),
             crypto,
+            hidden: false,
         }
     }
 }
@@ -158,6 +167,15 @@ pub struct NoteFrontmatter {
     /// above. Omitted when empty. See [`crate::properties`].
     #[serde(default, skip_serializing_if = "serde_yaml::Mapping::is_empty")]
     pub properties: serde_yaml::Mapping,
+    /// A hidden note's real folder, vault-relative (empty for the root), for
+    /// a note whose file sits elsewhere. Set together with `name`, and only on
+    /// an encrypted note whose header says it's hidden.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
+    /// A hidden note's real name (file stem), for a note whose file has
+    /// another name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
 }
 
 impl Default for NoteFrontmatter {
@@ -167,6 +185,8 @@ impl Default for NoteFrontmatter {
             tags: Vec::new(),
             favorite: false,
             properties: serde_yaml::Mapping::new(),
+            location: None,
+            name: None,
         }
     }
 }

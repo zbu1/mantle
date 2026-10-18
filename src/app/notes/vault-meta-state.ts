@@ -98,8 +98,28 @@ export class VaultMetaState {
   /** Manual child order per folder, for the `manual` sort mode. */
   readonly order = computed<Readonly<Record<string, readonly string[]>>>(() => this.meta()?.order ?? {});
 
+  /** Hidden notes and virtual folders, which are never written here; see `setHiddenPaths`. */
+  private readonly hiddenPaths = signal<ReadonlySet<string>>(new Set());
+  /** Virtual folders collapsed this session: they can't be recorded, so they start expanded. */
+  private readonly sessionCollapsed = signal<ReadonlySet<string>>(new Set());
+
   /** Folders collapsed in the vault tree; every other folder shows open. */
-  readonly collapsedFolders = computed<ReadonlySet<string>>(() => new Set(this.meta()?.collapsedFolders ?? []));
+  readonly collapsedFolders = computed<ReadonlySet<string>>(
+    () => new Set([...(this.meta()?.collapsedFolders ?? []), ...this.sessionCollapsed()]),
+  );
+
+  /**
+   * Sets which paths are hidden notes or virtual folders, as the latest scan
+   * found them, and drops any that made it into recents or favorites — say,
+   * a note that was followed to its new path as it became hidden.
+   */
+  setHiddenPaths(paths: ReadonlySet<string>): void {
+    this.hiddenPaths.set(paths);
+    this.sessionCollapsed.update((folders) => new Set([...folders].filter((path) => paths.has(path))));
+    this.updateList('recentNotes', (recents) => recents.filter((entry) => !paths.has(entry.relPath)));
+    this.updateList('favorites', (favorites) => favorites.filter((relPath) => !paths.has(relPath)));
+    this.updateList('collapsedFolders', (folders) => folders.filter((relPath) => !paths.has(relPath)));
+  }
 
   /** The vault-wide type of the property `name`, if it has been given one. */
   propertyType(name: string): PropertyType | undefined {
@@ -156,6 +176,7 @@ export class VaultMetaState {
 
   /** Moves `relPath` to the top of the recents list, stamping it as opened now. */
   recordOpened(relPath: string, openedAt = Date.now()): void {
+    if (this.hiddenPaths().has(relPath)) return;
     this.updateList('recentNotes', (recents) =>
       [{ relPath, openedAt }, ...recents.filter((entry) => entry.relPath !== relPath)].slice(0, MAX_RECENT_NOTES),
     );
@@ -261,6 +282,15 @@ export class VaultMetaState {
   }
 
   setFolderCollapsed(relPath: string, collapsed: boolean): void {
+    if (this.hiddenPaths().has(relPath)) {
+      this.sessionCollapsed.update((folders) => {
+        const next = new Set(folders);
+        if (collapsed) next.add(relPath);
+        else next.delete(relPath);
+        return next;
+      });
+      return;
+    }
     this.updateList('collapsedFolders', (folders) =>
       collapsed ? (folders.includes(relPath) ? folders : [...folders, relPath]) : folders.filter((path) => path !== relPath),
     );
@@ -268,7 +298,9 @@ export class VaultMetaState {
 
   /** Collapses exactly `relPaths` (every folder, for Collapse All), or with an empty list expands them all. */
   setCollapsedFolders(relPaths: readonly string[]): void {
-    this.updateList('collapsedFolders', () => [...relPaths]);
+    const hidden = this.hiddenPaths();
+    this.sessionCollapsed.set(new Set(relPaths.filter((path) => hidden.has(path))));
+    this.updateList('collapsedFolders', () => relPaths.filter((path) => !hidden.has(path)));
   }
 
   /** A folder was renamed or moved in-app: its collapsed state, its manual order and everything in it follow it. */

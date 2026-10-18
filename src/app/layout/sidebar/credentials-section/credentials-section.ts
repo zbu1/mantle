@@ -26,6 +26,7 @@ export class CredentialsSection {
     this.credentialsState.profiles().map((profile) => ({
       ...profile,
       notes: this.credentialsState.membersByProfile().get(profile.id) ?? [],
+      hiddenCount: this.credentialsState.hiddenCountOf(profile.id),
     })),
   );
 

@@ -73,11 +73,16 @@ export class TabsState {
   readonly canGoBack = computed(() => this.history().back.length > 0);
   readonly canGoForward = computed(() => this.history().forward.length > 0);
 
+  /** Hidden notes' relPaths, whose tabs are left out of what's persisted: their path is sealed. */
+  private readonly hiddenNoteIds = signal<ReadonlySet<string>>(new Set());
+
   constructor() {
     effect(() => {
+      const hidden = this.hiddenNoteIds();
+      const tabs = this.tabs().filter((tab) => !hidden.has(tab.noteId));
       const snapshot: PersistedTabsState = {
-        tabs: this.tabs(),
-        activeId: this.activeId(),
+        tabs,
+        activeId: tabs.some((tab) => tab.id === this.activeId()) ? this.activeId() : (tabs[0]?.id ?? null),
       };
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
@@ -85,6 +90,11 @@ export class TabsState {
         // storage unavailable (e.g. private browsing) — ignore
       }
     });
+  }
+
+  /** Sets which notes are hidden, as the latest scan found them. */
+  setHiddenNoteIds(ids: ReadonlySet<string>): void {
+    this.hiddenNoteIds.set(ids);
   }
 
   openNote(note: NoteRef): void {
