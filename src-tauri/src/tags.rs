@@ -15,6 +15,7 @@ use crate::vault::{
     clean_tags, is_markdown_note, master_key_for, write_atomic, EXT_ENCRYPTED, EXT_PLAIN,
 };
 use serde::Serialize;
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::State;
@@ -73,7 +74,7 @@ pub(crate) fn edit_tag_in_vault(
 
     let mut report = TagEditReport::default();
     for (path, rel_path) in notes {
-        match edit_note_tags(vault_root, &path, &rel_path, from, to, keys) {
+        match edit_note_tags(vault_root, &path, &rel_path, |tags| edited_tags(tags, from, to), keys) {
             Ok(true) => report.updated.push(rel_path),
             Ok(false) => {}
             Err(NoteEditError::Locked) => report.locked_skipped += 1,
@@ -81,6 +82,34 @@ pub(crate) fn edit_tag_in_vault(
         }
     }
     Ok(report)
+}
+
+/// Set each listed note's tags to exactly the given ones, for undoing a
+/// vault-wide edit note by note. Unlike a rename this fails on a locked note:
+/// skipping it would leave the undo half done without saying so.
+#[tauri::command]
+pub fn set_note_tags(
+    vault_root: String,
+    tags_by_note: HashMap<String, Vec<String>>,
+    keys: State<SessionKeys>,
+) -> Result<(), String> {
+    logged("set_note_tags", || set_note_tags_inner(&vault_root, &tags_by_note, &keys))
+}
+
+fn set_note_tags_inner(
+    vault_root: &str,
+    tags_by_note: &HashMap<String, Vec<String>>,
+    keys: &SessionKeys,
+) -> Result<(), String> {
+    for (rel_path, tags) in tags_by_note {
+        let path = crate::vault::resolve_rel_path(vault_root, rel_path)?;
+        match edit_note_tags(vault_root, &path, rel_path, |_| Some(clean_tags(tags)), keys) {
+            Ok(_) => {}
+            Err(NoteEditError::Locked) => return Err(format!("\"{rel_path}\" is locked")),
+            Err(NoteEditError::Failed(e)) => return Err(format!("Failed to update \"{rel_path}\": {e}")),
+        }
+    }
+    Ok(())
 }
 
 /// Every note file under `dir`, skipping dot-prefixed entries as a scan does.
@@ -131,13 +160,13 @@ fn edited_tags(tags: &[String], from: &str, to: Option<&str>) -> Option<Vec<Stri
     Some(clean_tags(&edited.collect::<Vec<_>>()))
 }
 
-/// Rewrite one note's tags. `Ok(true)` if it had the tag and was rewritten.
+/// Rewrite one note's tags with `edit`, which returns `None` when the note
+/// needs no rewrite. `Ok(true)` if it was rewritten.
 fn edit_note_tags(
     vault_root: &str,
     path: &Path,
     rel_path: &str,
-    from: &str,
-    to: Option<&str>,
+    edit: impl Fn(&[String]) -> Option<Vec<String>>,
     keys: &SessionKeys,
 ) -> Result<bool, NoteEditError> {
     if rel_path.ends_with(EXT_ENCRYPTED) {
@@ -151,7 +180,7 @@ fn edit_note_tags(
         let document = std::str::from_utf8(&document).map_err(|_| "Decrypted note is not UTF-8".to_string())?;
         let (mut frontmatter, body) = mntl_core::decode_note(document).map_err(|e| e.to_string())?;
         let body = zeroize::Zeroizing::new(body);
-        let Some(tags) = edited_tags(&frontmatter.tags, from, to) else {
+        let Some(tags) = edit(&frontmatter.tags) else {
             return Ok(false);
         };
         frontmatter.tags = tags;
@@ -166,7 +195,7 @@ fn edit_note_tags(
 
     let raw = fs::read_to_string(path).map_err(|e| e.to_string())?;
     if is_markdown_note(rel_path) {
-        let Some(tags) = edited_tags(&mntl_core::markdown_tags(&raw), from, to) else {
+        let Some(tags) = edit(&mntl_core::markdown_tags(&raw)) else {
             return Ok(false);
         };
         fs::write(path, mntl_core::set_markdown_tags(&raw, &tags)).map_err(|e| e.to_string())?;
@@ -178,7 +207,7 @@ fn edit_note_tags(
     let Ok((mut frontmatter, body)) = mntl_core::decode_note(&raw) else {
         return Ok(false);
     };
-    let Some(tags) = edited_tags(&frontmatter.tags, from, to) else {
+    let Some(tags) = edit(&frontmatter.tags) else {
         return Ok(false);
     };
     frontmatter.tags = tags;

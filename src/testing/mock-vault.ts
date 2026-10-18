@@ -38,17 +38,19 @@ export function installMockVaultInvoke(): jest.Mock {
   const { invoke } = installTauriMock();
   const contents = new Map(FIXTURE_NOTES.map((n) => [n.id, n.content]));
   const tags = new Map(FIXTURE_NOTES.map((n) => [n.id, n.tags]));
+  const properties = new Map<string, unknown>();
 
   invoke.mockImplementation(async (command: string, args: Record<string, unknown> = {}) => {
     switch (command) {
       case 'read_note': {
         const relPath = args['relPath'] as string;
         if (!contents.has(relPath)) throw new Error(`Note not found: ${relPath}`);
-        return { content: contents.get(relPath), tags: tags.get(relPath) ?? [] };
+        return { content: contents.get(relPath), tags: tags.get(relPath) ?? [], properties: properties.get(relPath) ?? [] };
       }
       case 'write_note': {
         contents.set(args['relPath'] as string, args['content'] as string);
         tags.set(args['relPath'] as string, (args['tags'] as string[] | undefined) ?? []);
+        if (args['properties']) properties.set(args['relPath'] as string, args['properties']);
         return undefined;
       }
       case 'scan_vault': {

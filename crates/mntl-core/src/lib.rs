@@ -84,6 +84,7 @@
 pub mod error;
 pub mod header;
 pub mod keys;
+pub mod properties;
 pub mod tags;
 
 use aes_kw::KekAes256;
@@ -104,6 +105,7 @@ pub use keys::{
     compute_verifier, unwrap_master_key, verify_master_key, wrap_master_key,
     KeyEncryptionKey, MasterKey, WRAPPED_KEY_LEN,
 };
+pub use properties::{markdown_properties, set_markdown_property};
 pub use tags::{dedupe_tags, markdown_tags, normalize_tag, same_tag, set_markdown_tags};
 
 /// Derive a 256-bit Key Encryption Key (KEK) using Argon2id with explicit KDF parameters.

@@ -2,6 +2,7 @@ import { Injectable, computed, effect, inject, untracked } from '@angular/core';
 import { invoke } from '@tauri-apps/api/core';
 import { formatError, logError } from '../core/logger';
 import { CredentialsState } from './credentials-state';
+import { VaultHistoryState } from './vault-history-state';
 import { VaultMetaState } from './vault-meta-state';
 import { VaultState } from './vault-state';
 import { VaultNoteNode, flattenAllNotes, isNoteLocked } from './vault-tree.model';
@@ -26,6 +27,7 @@ export class FavoritesState {
   private readonly vaultState = inject(VaultState);
   private readonly vaultMeta = inject(VaultMetaState);
   private readonly credentialsState = inject(CredentialsState);
+  private readonly history = inject(VaultHistoryState);
   private readonly migrating = new Set<string>();
 
   private readonly notesByPath = computed(() => {
@@ -76,10 +78,11 @@ export class FavoritesState {
   }
 
   remove(relPaths: readonly string[]): void {
+    const before = this.vaultMeta.favorites();
     this.vaultMeta.removeFavorites(relPaths);
-    for (const relPath of relPaths.filter(isEncryptedPath)) {
-      if (this.isFavorite(relPath)) void this.seal(relPath, false);
-    }
+    const sealed = relPaths.filter((relPath) => isEncryptedPath(relPath) && this.isFavorite(relPath));
+    for (const relPath of sealed) void this.seal(relPath, false);
+    this.recordChange('Remove from Favorites', before, sealed, false);
   }
 
   /**
@@ -88,14 +91,28 @@ export class FavoritesState {
    * position; they always follow the plaintext favorites.
    */
   place(relPaths: readonly string[], beforeRelPath: string | null): void {
+    const before = this.vaultMeta.favorites();
+    const adding = relPaths.some((relPath) => !this.isFavorite(relPath));
+    const sealed = relPaths.filter((relPath) => isEncryptedPath(relPath) && !this.isFavorite(relPath));
     const plaintext = relPaths.filter((relPath) => !isEncryptedPath(relPath));
     if (plaintext.length > 0) {
       const anchor = beforeRelPath !== null && !isEncryptedPath(beforeRelPath) ? beforeRelPath : null;
       this.vaultMeta.placeFavorites(plaintext, anchor);
     }
-    for (const relPath of relPaths.filter(isEncryptedPath)) {
-      if (!this.isFavorite(relPath)) void this.seal(relPath, true);
-    }
+    for (const relPath of sealed) void this.seal(relPath, true);
+    this.recordChange(adding ? 'Add to Favorites' : 'Reorder Favorites', before, sealed, true);
+  }
+
+  /** Undo for a change from `before`, which also set the sealed flag of `sealed` to `favorite`. */
+  private recordChange(label: string, before: readonly string[], sealed: readonly string[], favorite: boolean): void {
+    const after = this.vaultMeta.favorites();
+    if (after === before && sealed.length === 0) return;
+    const apply = async (list: readonly string[], flag: boolean) => {
+      this.vaultMeta.setFavorites(list);
+      for (const relPath of sealed) if (!(await this.seal(relPath, flag))) return false;
+      return true;
+    };
+    this.history.record({ label, undo: () => apply(before, !favorite), redo: () => apply(after, favorite) });
   }
 
   /** Sets an encrypted note's sealed favorite flag, asking to unlock its profile first if needed. */

@@ -10,6 +10,7 @@
 //! Tags are flat and match case-insensitively (`Idea` and `idea` are the same
 //! tag), keeping the casing they were first written with.
 
+use crate::properties::scalar;
 use crate::split_frontmatter;
 use serde_yaml::Value;
 
@@ -98,79 +99,15 @@ fn scalar_to_string(value: &Value) -> Option<String> {
 /// frontmatter, and a file with no frontmatter gets one. Setting no tags
 /// removes the key.
 pub fn set_markdown_tags(markdown: &str, tags: &[String]) -> String {
-    let newline = if markdown.contains("\r\n") { "\r\n" } else { "\n" };
-    let (frontmatter, body) = crate::split_markdown_frontmatter(markdown);
-
-    if frontmatter.is_empty() {
+    crate::properties::edit_frontmatter_key(markdown, &["tags", "tag"], |style, newline| {
         if tags.is_empty() {
-            return markdown.to_string();
+            return String::new();
         }
-        let block = render_tags("tags", tags, false, "  ", newline);
-        return format!("---{newline}{block}---{newline}{body}");
-    }
-
-    // `split_markdown_frontmatter` only returns a prefix that opens and closes
-    // with a `---` line, so there are always at least those two lines.
-    let lines: Vec<&str> = frontmatter.split_inclusive('\n').collect();
-    let (open, rest) = lines.split_first().expect("frontmatter has an opening line");
-    let (close, inner) = rest.split_last().expect("frontmatter has a closing line");
-
-    let key_line = ["tags", "tag"].iter().find_map(|key| {
-        inner
-            .iter()
-            .position(|line| line.strip_prefix(key).is_some_and(|after| after.starts_with(':')))
-            .map(|i| (i, *key))
-    });
-
-    let mut out = String::with_capacity(markdown.len() + 64);
-    out.push_str(open);
-
-    match key_line {
-        Some((start, key)) => {
-            let end = start + 1 + continuation_len(&inner[start + 1..]);
-            let value = inner[start][key.len() + 1..].trim();
-            let flow = value.starts_with('[');
-            let indent = inner[start + 1..end]
-                .iter()
-                .find(|line| !line.trim().is_empty())
-                .map(|line| &line[..line.len() - line.trim_start().len()])
-                .unwrap_or("  ");
-
-            inner[..start].iter().for_each(|line| out.push_str(line));
-            if !tags.is_empty() {
-                out.push_str(&render_tags(key, tags, flow, indent, newline));
-            }
-            inner[end..].iter().for_each(|line| out.push_str(line));
+        match style {
+            Some(style) => render_tags(style.key, tags, style.flow, style.indent.unwrap_or("  "), newline),
+            None => render_tags("tags", tags, false, "  ", newline),
         }
-        None => {
-            inner.iter().for_each(|line| out.push_str(line));
-            if !tags.is_empty() {
-                out.push_str(&render_tags("tags", tags, false, "  ", newline));
-            }
-        }
-    }
-
-    out.push_str(close);
-    out.push_str(body);
-    out
-}
-
-/// How many of `lines` continue a top-level key's value: indented lines, and
-/// `- item` lines, which YAML allows at column 0 in a block list. Blank lines
-/// count only when more of the value follows them.
-fn continuation_len(lines: &[&str]) -> usize {
-    let mut len = 0;
-    for (i, line) in lines.iter().enumerate() {
-        if line.trim().is_empty() {
-            continue;
-        }
-        if line.starts_with([' ', '\t', '-']) {
-            len = i + 1;
-        } else {
-            break;
-        }
-    }
-    len
+    })
 }
 
 fn render_tags(key: &str, tags: &[String], flow: bool, indent: &str, newline: &str) -> String {
@@ -180,24 +117,15 @@ fn render_tags(key: &str, tags: &[String], flow: bool, indent: &str, newline: &s
     }
     let mut out = format!("{key}:{newline}");
     for tag in tags {
-        out.push_str(&format!("{indent}- {}{newline}", block_scalar(tag)));
+        out.push_str(&format!("{indent}- {}{newline}", scalar(tag)));
     }
     out
 }
 
-/// `tag` as a YAML scalar, quoted only if it would otherwise read back as
-/// something other than this string (`true`, `12`, `#x`, ...).
-fn block_scalar(tag: &str) -> String {
-    match serde_yaml::to_string(tag) {
-        Ok(yaml) => yaml.trim_end_matches('\n').to_string(),
-        Err(_) => double_quoted(tag),
-    }
-}
-
-/// Like [`block_scalar`], but also quoting the characters that end an item
+/// Like [`scalar`], but also quoting the characters that end an item
 /// inside a `[...]` flow list.
 fn flow_scalar(tag: &str) -> String {
-    let scalar = block_scalar(tag);
+    let scalar = scalar(tag);
     if scalar.contains([',', '[', ']', '{', '}']) {
         double_quoted(tag)
     } else {

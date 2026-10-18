@@ -5,6 +5,9 @@ import { addListNodes } from 'prosemirror-schema-list';
 const baseNodes = OrderedMap.from<NodeSpec>({
   doc: {
     content: 'block+',
+    // The note's tags and properties, kept on the doc so editing them joins
+    // the editor's undo history along with its text. See `NotePropertiesState`.
+    attrs: { tags: { default: [] }, properties: { default: [] } },
   },
   paragraph: {
     content: 'inline*',

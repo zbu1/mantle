@@ -25,7 +25,9 @@ import { open } from '@tauri-apps/plugin-dialog';
 
 import { AttachmentsState, attachmentUrl } from '../attachments-state';
 import { CredentialsState } from '../credentials-state';
+import { NotePropertiesState } from '../note-properties-state';
 import { NotesState } from '../notes-state';
+import { sameProperties } from '../properties';
 import { VaultState } from '../vault-state';
 import { VaultRootState } from '../vault-root-state';
 import { ContextMenuState } from '../../shared/context-menu/context-menu-state';
@@ -61,7 +63,7 @@ import {
   setCodeBlockLanguage,
 } from './prosemirror/plugins/code-block-plugin';
 import { SlashMenu } from './slash-menu/slash-menu';
-import { SLASH_COMMAND_ITEMS } from './slash-menu/slash-menu.model';
+import { ADD_PROPERTY_EVENT, SLASH_COMMAND_ITEMS } from './slash-menu/slash-menu.model';
 import { formatSelection, insertHorizontalRule, linkSelection, pastePlainText } from './prosemirror/editor-commands';
 import { pickImage } from './prosemirror/plugins/image-plugin';
 import { ContextMenuAction } from '../../shared/context-menu/context-menu.model';
@@ -147,6 +149,7 @@ export class NoteEditor {
   private readonly contextMenuState = inject(ContextMenuState);
   private readonly dialogState = inject(DialogState);
   private readonly editContext = inject(EditContextState);
+  private readonly noteProperties = inject(NotePropertiesState);
 
   readonly noteId = input.required<string>();
 
@@ -183,7 +186,7 @@ export class NoteEditor {
           buildEditorKeymap(),
           gapCursor(),
           trailingParagraphPlugin(),
-          syntaxRevealPlugin(),
+          syntaxRevealPlugin((href) => void this.attachments.openLinked(this.noteId(), href)),
           // Last, so images and code blocks get their own menus first.
           new Plugin({
             props: { handleDOMEvents: { contextmenu: (view, event) => (this.openTextMenu(event, view), true) } },
@@ -210,11 +213,20 @@ export class NoteEditor {
         // through the default DOM parser.
         clipboardTextParser: (text) => Slice.maxOpen(parseMarkdown(text).content),
         // The Edit menu acts on whichever editor last had focus.
-        handleDOMEvents: { focus: (view) => void this.editContext.focusEditor(view) },
+        handleDOMEvents: {
+          focus: (view) => void this.editContext.focusEditor(view),
+          [ADD_PROPERTY_EVENT]: (_view, event) =>
+            void this.noteProperties.requestAdd(this.noteId(), (event as CustomEvent).detail === 'tag' ? 'tag' : 'property'),
+        },
         dispatchTransaction: (tr) => {
+          const before = view.state.doc.attrs;
           const newState = view.state.apply(tr);
           view.updateState(newState);
 
+          const { tags, properties } = newState.doc.attrs;
+          if (tags !== before['tags'] || properties !== before['properties']) {
+            this.noteProperties.applied(this.noteId(), tags, properties);
+          }
           if (tr.docChanged) {
             const markdown = serializeMarkdown(newState.doc);
             // Counted from the saved Markdown, so revealed syntax doesn't count.
@@ -236,6 +248,21 @@ export class NoteEditor {
       this.applyIfReady(id);
     });
 
+    // Tags or properties changed other than through this editor (a tag
+    // renamed vault-wide, say): show them, without making that an undo step.
+    effect(() => {
+      const note = this.notesState.getNote(this.noteId());
+      const view = this.editorView;
+      if (!note || !view || this.lastAppliedNoteId !== note.id) return;
+      untracked(() => {
+        const { tags, properties } = view.state.doc.attrs;
+        let tr = view.state.tr;
+        if (JSON.stringify(tags) !== JSON.stringify(note.tags)) tr = tr.setDocAttribute('tags', note.tags);
+        if (!sameProperties(properties, note.properties)) tr = tr.setDocAttribute('properties', note.properties);
+        if (tr.docChanged) view.dispatch(tr.setMeta('addToHistory', false));
+      });
+    });
+
     // A save copied an attachment over to this note's profile; follow it.
     effect(() => {
       const relinked = this.notesState.relinked();
@@ -245,6 +272,7 @@ export class NoteEditor {
 
     this.destroyRef.onDestroy(() => {
       if (this.editorView) this.editContext.forgetEditor(this.editorView);
+      if (this.editorView) this.noteProperties.detach(this.editorView);
       this.editorView?.destroy();
     });
   }
@@ -453,7 +481,14 @@ export class NoteEditor {
     if (id === this.lastAppliedNoteId) return;
 
     const newDoc = parseMarkdown(entry.note.content);
-    const tr = view.state.tr.replaceWith(0, view.state.doc.content.size, newDoc);
+    // Attached first, so the doc attributes this sets are stored for `id`.
+    this.noteProperties.attach(id, view);
+    const tr = view.state.tr
+      .replaceWith(0, view.state.doc.content.size, newDoc)
+      .setDocAttribute('tags', entry.note.tags)
+      .setDocAttribute('properties', entry.note.properties)
+      // Loading the note isn't an edit to undo.
+      .setMeta('addToHistory', false);
     view.dispatch(tr);
     this.lastAppliedNoteId = id;
     if (this.editorFocus.consume(id)) view.focus();

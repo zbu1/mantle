@@ -153,6 +153,11 @@ pub struct NoteFrontmatter {
     /// lives in the vault's `.mantle/state.json` instead. Omitted when false.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub favorite: bool,
+    /// The user's own properties (`due`, `status`, ...), in display order.
+    /// Nested under one key so a property can't collide with the fields
+    /// above. Omitted when empty. See [`crate::properties`].
+    #[serde(default, skip_serializing_if = "serde_yaml::Mapping::is_empty")]
+    pub properties: serde_yaml::Mapping,
 }
 
 impl Default for NoteFrontmatter {
@@ -161,6 +166,7 @@ impl Default for NoteFrontmatter {
             v: NOTE_VERSION,
             tags: Vec::new(),
             favorite: false,
+            properties: serde_yaml::Mapping::new(),
         }
     }
 }

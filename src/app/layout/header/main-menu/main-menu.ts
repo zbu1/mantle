@@ -1,4 +1,5 @@
 import { Component, ElementRef, HostListener, computed, effect, inject, signal, viewChild } from '@angular/core';
+import { VaultActions } from '../../../notes/vault-actions';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import {
@@ -117,6 +118,7 @@ type MenuCategory = 'file' | 'edit' | 'view' | 'help';
 })
 export class MainMenu {
   private readonly vaultState = inject(VaultState);
+  private readonly vaultActions = inject(VaultActions);
   protected readonly tabsState = inject(TabsState);
   private readonly notesState = inject(NotesState);
   private readonly renameState = inject(VaultRenameState);
@@ -219,13 +221,13 @@ export class MainMenu {
 
   protected async newNote(): Promise<void> {
     this.closeMenu();
-    await this.vaultState.createAndOpenNote();
+    await this.vaultActions.createAndOpenNote();
   }
 
   protected async newFolder(): Promise<void> {
     this.closeMenu();
     if (!this.hasVault()) return;
-    const created = await this.vaultState.createFolderWithUniqueName();
+    const created = await this.vaultActions.createFolderWithUniqueName();
     this.renameState.renamingPath.set(created.relPath);
   }
 

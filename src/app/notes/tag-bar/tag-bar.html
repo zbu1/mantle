@@ -1,6 +1,6 @@
 <!-- Hidden until the note loads: there's nothing to tag while it's loading, locked or failed. -->
 @if (loaded()) {
-<div class="group/tags mb-4 flex min-h-6 flex-wrap items-center gap-1.5 text-xs" role="list" aria-label="Tags">
+<div class="flex min-h-6 flex-wrap items-center gap-1.5 text-xs" role="list" aria-label="Tags">
   @for (tag of tags(); track tag) {
   <span role="listitem" (contextmenu)="onChipContextMenu($event, tag)"
     class="group/chip inline-flex h-6 items-center rounded-md border border-border bg-surface/50 pr-0.5 text-foreground/80 transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-foreground">
@@ -49,9 +49,9 @@
     }
   </span>
   } @else {
-  <button type="button" (click)="startAdding()" [class]="addButtonClass()">
+  <button type="button" (click)="startAdding()" aria-label="Add tag" title="Add tag"
+    class="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground/60 transition hover:bg-surface hover:text-foreground focus-visible:text-foreground">
     <svg lucidePlus [size]="12"></svg>
-    {{ tags().length === 0 ? 'Add tag' : 'Tag' }}
   </button>
   }
 </div>

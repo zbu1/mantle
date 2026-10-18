@@ -12,8 +12,15 @@ export interface ConfirmDialogRequest extends DialogRequestBase {
   cancelLabel: string;
   /** Label of an optional checkbox under the message (unchecked to start), or null for none. */
   checkboxLabel: string | null;
-  /** `checked` is the checkbox's final state; always false without one, or when cancelled. */
-  resolve: (confirmed: boolean, checked: boolean) => void;
+  /** Label of a second way to go ahead, beside the confirm button, or null for none. */
+  altLabel: string | null;
+  /** An explanation behind a `?` beside the title, or null for none. */
+  help: string | null;
+  /**
+   * `checked` is the checkbox's final state; always false without one, or when
+   * cancelled. `alt` is whether the alt button, rather than confirm, was chosen.
+   */
+  resolve: (confirmed: boolean, checked: boolean, alt: boolean) => void;
 }
 
 export interface AlertDialogRequest extends DialogRequestBase {

@@ -1,31 +1,33 @@
-//! Images embedded in notes.
+//! Files attached to notes: the images they show, and any other file a
+//! converted Markdown note linked to.
 //!
-//! Every image Mantle stores lives in the vault-level `attachments/` folder:
+//! Every attachment Mantle stores lives in the vault-level `attachments/` folder:
 //!
-//! - a plaintext note's images as `attachments/<hash>.<ext>`, named by
-//!   content so pasting the same image twice stores it once;
-//! - an encrypted note's images as `attachments/<random>.<ext>.enc`, sealed in
-//!   the same envelope as a `.mntl.enc` note (with the image bytes as its
+//! - a plaintext note's as `attachments/<hash>.<ext>`, named by content so
+//!   pasting the same image twice stores it once;
+//! - an encrypted note's as `attachments/<random>.<ext>.enc`, sealed in the
+//!   same envelope as a `.mntl.enc` note (with the file's bytes as its
 //!   payload) under the note's profile. Random rather than hashed: a hash of
 //!   the plaintext in the filename would let anyone check whether a vault
-//!   holds a known image.
+//!   holds a known file.
 //!
-//! Notes reference images with ordinary Markdown (`![alt](attachments/…)`),
-//! and Obsidian's `![[photo.png|300]]` embeds are read too. The webview loads
-//! them through the `mantle://` protocol ([`serve`]), which decrypts sealed
-//! images in memory, so a decrypted image never touches the disk.
+//! Notes reference attachments with ordinary Markdown (`![alt](attachments/…)`,
+//! `[spec](attachments/…)`), and Obsidian's `![[photo.png|300]]` / `[[doc.pdf]]`
+//! are read too. The webview loads images through the `mantle://` protocol
+//! ([`serve`]), which decrypts sealed ones in memory, so a decrypted image
+//! never touches the disk.
 //!
 //! Attachments are never modified once written — a duplicated note shares its
-//! images with the original — so converting a note between plaintext and a
-//! profile ([`reseal_images`]) writes new copies and leaves the old ones
+//! attachments with the original — so converting a note between plaintext and
+//! a profile ([`reseal_attachments`]) writes new copies and leaves the old ones
 //! behind. They are only deleted when the user asks, and only once nothing
 //! else uses them ([`unused_attachments`]).
 
 use crate::credentials::SessionKeys;
 use crate::logging::logged;
 use crate::vault::{
-    master_key_for, note_paths, read_header_prefix, read_note_inner, resolve_rel_dir, resolve_rel_path,
-    write_atomic, EXT_ENCRYPTED, LOCKED_ERR_PREFIX,
+    is_markdown_note, master_key_for, note_paths, read_header_prefix, read_note_inner, resolve_rel_dir,
+    resolve_rel_path, write_atomic, EXT_ENCRYPTED, EXT_PLAIN, LOCKED_ERR_PREFIX,
 };
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
@@ -67,7 +69,7 @@ fn media_type(ext: &str) -> Option<&'static str> {
 
 /// The image extension of `path` (lowercase, without any `.enc`) and whether
 /// it is sealed, or `None` if it isn't an image — which is also what stops
-/// [`serve`] from handing out a note.
+/// [`serve`] from handing out anything else.
 fn image_ext(path: &str) -> Option<(String, bool)> {
     let plain = path.strip_suffix(EXT_SEALED);
     let (_, ext) = plain.unwrap_or(path).rsplit_once('.')?;
@@ -79,8 +81,25 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// Write an image into `attachments/`, sealed under `seal` if given, and
-/// return its vault-relative path.
+/// Whether `rel` is a note, rather than a file a note can attach.
+fn is_note(rel: &str) -> bool {
+    rel.ends_with(EXT_PLAIN) || rel.ends_with(EXT_ENCRYPTED) || is_markdown_note(rel)
+}
+
+/// The extension a copy of the attachment at `rel` is stored with: its own,
+/// lowercase, under a sealed one's `.enc`. Empty if it has none Mantle can
+/// keep.
+fn stored_ext(rel: &str, sealed: bool) -> String {
+    let name = rel.rsplit('/').next().unwrap_or(rel);
+    let name = if sealed { name.strip_suffix(EXT_SEALED).unwrap_or(name) } else { name };
+    name.rsplit_once('.')
+        .map(|(_, ext)| ext.to_ascii_lowercase())
+        .filter(|ext| ext.chars().all(|c| c.is_ascii_alphanumeric()))
+        .unwrap_or_default()
+}
+
+/// Write a file into `attachments/`, sealed under `seal` if given, and return
+/// its vault-relative path. `ext` may be empty, for a file without one.
 fn store(
     vault_root: &str,
     bytes: &[u8],
@@ -88,9 +107,11 @@ fn store(
     seal: Option<(&str, &mntl_core::MasterKey)>,
 ) -> Result<String, String> {
     let ext = ext.to_ascii_lowercase();
-    if media_type(&ext).is_none() {
-        return Err(format!("Unsupported image type: .{ext}"));
+    // Any type but a note's, which would turn the copy into a note.
+    if !ext.chars().all(|c| c.is_ascii_alphanumeric()) || (!ext.is_empty() && is_note(&format!(".{ext}"))) {
+        return Err(format!("Unsupported attachment type: .{ext}"));
     }
+    let dot_ext = if ext.is_empty() { String::new() } else { format!(".{ext}") };
     let root = resolve_rel_dir(vault_root, "")?;
     fs::create_dir_all(root.join(ATTACHMENTS_DIR))
         .map_err(|e| format!("Failed to create the attachments folder: {e}"))?;
@@ -100,13 +121,13 @@ fn store(
         Some((profile_id, mk)) => {
             let mut id = [0u8; 16];
             OsRng.fill_bytes(&mut id);
-            let name = format!("{}.{ext}{EXT_SEALED}", hex(&id));
+            let name = format!("{}{dot_ext}{EXT_SEALED}", hex(&id));
             let blob = mntl_core::encrypt_note(mk, profile_id, bytes).map_err(|e| e.to_string())?;
             write_atomic(&dir.join(&name), &blob)?;
             name
         }
         None => {
-            let name = format!("{}.{ext}", hex(&Sha256::digest(bytes)[..16]));
+            let name = format!("{}{dot_ext}", hex(&Sha256::digest(bytes)[..16]));
             let path = dir.join(&name);
             if !path.exists() {
                 write_atomic(&path, bytes)?;
@@ -117,24 +138,20 @@ fn store(
     Ok(format!("{ATTACHMENTS_DIR}/{name}"))
 }
 
-/// The image at vault-relative `rel_path`, decrypted if it is sealed, with its
-/// media type. A sealed image of a locked profile is the
-/// `mantle:locked:<id>` sentinel, as for a note.
-fn load(
-    vault_root: &str,
-    rel_path: &str,
-    keys: &SessionKeys,
-) -> Result<(Zeroizing<Vec<u8>>, &'static str), String> {
-    let (ext, sealed) = image_ext(rel_path).ok_or("Not an image")?;
-    let media = media_type(&ext).ok_or("Not an image")?;
+/// The attachment at vault-relative `rel_path`, decrypted if it is sealed. One
+/// sealed under a locked profile is the `mantle:locked:<id>` sentinel, as for
+/// a note.
+fn load(vault_root: &str, rel_path: &str, keys: &SessionKeys) -> Result<Zeroizing<Vec<u8>>, String> {
+    if is_note(rel_path) {
+        return Err("Not an attachment".to_string());
+    }
     let bytes = fs::read(resolve_rel_path(vault_root, rel_path)?)
-        .map_err(|e| format!("Failed to read image: {e}"))?;
-    if !sealed {
-        return Ok((Zeroizing::new(bytes), media));
+        .map_err(|e| format!("Failed to read attachment: {e}"))?;
+    if !(rel_path.ends_with(EXT_SEALED) && bytes.starts_with(mntl_core::MAGIC_MENC)) {
+        return Ok(Zeroizing::new(bytes));
     }
     let (_, mk) = master_key_for(vault_root, &bytes, keys)?;
-    let plain = mntl_core::decrypt_note(&mk, &bytes).map_err(|e| e.to_string())?;
-    Ok((plain, media))
+    mntl_core::decrypt_note(&mk, &bytes).map_err(|e| e.to_string())
 }
 
 /// Join `src` onto the vault-relative `dir`, resolving `.` and `..`. `None`
@@ -173,13 +190,13 @@ fn find_by_name(dir: &Path, rel_dir: &str, name: &str) -> Option<String> {
     subdirs.into_iter().find_map(|(path, rel)| find_by_name(&path, &rel, name))
 }
 
-/// The vault-relative path an image reference `src` in the note at `note_rel`
-/// points to, or `None` for a remote URL or a missing file.
+/// The vault-relative path of the file a link or embed `src` in the note at
+/// `note_rel` points to, or `None` for a remote URL, a missing file or a note.
 ///
 /// Tried in the order Obsidian resolves them: relative to the note, then to
 /// the vault root (which is how Mantle writes them), then — for a bare file
 /// name, as `![[photo.png]]` usually is — anywhere in the vault.
-pub(crate) fn resolve_image(vault_root: &str, note_rel: &str, src: &str) -> Option<String> {
+pub(crate) fn resolve_attachment(vault_root: &str, note_rel: &str, src: &str) -> Option<String> {
     // `http:`, `data:`, `C:\`: not a vault file.
     if src.contains(':') {
         return None;
@@ -187,47 +204,143 @@ pub(crate) fn resolve_image(vault_root: &str, note_rel: &str, src: &str) -> Opti
     // markdown-it percent-encodes the destinations it parses (a space as %20).
     let src = percent_decode_str(src).decode_utf8_lossy();
     let note_dir = note_rel.rsplit_once('/').map_or("", |(dir, _)| dir);
-    let is_image = |rel: &String| {
-        image_ext(rel).is_some() && resolve_rel_path(vault_root, rel).is_ok_and(|p| p.is_file())
-    };
+    let is_attachment =
+        |rel: &String| !is_note(rel) && resolve_rel_path(vault_root, rel).is_ok_and(|p| p.is_file());
     [join_normalized(note_dir, &src), join_normalized("", &src)]
         .into_iter()
         .flatten()
-        .find(is_image)
+        .find(is_attachment)
         .or_else(|| {
-            if src.contains(['/', '\\']) {
+            // Without an extension it names a note (`[[Plans]]`), so spare the walk.
+            if src.contains(['/', '\\']) || !src.contains('.') {
                 return None;
             }
             let root = resolve_rel_dir(vault_root, "").ok()?;
-            find_by_name(&root, "", &src).filter(is_image)
+            find_by_name(&root, "", &src).filter(is_attachment)
         })
 }
 
-/// The byte ranges of every image source in `markdown`: the destination of
-/// `![alt](src "title")` (inside its `<>`, if any) and the target of
-/// Obsidian's `![[src|size]]`.
-// ponytail: plain text scan, so an image written inside a code block counts
-// too; walk markdown-it's tokens instead if that ever rewrites someone's code.
-pub(crate) fn image_sources(markdown: &str) -> Vec<Range<usize>> {
+/// The byte ranges of `markdown` that are code — fenced blocks and inline
+/// spans — where a link is only text.
+// ponytail: no indented code blocks, which a line scan can't tell from a list
+// item's continuation; walk markdown-it's tokens if one ever matters.
+fn code_ranges(markdown: &str) -> Vec<Range<usize>> {
+    let mut ranges = Vec::new();
+    // The open fence's marker, its length, and where it started.
+    let mut fence: Option<(u8, usize, usize)> = None;
+    let mut start = 0;
+    for line in markdown.split_inclusive('\n') {
+        let end = start + line.len();
+        let trimmed = line.trim_start_matches(' ');
+        let marker = trimmed.bytes().next().filter(|b| matches!(b, b'`' | b'~'));
+        let run = marker.map_or(0, |m| trimmed.bytes().take_while(|&b| b == m).count());
+        let fence_line = line.len() - trimmed.len() < 4 && run >= 3;
+        match fence {
+            Some((m, len, from)) => {
+                if fence_line && marker == Some(m) && run >= len && trimmed[run..].trim().is_empty() {
+                    ranges.push(from..end);
+                    fence = None;
+                }
+            }
+            // A backtick fence's info string can't hold a backtick.
+            None if fence_line && !(marker == Some(b'`') && trimmed[run..].contains('`')) => {
+                fence = marker.map(|m| (m, run, start));
+            }
+            None => inline_code(line, start, &mut ranges),
+        }
+        start = end;
+    }
+    if let Some((_, _, from)) = fence {
+        ranges.push(from..markdown.len());
+    }
+    ranges
+}
+
+/// Push the inline code spans of `line`, which starts at byte `offset`: a run
+/// of backticks up to the next run of the same length.
+fn inline_code(line: &str, offset: usize, ranges: &mut Vec<Range<usize>>) {
+    let bytes = line.as_bytes();
+    let run_at = |i: usize| bytes[i..].iter().take_while(|&&b| b == b'`').count();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] != b'`' {
+            i += 1;
+            continue;
+        }
+        let run = run_at(i);
+        let mut j = i + run;
+        let mut close = None;
+        while j < bytes.len() {
+            if bytes[j] != b'`' {
+                j += 1;
+                continue;
+            }
+            let len = run_at(j);
+            if len == run {
+                close = Some(j + len);
+                break;
+            }
+            j += len;
+        }
+        match close {
+            Some(end) => {
+                ranges.push(offset + i..offset + end);
+                i = end;
+            }
+            None => i += run,
+        }
+    }
+}
+
+/// A link or embed in a note's Markdown.
+pub(crate) struct Source {
+    /// The byte range of its target.
+    pub range: Range<usize>,
+    /// Whether it embeds (`![…]`) rather than links.
+    pub embed: bool,
+}
+
+/// Every link and embed in `markdown` outside code, in document order: the
+/// destination of `[text](src "title")` / `![alt](src)` (inside its `<>`, if
+/// any) and the target of Obsidian's `[[src|alias]]` / `![[src|size]]`, each
+/// without a `#fragment`.
+// ponytail: no reference-style links (`[text][ref]`); add them if converted
+// vaults turn out to use them.
+pub(crate) fn link_sources(markdown: &str) -> Vec<Source> {
+    let code = code_ranges(markdown);
+    let bytes = markdown.as_bytes();
     let mut sources = Vec::new();
     let mut from = 0;
-    while let Some(at) = markdown[from..].find("![").map(|i| from + i) {
-        from = at + 2;
-        let line_end = markdown[from..].find('\n').map_or(markdown.len(), |i| from + i);
-        let line = &markdown[from..line_end];
+    while let Some(at) = markdown[from..].find('[').map(|i| from + i) {
+        from = at + 1;
+        if (at > 0 && bytes[at - 1] == b'\\') || code.iter().any(|r| r.contains(&at)) {
+            continue;
+        }
+        let embed = at > 0 && bytes[at - 1] == b'!';
+        let line_end = markdown[at..].find('\n').map_or(markdown.len(), |i| at + i);
 
-        if let Some(inner) = line.strip_prefix('[') {
+        if let Some(inner) = markdown[from..line_end].strip_prefix('[') {
             let Some(close) = inner.find("]]") else { continue };
-            let target = &inner[..close];
-            let len = target.find('|').unwrap_or(target.len());
-            sources.push(from + 1..from + 1 + len);
-            from += 1 + close + 2;
+            let len = inner[..close].find(['|', '#']).unwrap_or(close);
+            sources.push(Source { range: at + 2..at + 2 + len, embed });
+            from = at + 2 + close + 2;
             continue;
         }
 
-        let Some(open) = line.find("](") else { continue };
-        let start = from + open + 2;
-        let rest = &markdown[start..line_end];
+        // The `]` closing this `[`, past any nested in its text.
+        let mut depth = 0;
+        let close = markdown[at..line_end].char_indices().find_map(|(i, c)| {
+            match c {
+                '[' => depth += 1,
+                ']' => depth -= 1,
+                _ => return None,
+            }
+            (depth == 0).then_some(at + i)
+        });
+        let Some(rest) = close.and_then(|close| markdown[close + 1..line_end].strip_prefix('(')) else {
+            continue;
+        };
+        let start = line_end - rest.len();
         let range = if let Some(bracketed) = rest.strip_prefix('<') {
             let Some(end) = bracketed.find('>') else { continue };
             start + 1..start + 1 + end
@@ -235,57 +348,73 @@ pub(crate) fn image_sources(markdown: &str) -> Vec<Range<usize>> {
             let end = rest.find(|c: char| c.is_whitespace() || c == ')').unwrap_or(rest.len());
             start..start + end
         };
-        from = range.end;
-        sources.push(range);
+        let end = markdown[range.clone()].find('#').map_or(range.end, |i| range.start + i);
+        // Scanning goes on inside the text: `[![img](a.png)](b.pdf)` has two.
+        sources.push(Source { range: range.start..end, embed });
     }
+    sources.retain(|source| !source.range.is_empty());
+    sources.sort_by_key(|source| source.range.start);
     sources
 }
 
-/// Re-point every local image in `document`, the text of the note at
+/// How much of a note's attachments [`reseal_attachments`] carries along.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Relink {
+    /// A save, which must never fail over a link: an attachment it can't copy
+    /// (one sealed under a locked profile) is left as it is.
+    Save,
+    /// A conversion between plaintext and a profile.
+    Convert,
+    /// A Markdown file becoming a note: every local file it links or embeds,
+    /// wherever it is, is copied into `attachments/` too.
+    Import,
+}
+
+/// Re-point every attachment in `document`, the body of the note at
 /// `note_rel`, at a copy sealed under `target` — or a plaintext copy when
-/// `target` is `None` — so the note never depends on an image less protected
-/// than itself, or on a profile it no longer belongs to. Images already in
-/// the right form, remote images and missing files are left alone.
+/// `target` is `None` — so the note never depends on one less protected than
+/// itself, or on a profile it no longer belongs to.
+///
+/// An attachment is an image the note shows or any file in `attachments/`; a
+/// link to one of the user's other files stays a link to it, except under
+/// [`Relink::Import`]. Ones already in the right form, remote URLs and missing
+/// files are left alone.
 ///
 /// This is what makes an attachment belong to a profile: a sealed one is only
 /// ever referenced by notes of its own profile, and a plaintext one only by
 /// plaintext notes — which is what lets [`unused_attachments`] judge one
 /// without unlocking every profile.
 ///
-/// Returns the new document and each source it re-pointed (as written in the
-/// note) with the copy it now points at. `lenient` leaves an image it can't
-/// copy — one sealed under a locked profile — as it is, for a save, which
-/// must never fail over a link.
-pub(crate) fn reseal_images(
+/// Returns the new document, each source it re-pointed (as written in the
+/// note) with the copy it now points at, and the files it copied from.
+pub(crate) fn reseal_attachments(
     vault_root: &str,
     note_rel: &str,
     document: &str,
     target: Option<(&str, &mntl_core::MasterKey)>,
     keys: &SessionKeys,
-    lenient: bool,
-) -> Result<(Zeroizing<String>, HashMap<String, String>), String> {
+    mode: Relink,
+) -> Result<(Zeroizing<String>, HashMap<String, String>, BTreeSet<String>), String> {
     let mut out = Zeroizing::new(String::with_capacity(document.len()));
     let mut copies: HashMap<String, String> = HashMap::new();
     let mut relinked = HashMap::new();
     let mut last = 0;
 
-    for range in image_sources(document) {
+    for Source { range, embed } in link_sources(document) {
         let src = &document[range.clone()];
-        let Some(rel) = resolve_image(vault_root, note_rel, src) else {
+        let Some(rel) = resolve_attachment(vault_root, note_rel, src) else {
             continue;
         };
-        let (ext, sealed) = image_ext(&rel).ok_or("Not an image")?;
-        let in_place = match target {
-            None => !sealed,
-            Some((profile_id, _)) => {
-                sealed
-                    && resolve_rel_path(vault_root, &rel)
-                        .and_then(|path| read_header_prefix(&path))
-                        .and_then(|h| mntl_core::extract_encrypted_header(&h).map_err(|e| e.to_string()))
-                        .is_ok_and(|h| h.credential_profile == profile_id)
-            }
+        let managed = is_managed(&rel);
+        if mode != Relink::Import && !managed && !(embed && image_ext(&rel).is_some()) {
+            continue;
+        }
+        let profile = sealed_profile(vault_root, &rel);
+        let right_form = match target {
+            None => profile.is_none(),
+            Some((profile_id, _)) => profile.as_deref() == Some(profile_id),
         };
-        if in_place {
+        if right_form && (managed || mode != Relink::Import) {
             continue;
         }
 
@@ -294,13 +423,13 @@ pub(crate) fn reseal_images(
             None => {
                 let copied = load(vault_root, &rel, keys)
                     .map_err(|e| match e.strip_prefix(LOCKED_ERR_PREFIX) {
-                        Some(profile) => format!("Unlock \"{profile}\" first: this note shows an image encrypted under it"),
+                        Some(profile) => format!("Unlock \"{profile}\" first: this note uses a file encrypted under it"),
                         None => e,
                     })
-                    .and_then(|(bytes, _)| store(vault_root, &bytes, &ext, target));
+                    .and_then(|bytes| store(vault_root, &bytes, &stored_ext(&rel, profile.is_some()), target));
                 let copy = match copied {
                     Ok(copy) => copy,
-                    Err(_) if lenient => continue,
+                    Err(_) if mode == Relink::Save => continue,
                     Err(e) => return Err(e),
                 };
                 copies.insert(rel, copy.clone());
@@ -314,7 +443,7 @@ pub(crate) fn reseal_images(
     }
 
     out.push_str(&document[last..]);
-    Ok((out, relinked))
+    Ok((out, relinked, copies.into_keys().collect()))
 }
 
 /// Whether `rel` is a file directly in the vault-root `attachments/` folder —
@@ -328,6 +457,9 @@ fn is_managed(rel: &str) -> bool {
 /// The credential profile the sealed attachment at `rel` is encrypted under,
 /// read from its header; `None` for a plaintext one.
 fn sealed_profile(vault_root: &str, rel: &str) -> Option<String> {
+    if !rel.ends_with(EXT_SEALED) || is_note(rel) {
+        return None;
+    }
     let header = read_header_prefix(&resolve_rel_path(vault_root, rel).ok()?).ok()?;
     mntl_core::extract_encrypted_header(&header).ok().map(|h| h.credential_profile)
 }
@@ -349,7 +481,7 @@ pub struct AttachmentInfo {
 /// `None` for a remote URL or a missing file.
 #[tauri::command]
 pub fn attachment_info(vault_root: String, note_rel_path: String, src: String) -> Option<AttachmentInfo> {
-    let rel_path = resolve_image(&vault_root, &note_rel_path, &src)?;
+    let rel_path = resolve_attachment(&vault_root, &note_rel_path, &src)?;
     Some(AttachmentInfo {
         managed: is_managed(&rel_path),
         profile: sealed_profile(&vault_root, &rel_path),
@@ -357,14 +489,14 @@ pub fn attachment_info(vault_root: String, note_rel_path: String, src: String) -
     })
 }
 
-/// The managed attachments that `content`, the text of the note at
-/// `note_rel`, references. With `only`, sources whose file name none of those
-/// paths has are skipped unresolved, which spares a vault-wide walk for every
-/// bare `![[name.png]]` in every note.
+/// The files that `content`, the text of the note at `note_rel`, references.
+/// With `only`, sources whose file name none of those paths has are skipped
+/// unresolved, which spares a vault-wide walk for every bare `![[name.png]]`
+/// in every note.
 fn referenced(vault_root: &str, note_rel: &str, content: &str, only: Option<&BTreeSet<String>>) -> HashSet<String> {
-    image_sources(content)
+    link_sources(content)
         .into_iter()
-        .map(|range| &content[range])
+        .map(|source| &content[source.range])
         .filter(|src| {
             only.is_none_or(|only| {
                 let src = percent_decode_str(src).decode_utf8_lossy();
@@ -372,8 +504,7 @@ fn referenced(vault_root: &str, note_rel: &str, content: &str, only: Option<&BTr
                 only.iter().any(|rel| rel.rsplit('/').next() == Some(name))
             })
         })
-        .filter_map(|src| resolve_image(vault_root, note_rel, src))
-        .filter(|rel| is_managed(rel))
+        .filter_map(|src| resolve_attachment(vault_root, note_rel, src))
         .collect()
 }
 
@@ -391,9 +522,7 @@ pub struct UnusedAttachments {
 /// The managed attachments among `candidates` and those the notes in
 /// `deleting` reference, that no other note uses.
 ///
-/// Every readable note is checked. A locked note can't be, so it keeps every
-/// attachment sealed under its own profile; it can't be holding any other, as
-/// [`reseal_images`] keeps a note's attachments under the note's own profile.
+/// Every readable note is checked; see [`unreferenced`] for a locked one.
 #[tauri::command]
 pub fn unused_attachments(
     vault_root: String,
@@ -416,10 +545,28 @@ fn unused_attachments_inner(
     let mut found: BTreeSet<String> = candidates.iter().filter(|rel| is_managed(rel)).cloned().collect();
     for note in deleting {
         match read_note_inner(vault_root, note, keys) {
-            Ok(doc) => found.extend(referenced(vault_root, note, &doc.content, None)),
+            Ok(doc) => found.extend(
+                referenced(vault_root, note, &doc.content, None).into_iter().filter(|rel| is_managed(rel)),
+            ),
             Err(_) => unchecked.push(note.clone()),
         }
     }
+    let paths = unreferenced(vault_root, found, deleting, keys)?;
+    Ok(UnusedAttachments { paths: paths.into_iter().collect(), unchecked })
+}
+
+/// The files among `found` that no note but those in `skip` references.
+///
+/// A locked note can't be read, so it keeps what it might be using: every
+/// attachment sealed under its own profile — it can't hold any other, as
+/// [`reseal_attachments`] keeps a note's attachments under its own profile —
+/// and every file outside `attachments/`, which a save leaves linked as it is.
+pub(crate) fn unreferenced(
+    vault_root: &str,
+    mut found: BTreeSet<String>,
+    skip: &[String],
+    keys: &SessionKeys,
+) -> Result<BTreeSet<String>, String> {
     found.retain(|rel| resolve_rel_path(vault_root, rel).is_ok_and(|path| path.is_file()));
     let profiles: HashMap<String, Option<String>> =
         found.iter().map(|rel| (rel.clone(), sealed_profile(vault_root, rel))).collect();
@@ -428,7 +575,7 @@ fn unused_attachments_inner(
         if found.is_empty() {
             break;
         }
-        if deleting.contains(&note) {
+        if skip.contains(&note) {
             continue;
         }
         match read_note_inner(vault_root, &note, keys) {
@@ -438,12 +585,12 @@ fn unused_attachments_inner(
             }
             Err(e) => {
                 if let Some(profile) = e.strip_prefix(LOCKED_ERR_PREFIX) {
-                    found.retain(|rel| profiles[rel].as_deref() != Some(profile));
+                    found.retain(|rel| is_managed(rel) && profiles[rel].as_deref() != Some(profile));
                 }
             }
         }
     }
-    Ok(UnusedAttachments { paths: found.into_iter().collect(), unchecked })
+    Ok(found)
 }
 
 /// Every attachment sealed under `profile_id`.
@@ -534,6 +681,22 @@ pub fn import_attachment(
     })
 }
 
+/// Write the attachment at `rel_path`, decrypted if it is sealed, to
+/// `dest_path` (picked from the OS save dialog). The one way a sealed
+/// attachment leaves Mantle as plaintext, and only on the user's say.
+#[tauri::command]
+pub fn save_attachment_copy(
+    vault_root: String,
+    rel_path: String,
+    dest_path: String,
+    keys: State<SessionKeys>,
+) -> Result<(), String> {
+    logged("save_attachment_copy", || {
+        let bytes = load(&vault_root, &rel_path, &keys)?;
+        fs::write(&dest_path, bytes.as_slice()).map_err(|e| format!("Failed to save the copy: {e}"))
+    })
+}
+
 fn query_param(query: &str, key: &str) -> Option<String> {
     query.split('&').find_map(|pair| {
         let (k, v) = pair.split_once('=')?;
@@ -562,11 +725,13 @@ fn serve(keys: &SessionKeys, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
     else {
         return respond(StatusCode::BAD_REQUEST, "text/plain", Vec::new());
     };
-    let Some(rel) = resolve_image(&vault, &note, &src) else {
+    let Some((rel, media)) = resolve_attachment(&vault, &note, &src)
+        .and_then(|rel| Some((rel.clone(), media_type(&image_ext(&rel)?.0)?)))
+    else {
         return respond(StatusCode::NOT_FOUND, "text/plain", Vec::new());
     };
     match load(&vault, &rel, keys) {
-        Ok((bytes, media)) => respond(StatusCode::OK, media, bytes.to_vec()),
+        Ok(bytes) => respond(StatusCode::OK, media, bytes.to_vec()),
         Err(e) if e.starts_with(LOCKED_ERR_PREFIX) => respond(StatusCode::FORBIDDEN, "text/plain", Vec::new()),
         Err(_) => respond(StatusCode::NOT_FOUND, "text/plain", Vec::new()),
     }
@@ -599,11 +764,33 @@ mod tests {
 
     const PNG: &[u8] = b"\x89PNG\r\n\x1a\nnot really a png";
 
+    fn sources(md: &str) -> Vec<(&str, bool)> {
+        link_sources(md).into_iter().map(|s| (&md[s.range], s.embed)).collect()
+    }
+
     #[test]
-    fn image_sources_finds_markdown_and_obsidian_images() {
-        let md = "a ![x](one.png) b ![](<two words.png> \"t\") ![[three.png|300]] ![[four.jpg]] [link](no.png) ![bad\n](x)";
-        let found: Vec<&str> = image_sources(md).into_iter().map(|r| &md[r]).collect();
-        assert_eq!(found, ["one.png", "two words.png", "three.png", "four.jpg"]);
+    fn link_sources_finds_markdown_and_obsidian_links_and_embeds() {
+        let md = "a ![x](one.png) b ![](<two words.png> \"t\") ![[three.png|300]] [[four.pdf#page=2]] \
+                  [link](five.zip) [![img](six.png)](seven.pdf) [[Note|alias]] [x](#top) \\[no](esc.png) ![bad\n](x)";
+        assert_eq!(
+            sources(md),
+            [
+                ("one.png", true),
+                ("two words.png", true),
+                ("three.png", true),
+                ("four.pdf", false),
+                ("five.zip", false),
+                ("six.png", true),
+                ("seven.pdf", false),
+                ("Note", false),
+            ]
+        );
+    }
+
+    #[test]
+    fn link_sources_skips_code() {
+        let md = "`[a](in.png)` [b](out.png)\n```md\n![c](fenced.png)\n```\n~~~~\n[d](x.pdf)\n~~~\n[e](still.pdf)\n~~~~\n``[f](two.png)`` ![g](after.png)\n```\n[h](unclosed.png)";
+        assert_eq!(sources(md), [("out.png", false), ("after.png", true)]);
     }
 
     #[test]
@@ -626,10 +813,12 @@ mod tests {
         let keys = SessionKeys::default();
         assert_eq!(load(&root_str, &b, &keys).unwrap_err(), format!("{LOCKED_ERR_PREFIX}diary"));
         keys.unlock_for_test(&root_str, "diary", mk).unwrap();
-        let (bytes, media) = load(&root_str, &b, &keys).unwrap();
-        assert_eq!((bytes.as_slice(), media), (PNG, "image/png"));
+        assert_eq!(load(&root_str, &b, &keys).unwrap().as_slice(), PNG);
 
-        assert!(store(&root_str, PNG, "exe", None).is_err());
+        assert!(store(&root_str, PNG, "zip", None).unwrap().ends_with(".zip"));
+        assert!(!store(&root_str, PNG, "", None).unwrap().contains('.'));
+        assert!(store(&root_str, PNG, "md", None).is_err(), "a copy must never become a note");
+        assert!(store(&root_str, PNG, "a/b", None).is_err());
     }
 
     #[test]
@@ -642,14 +831,16 @@ mod tests {
         fs::write(root.join("attachments/b c.png"), PNG).unwrap();
         fs::write(root.join("Work/note.mntl"), "x").unwrap();
 
-        let resolve = |src| resolve_image(&root_str, "Work/note.mntl", src);
+        let resolve = |src| resolve_attachment(&root_str, "Work/note.mntl", src);
         assert_eq!(resolve("img/a.png").as_deref(), Some("Work/img/a.png"));
         assert_eq!(resolve("./img/../img/a.png").as_deref(), Some("Work/img/a.png"));
         assert_eq!(resolve("attachments/b%20c.png").as_deref(), Some("attachments/b c.png"));
         assert_eq!(resolve("a.png").as_deref(), Some("Work/img/a.png"));
         assert_eq!(resolve("../../a.png"), None);
         assert_eq!(resolve("https://example.com/a.png"), None);
-        assert_eq!(resolve("note.mntl"), None, "notes are not images");
+        assert_eq!(resolve("note.mntl"), None, "notes are not attachments");
+        fs::write(root.join("Work/spec.zip"), b"zip").unwrap();
+        assert_eq!(resolve("spec.zip").as_deref(), Some("Work/spec.zip"));
     }
 
     fn write_plain(root: &Path, rel: &str, body: &str) {
@@ -710,18 +901,18 @@ mod tests {
         let plain = store(&root_str, PNG, "png", None).unwrap();
         write_sealed(&root, "s.mntl.enc", "", &mk);
         let body = format!("![]({plain}) ![]({plain})");
-        let relinked = crate::vault::write_note_inner(&root_str, "s.mntl.enc", &body, &[], &keys).unwrap();
+        let relinked = crate::vault::write_note_inner(&root_str, "s.mntl.enc", &body, &[], None, &keys).unwrap();
         let copy = &relinked[&plain];
         assert!(copy.ends_with(".png.enc"));
         let saved = read_note_inner(&root_str, "s.mntl.enc", &keys).unwrap().content;
         assert_eq!(saved, format!("![]({copy}) ![]({copy})"));
-        assert!(crate::vault::write_note_inner(&root_str, "s.mntl.enc", &saved, &[], &keys).unwrap().is_empty());
+        assert!(crate::vault::write_note_inner(&root_str, "s.mntl.enc", &saved, &[], None, &keys).unwrap().is_empty());
 
         // A plaintext note can't copy an image of a locked profile; it still saves.
         write_plain(&root, "p.mntl", "");
         let locked = SessionKeys::default();
         let sealed_body = format!("![]({copy})");
-        assert!(crate::vault::write_note_inner(&root_str, "p.mntl", &sealed_body, &[], &locked).unwrap().is_empty());
+        assert!(crate::vault::write_note_inner(&root_str, "p.mntl", &sealed_body, &[], None, &locked).unwrap().is_empty());
         assert_eq!(read_note_inner(&root_str, "p.mntl", &locked).unwrap().content, sealed_body);
     }
 }

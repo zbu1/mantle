@@ -1,0 +1,106 @@
+@if (visible()) {
+<section data-note-properties aria-label="Properties" (focusin)="onFocusIn($event)" (keydown)="onKeydown($event)"
+  class="mb-4 flex flex-col gap-0.5 text-xs">
+  @if (properties() === null) {
+  <div role="note" class="flex items-center gap-2 py-1 text-muted-foreground">
+    <svg lucideTriangleAlert [size]="13" class="shrink-0"></svg>
+    This file's frontmatter isn't valid YAML, so its properties can't be shown or edited here.
+  </div>
+  }
+
+  @if (showTags()) {
+  <div class="grid grid-cols-[minmax(7rem,10rem)_1fr] items-start gap-x-2">
+    <button type="button" (click)="openTagsMenu($event)" (contextmenu)="openTagsMenu($event)"
+      class="flex h-7 min-w-0 items-center gap-1.5 rounded-md px-1.5 text-left text-muted-foreground transition-colors hover:bg-surface hover:text-foreground">
+      <svg lucideTags [size]="13" class="shrink-0"></svg>
+      <span class="truncate">tags</span>
+    </button>
+    <app-tag-bar [noteId]="noteId()" (done)="addingTag.set(false)" class="py-0.5" />
+  </div>
+  }
+
+  @for (row of rows(); track row.key) {
+  <div class="grid grid-cols-[minmax(7rem,10rem)_1fr] items-center gap-x-2" [attr.data-property]="row.key">
+    <button type="button" (click)="openMenu($event, row)" (contextmenu)="openMenu($event, row)"
+      [title]="row.key"
+      class="flex h-7 min-w-0 items-center gap-1.5 rounded-md px-1.5 text-left text-muted-foreground transition-colors hover:bg-surface hover:text-foreground">
+      <span class="contents">
+        @switch (row.type) {
+        @case ('text') { <svg lucideText [size]="13" class="shrink-0"></svg> }
+        @case ('list') { <svg lucideList [size]="13" class="shrink-0"></svg> }
+        @case ('number') { <svg lucideBinary [size]="13" class="shrink-0"></svg> }
+        @case ('checkbox') { <svg lucideSquareCheck [size]="13" class="shrink-0"></svg> }
+        @case ('date') { <svg lucideCalendar [size]="13" class="shrink-0"></svg> }
+        @case ('datetime') { <svg lucideCalendarClock [size]="13" class="shrink-0"></svg> }
+        @default { <svg lucideBraces [size]="13" class="shrink-0"></svg> }
+        }
+      </span>
+      <span class="truncate">{{ row.key }}</span>
+    </button>
+
+    <div class="min-w-0">
+      @switch (row.type) {
+      @case ('text') {
+      <input type="text" [value]="row.value ?? ''" (change)="onText(row.key, text)" (keydown.enter)="text.blur()" #text
+        placeholder="Empty" [attr.aria-label]="row.key" class="property-field w-full" />
+      }
+      @case ('number') {
+      <input type="number" [value]="row.value ?? ''" (change)="onNumber(row.key, number)" (keydown.enter)="number.blur()" #number
+        placeholder="Empty" [attr.aria-label]="row.key" class="property-field w-40" />
+      }
+      @case ('checkbox') {
+      <input type="checkbox" [checked]="row.value === true" (change)="setValue(row.key, checkbox.checked)" #checkbox
+        [attr.aria-label]="row.key" class="ml-1.5 size-3.5 accent-[var(--primary)]" />
+      }
+      @case ('date') {
+      <input type="date" [value]="row.value ?? ''" (change)="onDateTime(row.key, date)" #date
+        [attr.aria-label]="row.key" class="property-field" />
+      }
+      @case ('datetime') {
+      <input type="datetime-local" [value]="localDateTime(row.value)" (change)="onDateTime(row.key, datetime)" #datetime
+        [attr.aria-label]="row.key" class="property-field" />
+      }
+      @case ('list') {
+      <div class="flex min-h-7 flex-wrap items-center gap-1 py-0.5" role="list" [attr.aria-label]="row.key">
+        @for (item of listItems(row.value); track $index) {
+        <span role="listitem"
+          class="group/item inline-flex h-6 items-center rounded-md border border-border bg-surface/50 pl-2 pr-0.5 text-foreground/80">
+          {{ item }}
+          <button type="button" [attr.aria-label]="'Remove ' + item" (click)="removeListItem(row, $index)"
+            class="ml-0.5 inline-flex size-4.5 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover/item:opacity-100">
+            <svg lucideX [size]="11"></svg>
+          </button>
+        </span>
+        }
+        <input type="text" #item (keydown)="onListKeydown($event, row, item)" (blur)="addListItem(row, item)"
+          [placeholder]="listItems(row.value).length ? '' : 'Empty'" [attr.aria-label]="'Add to ' + row.key"
+          class="property-field w-24 min-w-0 flex-1" />
+      </div>
+      }
+      @default {
+      <!-- A nested map or the like: kept as it is, since no type can edit it. -->
+      <code class="block truncate px-1.5 py-1 font-mono text-muted-foreground" [title]="display(row.value)">{{ display(row.value) }}</code>
+      }
+      }
+    </div>
+  </div>
+  }
+
+  @if (addingProperty()) {
+  <div class="grid grid-cols-[minmax(7rem,10rem)_1fr] items-center gap-x-2">
+    <input #nameInput type="text" placeholder="Property name" aria-label="New property name" spellcheck="false"
+      (keydown)="onNameKeydown($event, nameInput)" (blur)="onNameBlur(nameInput)" (input)="nameError.set(null)"
+      class="property-field" />
+    @if (nameError(); as message) {
+    <span class="text-destructive">{{ message }}</span>
+    }
+  </div>
+  } @else if (properties() !== null) {
+  <button type="button" (click)="startAddingProperty()"
+    class="inline-flex h-7 w-fit items-center gap-1.5 rounded-md px-1.5 text-muted-foreground/70 transition-colors hover:bg-surface hover:text-foreground">
+    <svg lucidePlus [size]="13"></svg>
+    Add property
+  </button>
+  }
+</section>
+}

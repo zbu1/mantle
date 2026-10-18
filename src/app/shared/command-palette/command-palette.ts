@@ -1,4 +1,5 @@
 import { Component, ElementRef, HostListener, computed, effect, inject, signal, viewChild } from '@angular/core';
+import { VaultActions } from '../../notes/vault-actions';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import {
   LucideArrowLeft,
@@ -122,6 +123,7 @@ const SIDEBAR_SECTIONS: SectionDef[] = [
 export class CommandPalette {
   protected readonly state = inject(CommandPaletteState);
   private readonly vaultState = inject(VaultState);
+  private readonly vaultActions = inject(VaultActions);
   private readonly tabsState = inject(TabsState);
   private readonly notesState = inject(NotesState);
   private readonly renameState = inject(VaultRenameState);
@@ -165,7 +167,7 @@ export class CommandPalette {
         label: 'New Note',
         icon: 'file-plus',
         keywords: ['create', 'note'],
-        run: () => void this.vaultState.createAndOpenNote(),
+        run: () => void this.vaultActions.createAndOpenNote(),
       });
       items.push({
         id: 'new-folder',
@@ -485,7 +487,7 @@ export class CommandPalette {
   }
 
   private async newFolder(): Promise<void> {
-    const created = await this.vaultState.createFolderWithUniqueName();
+    const created = await this.vaultActions.createFolderWithUniqueName();
     this.renameState.renamingPath.set(created.relPath);
   }
 

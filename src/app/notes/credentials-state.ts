@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { logError, logInfo, formatError } from '../core/logger';
 import { DialogState } from '../shared/dialog/dialog-state';
 import { NotesState } from './notes-state';
+import { VaultHistoryState } from './vault-history-state';
 import { VaultState } from './vault-state';
 import { VaultNoteNode, flattenEncryptedNotes } from './vault-tree.model';
 
@@ -44,6 +45,7 @@ export class CredentialsState {
   private readonly vaultState = inject(VaultState);
   private readonly notesState = inject(NotesState);
   private readonly dialogState = inject(DialogState);
+  private readonly history = inject(VaultHistoryState);
 
   readonly profiles = signal<CredentialProfile[]>([]);
   readonly loading = signal(false);
@@ -312,6 +314,15 @@ export class CredentialsState {
 
     logInfo(`Created credential profile "${profile.id}"`);
     await this.refresh();
+    const step = (command: string) => async () => {
+      await invoke(command, { vaultRoot: root, profileId: profile.id });
+      await this.refresh();
+    };
+    this.history.record({
+      label: `Create Profile "${profile.displayName}"`,
+      undo: step('undo_create_credential_profile'),
+      redo: step('redo_create_credential_profile'),
+    });
     return { id: profile.id };
   }
 
@@ -320,6 +331,7 @@ export class CredentialsState {
     const root = this.vaultState.rootPath();
     const trimmed = displayName.trim();
     if (!root || !trimmed) return false;
+    const before = this.profileById(profileId)?.displayName;
 
     try {
       await invoke('rename_credential_profile', { vaultRoot: root, profileId, displayName: trimmed });
@@ -330,6 +342,13 @@ export class CredentialsState {
     }
 
     await this.refresh();
+    if (before && before !== trimmed) {
+      this.history.record({
+        label: `Rename Profile "${before}"`,
+        undo: () => this.rename(profileId, before),
+        redo: () => this.rename(profileId, trimmed),
+      });
+    }
     return true;
   }
 

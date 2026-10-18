@@ -1,10 +1,10 @@
 import { Component, computed, inject } from '@angular/core';
+import { VaultActions } from '../../notes/vault-actions';
 import { LucidePanelLeft, LucidePlus, LucideX } from '@lucide/angular';
 import { ICON_RAIL_WIDTH } from '../icon-rail/icon-rail';
 import { SidebarState } from '../sidebar/sidebar-state';
 import { TabsState } from '../../notes/tabs-state';
 import { TabMenu } from '../../notes/tab-menu';
-import { VaultState } from '../../notes/vault-state';
 import { MainMenu } from './main-menu/main-menu';
 import { WindowControls } from '../window-controls/window-controls';
 
@@ -22,7 +22,7 @@ export class Header {
   protected readonly sidebarState = inject(SidebarState);
   protected readonly tabsState = inject(TabsState);
   protected readonly tabMenu = inject(TabMenu);
-  private readonly vaultState = inject(VaultState);
+  private readonly vaultActions = inject(VaultActions);
   protected readonly gridTemplateColumns = computed(
     () => `${ICON_RAIL_WIDTH + this.sidebarState.effectiveWidth()}px 1fr auto`,
   );
@@ -64,6 +64,6 @@ export class Header {
   }
 
   protected async onNewNote(): Promise<void> {
-    await this.vaultState.createAndOpenNote();
+    await this.vaultActions.createAndOpenNote();
   }
 }

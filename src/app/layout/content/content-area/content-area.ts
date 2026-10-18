@@ -1,4 +1,5 @@
 import { Component, ElementRef, HostListener, computed, effect, inject, viewChild } from '@angular/core';
+import { VaultActions } from '../../../notes/vault-actions';
 import {
   LucideArrowLeft,
   LucideArrowRight,
@@ -25,7 +26,8 @@ import { FavoritesState } from '../../../notes/favorites-state';
 import { VaultMetaState } from '../../../notes/vault-meta-state';
 import { NoteEditor } from '../../../notes/editor/note-editor';
 import { FilePreview } from '../../../notes/file-preview/file-preview';
-import { TagBar } from '../../../notes/tag-bar/tag-bar';
+import { HelpPopover } from '../../../shared/help-popover/help-popover';
+import { PropertiesPanel } from '../../../notes/properties-panel/properties-panel';
 import { ContextMenuState } from '../../../shared/context-menu/context-menu-state';
 import { ContextMenuItem } from '../../../shared/context-menu/context-menu.model';
 import { DialogState } from '../../../shared/dialog/dialog-state';
@@ -38,7 +40,7 @@ import {
 } from '../../../notes/vault-tree.model';
 import { MarkdownNoticeState } from '../../../notes/markdown-notice-state';
 import { SidebarState } from '../../sidebar/sidebar-state';
-import { NoteEncryptionActions } from '../../../notes/note-encryption-actions';
+import { CONVERT_HELP, NoteEncryptionActions } from '../../../notes/note-encryption-actions';
 import { TabMenu } from '../../../notes/tab-menu';
 
 const RENAME_DEBOUNCE_MS = 1000;
@@ -48,7 +50,8 @@ const RENAME_DEBOUNCE_MS = 1000;
   imports: [
     NoteEditor,
     FilePreview,
-    TagBar,
+    HelpPopover,
+    PropertiesPanel,
     LucideArrowLeft,
     LucideArrowRight,
     LucideExpand,
@@ -71,6 +74,7 @@ export class ContentArea {
   protected readonly tabsState = inject(TabsState);
   private readonly notesState = inject(NotesState);
   protected readonly vaultState = inject(VaultState);
+  private readonly vaultActions = inject(VaultActions);
   protected readonly credentialsState = inject(CredentialsState);
   private readonly encryptionPanelState = inject(EncryptionPanelState);
   private readonly contextMenuState = inject(ContextMenuState);
@@ -167,9 +171,11 @@ export class ContentArea {
     return tab ? markdownExtensionOf(tab.noteId) : null;
   });
 
+  protected readonly convertHelp = CONVERT_HELP;
+
   protected convertActiveNote(): void {
     const note = this.plaintextNodeForActiveTab();
-    if (note) void this.encryptionActions.convertToNote(note);
+    if (note) void this.encryptionActions.convertToNotes([note]);
   }
 
   constructor() {
@@ -299,11 +305,7 @@ export class ContentArea {
     }
 
     try {
-      const renamed = await this.vaultState.renameNote(tab.noteId, newTitle);
-      this.notesState.renameNoteId(tab.noteId, renamed.relPath);
-      this.tabsState.renameNoteId(tab.noteId, renamed.relPath, renamed.name);
-      this.vaultMeta.renameNote(tab.noteId, renamed.relPath);
-      this.vaultState.renameNoteInTree(tab.noteId, renamed.relPath, renamed.name);
+      await this.vaultActions.rename('note', tab.noteId, newTitle);
     } catch (err) {
       this.tabsState.updateTabTitle(tabId, onDiskTitle);
       this.vaultState.renameNoteInTree(tab.noteId, tab.noteId, onDiskTitle);
@@ -331,7 +333,7 @@ export class ContentArea {
   protected onCrumbContextMenu(event: MouseEvent, relPath: string): void {
     const items: ContextMenuItem[] = [
       { kind: 'item', label: 'Reveal in Sidebar', action: () => this.sidebarState.revealFolder(relPath) },
-      { kind: 'item', label: 'New Note Here', icon: 'new-note', action: () => void this.vaultState.createAndOpenNote(relPath) },
+      { kind: 'item', label: 'New Note Here', icon: 'new-note', action: () => void this.vaultActions.createAndOpenNote(relPath) },
       { kind: 'separator' },
       { kind: 'item', label: 'Show in File Explorer', icon: 'reveal', action: () => void this.vaultState.revealInFileExplorer(relPath) },
     ];

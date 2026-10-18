@@ -14,7 +14,7 @@
 
 use crate::logging::logged;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::PathBuf;
 
@@ -62,6 +62,13 @@ pub struct VaultMeta {
     /// and the size cap; this is stored as-is.
     #[serde(default)]
     pub recent_notes: Vec<RecentNote>,
+    /// Each property's type (`text`, `list`, `number`, `checkbox`, `date`,
+    /// `datetime`), by lowercased property name: a type is vault-wide, so
+    /// `due` is a date in every note. A name with no entry has its type
+    /// inferred from its value. Strings for the same reason as `sort_mode`.
+    /// Note that this names properties used only in encrypted notes.
+    #[serde(default)]
+    pub property_types: BTreeMap<String, String>,
 }
 
 /// One entry in the recently-opened list.
@@ -90,6 +97,7 @@ impl Default for VaultMeta {
             collapsed_folders: Vec::new(),
             sort_mode: default_sort_mode(),
             recent_notes: Vec::new(),
+            property_types: BTreeMap::new(),
         }
     }
 }
@@ -173,6 +181,7 @@ mod tests {
                 RecentNote { rel_path: "Work/todo.mntl".to_string(), opened_at: 1_758_000_000_000 },
                 RecentNote { rel_path: "notes.mntl.enc".to_string(), opened_at: 1_757_900_000_000 },
             ],
+            property_types: BTreeMap::from([("due".to_string(), "date".to_string())]),
         };
         save_vault_meta(root_str.clone(), state.clone()).unwrap();
 

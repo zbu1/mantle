@@ -183,6 +183,9 @@ struct SessionKeysInner {
     /// Boxed so that a `HashMap` resize, which relocates values byte-wise,
     /// moves only a pointer and leaves no un-zeroized copy of a key behind.
     keys: HashMap<String, Box<MasterKey>>,
+    /// Registry entries taken out by undoing a profile's creation, by id, so
+    /// redo can put the very same profile back. Holds no secret.
+    removed: HashMap<String, CredentialProfile>,
 }
 
 impl SessionKeys {
@@ -200,6 +203,7 @@ impl SessionKeys {
         let mut inner = self.0.lock().map_err(|e| e.to_string())?;
         if inner.vault_root.as_deref() != Some(canonical.as_path()) {
             inner.keys.clear();
+            inner.removed.clear();
             inner.vault_root = Some(canonical);
         }
         Ok(f(&mut inner))
@@ -588,6 +592,62 @@ fn delete_profile_inner(vault_root: &str, profile_id: &str, keys: &SessionKeys) 
 
     save_registry(vault_root, &registry)?;
     keys.lock_one(vault_root, profile_id)
+}
+
+/// Undo creating a profile: take it out of the registry, keeping the entry
+/// in memory for redo. Refused once anything is encrypted under it, since the
+/// registry entry is the only way back to that content.
+#[tauri::command]
+pub fn undo_create_credential_profile(
+    vault_root: String,
+    profile_id: String,
+    keys: State<SessionKeys>,
+) -> Result<(), String> {
+    logged("undo_create_credential_profile", || {
+        let in_use = crate::vault::note_paths(&vault_root)?.iter().any(|rel| {
+            rel.ends_with(crate::vault::EXT_ENCRYPTED)
+                && crate::vault::resolve_rel_path(&vault_root, rel)
+                    .ok()
+                    .and_then(|path| crate::vault::read_profile_id(&path))
+                    .as_deref()
+                    == Some(profile_id.as_str())
+        });
+        if in_use || !crate::attachments::profile_attachments(vault_root.clone(), profile_id.clone())?.is_empty() {
+            return Err("Something is encrypted under this profile now".to_string());
+        }
+        let mut registry = load_registry(&vault_root)?;
+        let profile = registry
+            .find(&profile_id)
+            .cloned()
+            .ok_or_else(|| format!("No credential profile \"{profile_id}\" in this vault"))?;
+        registry.profiles.retain(|p| p.id != profile_id);
+        save_registry(&vault_root, &registry)?;
+        keys.with_vault(&vault_root, |inner| {
+            inner.keys.remove(&profile_id);
+            inner.removed.insert(profile_id.clone(), profile);
+        })
+    })
+}
+
+/// Redo creating a profile undone by [`undo_create_credential_profile`]. It
+/// comes back locked: its key wasn't kept.
+#[tauri::command]
+pub fn redo_create_credential_profile(
+    vault_root: String,
+    profile_id: String,
+    keys: State<SessionKeys>,
+) -> Result<(), String> {
+    logged("redo_create_credential_profile", || {
+        let profile = keys
+            .with_vault(&vault_root, |inner| inner.removed.remove(&profile_id))?
+            .ok_or("This profile can't be restored any more")?;
+        let mut registry = load_registry(&vault_root)?;
+        if registry.find(&profile_id).is_some() {
+            return Err(format!("A profile \"{profile_id}\" already exists"));
+        }
+        registry.profiles.push(profile);
+        save_registry(&vault_root, &registry)
+    })
 }
 
 #[cfg(test)]

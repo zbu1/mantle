@@ -10,6 +10,8 @@ import {
   LucideListTodo,
   LucideMinus,
   LucideQuote,
+  LucideTags,
+  LucideText,
 } from '@lucide/angular';
 import { MenuItem } from '../../../shared/menu/menu-item';
 import { MenuSurface } from '../../../shared/menu/menu-surface';
@@ -31,6 +33,8 @@ import { SlashCommandItem } from './slash-menu.model';
     LucideCode2,
     LucideMinus,
     LucideImage,
+    LucideTags,
+    LucideText,
   ],
   templateUrl: './slash-menu.html',
 })

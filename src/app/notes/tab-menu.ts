@@ -3,6 +3,7 @@ import { ContextMenuState } from '../shared/context-menu/context-menu-state';
 import { ContextMenuItem } from '../shared/context-menu/context-menu.model';
 import { SidebarState } from '../layout/sidebar/sidebar-state';
 import { FavoritesState } from './favorites-state';
+import { NotePropertiesState } from './note-properties-state';
 import { NotesState } from './notes-state';
 import { NoteTab, TabsState } from './tabs-state';
 import { VaultMetaState } from './vault-meta-state';
@@ -24,6 +25,7 @@ export class TabMenu {
   private readonly sidebarState = inject(SidebarState);
   private readonly selectionState = inject(VaultSelectionState);
   private readonly contextMenuState = inject(ContextMenuState);
+  private readonly noteProperties = inject(NotePropertiesState);
 
   open(event: MouseEvent, tab: NoteTab): void {
     const tabs = this.tabsState.tabs();
@@ -71,6 +73,16 @@ export class TabMenu {
     ];
     if (isNote && exists) {
       items.push({ kind: 'separator' }, { kind: 'item', label: 'Rename', icon: 'rename', action: () => this.rename(tab) });
+      // Not for a Markdown file whose frontmatter can't be read (null), which is left alone.
+      const editable = !!this.notesState.getNote(tab.noteId)?.properties;
+      const add = (kind: 'property' | 'tag') => () => {
+        this.tabsState.setActive(tab.id);
+        this.noteProperties.requestAdd(tab.noteId, kind);
+      };
+      items.push(
+        { kind: 'item', label: 'Add Property', disabled: !editable, action: add('property') },
+        { kind: 'item', label: 'Add Tag', disabled: !editable, action: add('tag') },
+      );
       if (this.vaultMeta.loaded()) {
         const favorite = this.favorites.isFavorite(tab.noteId);
         items.push({

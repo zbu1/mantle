@@ -501,7 +501,8 @@ function linkAt(doc: PMNode, pos: number): string | null {
   return null;
 }
 
-export function syntaxRevealPlugin(): Plugin<DecorationSet> {
+/** `openFile` opens a Ctrl/Cmd-clicked link to a file in the vault (anything but a web link). */
+export function syntaxRevealPlugin(openFile?: (href: string) => void): Plugin<DecorationSet> {
   return new Plugin<DecorationSet>({
     key: syntaxRevealKey,
     state: {
@@ -537,14 +538,16 @@ export function syntaxRevealPlugin(): Plugin<DecorationSet> {
         return true;
       },
       handleDOMEvents: {
-        // Ctrl/Cmd-click opens a web link, before the click can reveal it.
+        // Ctrl/Cmd-click opens a link, before the click can reveal it.
         mousedown: (view, event) => {
           if (event.button !== 0 || !(event.ctrlKey || event.metaKey)) return false;
           const hit = view.posAtCoords({ left: event.clientX, top: event.clientY });
           const href = hit && linkAt(view.state.doc, hit.pos);
-          if (!href || !/^(https?:|mailto:)/i.test(href)) return false;
+          const web = href && /^(https?:|mailto:)/i.test(href);
+          if (!href || (!web && (!openFile || /^[a-z][a-z0-9+.-]*:/i.test(href)))) return false;
           event.preventDefault();
-          void openUrl(href);
+          if (web) void openUrl(href);
+          else openFile?.(href);
           return true;
         },
       },

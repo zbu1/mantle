@@ -2,6 +2,7 @@ import { Injectable, inject, signal } from '@angular/core';
 import { invoke } from '@tauri-apps/api/core';
 import { logError } from '../core/logger';
 import { Note } from './note.model';
+import { NoteProperty, sameProperties } from './properties';
 import { sameTag, tagKey } from './tags';
 import { VaultState } from './vault-state';
 
@@ -9,6 +10,7 @@ import { VaultState } from './vault-state';
 interface NoteDocument {
   content: string;
   tags: string[];
+  properties: NoteProperty[] | null;
 }
 
 export type NoteEntry =
@@ -64,6 +66,11 @@ export class NotesState {
     return this.entries()[id];
   }
 
+  /** Every note with an entry: loaded, loading, locked or failed. */
+  ids(): string[] {
+    return Object.keys(this.entries());
+  }
+
   getNote(id: string): Note | undefined {
     const entry = this.entries()[id];
     return entry?.status === 'loaded' ? entry.note : undefined;
@@ -83,8 +90,8 @@ export class NotesState {
       return;
     }
     try {
-      const { content, tags } = await invoke<NoteDocument>('read_note', { vaultRoot: root, relPath: id });
-      const note: Note = { id, title: titleFromRelPath(id), content, tags };
+      const { content, tags, properties } = await invoke<NoteDocument>('read_note', { vaultRoot: root, relPath: id });
+      const note: Note = { id, title: titleFromRelPath(id), content, tags, properties };
       this.entries.update((entries) => ({ ...entries, [id]: { status: 'loaded', note } }));
     } catch (err) {
       const profileId = lockedProfileFrom(err);
@@ -186,6 +193,15 @@ export class NotesState {
     this.scheduleFlush(id);
   }
 
+  /** Replaces a loaded note's properties, saving them with the same debounce as its content. */
+  updateProperties(id: string, properties: readonly NoteProperty[]): void {
+    const entry = this.entries()[id];
+    // Unreadable frontmatter (null) stays as it is.
+    if (entry?.status !== 'loaded' || entry.note.properties === null || sameProperties(entry.note.properties, properties)) return;
+    this.entries.update((entries) => ({ ...entries, [id]: { status: 'loaded', note: { ...entry.note, properties: [...properties] } } }));
+    this.scheduleFlush(id);
+  }
+
   /**
    * Mirrors a vault-wide rename (or, with `to` null, removal) of the tag
    * `from` into the loaded notes, after the backend has already rewritten the
@@ -204,6 +220,18 @@ export class NotesState {
         changed = true;
       }
       return changed ? next : entries;
+    });
+  }
+
+  /** Mirrors tags already written to disk (an undone tag edit) into loaded notes, without saving again. */
+  setLoadedTags(tagsById: Readonly<Record<string, readonly string[]>>): void {
+    this.entries.update((entries) => {
+      const next = { ...entries };
+      for (const [id, tags] of Object.entries(tagsById)) {
+        const entry = entries[id];
+        if (entry?.status === 'loaded') next[id] = { status: 'loaded', note: { ...entry.note, tags: [...tags] } };
+      }
+      return next;
     });
   }
 
@@ -229,6 +257,7 @@ export class NotesState {
         relPath: id,
         content: entry.note.content,
         tags: entry.note.tags,
+        properties: entry.note.properties,
       });
       if (Object.keys(sources).length > 0) this.applyRelinked(id, sources);
     } catch (err) {

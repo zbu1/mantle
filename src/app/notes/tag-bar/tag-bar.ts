@@ -1,9 +1,10 @@
 import { ContextMenuState } from '../../shared/context-menu/context-menu-state';
 import { TagActions } from '../tag-actions';
-import { Component, ElementRef, computed, inject, input, signal, viewChild } from '@angular/core';
+import { Component, ElementRef, computed, inject, input, output, signal, viewChild } from '@angular/core';
 import { LucideHash, LucidePlus, LucideX } from '@lucide/angular';
 import { MenuItem } from '../../shared/menu/menu-item';
 import { MenuSurface } from '../../shared/menu/menu-surface';
+import { NotePropertiesState } from '../note-properties-state';
 import { NotesState } from '../notes-state';
 import { TagsState } from '../tags-state';
 import { isTagChar, normalizeTag, sameTag, TAG_RULES, tagKey } from '../tags';
@@ -20,8 +21,8 @@ interface Suggestion {
 }
 
 /**
- * The row of tag chips above a note's body. Clicking a chip reveals the tag
- * in the sidebar; "+ Tag" opens an inline input that autocompletes from the
+ * The tag chips in a note's properties panel. Clicking a chip reveals the
+ * tag in the sidebar; "+" opens an inline input that autocompletes from the
  * vault's existing tags.
  */
 @Component({
@@ -35,23 +36,17 @@ export class TagBar {
   private readonly tagsState = inject(TagsState);
   private readonly tagActions = inject(TagActions);
   private readonly contextMenuState = inject(ContextMenuState);
+  private readonly noteProperties = inject(NotePropertiesState);
 
   readonly noteId = input.required<string>();
+  /** The inline input closed. */
+  readonly done = output<void>();
 
   private readonly input = viewChild<ElementRef<HTMLInputElement>>('input');
 
   protected readonly loaded = computed(() => this.notesState.getNote(this.noteId()) !== undefined);
   protected readonly tags = computed(() => this.notesState.getNote(this.noteId())?.tags ?? []);
 
-  /**
-   * The "+ Tag" button. On an untagged note it's barely there until the row
-   * is hovered or focused, so it doesn't clutter every note's header.
-   */
-  protected readonly addButtonClass = computed(
-    () =>
-      'inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-muted-foreground/60 transition hover:bg-surface hover:text-foreground focus-visible:text-foreground' +
-      (this.tags().length === 0 ? ' opacity-40 group-hover/tags:opacity-100 focus-visible:opacity-100' : ''),
-  );
   protected readonly adding = signal(false);
   protected readonly draft = signal('');
   protected readonly error = signal<string | null>(null);
@@ -78,7 +73,7 @@ export class TagBar {
     return [{ tag: normalized, create: true, count: 0 }, ...available];
   });
 
-  protected startAdding(): void {
+  startAdding(): void {
     this.adding.set(true);
     this.draft.set('');
     this.error.set(null);
@@ -162,7 +157,7 @@ export class TagBar {
       // Reuse the vault's spelling of a known tag, so `Idea` typed as `idea`
       // doesn't read as two tags in the sidebar.
       const known = this.tagsState.groups().find((group) => group.key === tagKey(tag));
-      this.tagsState.setNoteTags(this.noteId(), [...tags, known?.name ?? tag]);
+      this.noteProperties.setTags(this.noteId(), [...tags, known?.name ?? tag]);
     }
     this.draft.set('');
     this.activeIndex.set(-1);
@@ -172,7 +167,7 @@ export class TagBar {
   }
 
   protected remove(tag: string): void {
-    this.tagsState.setNoteTags(
+    this.noteProperties.setTags(
       this.noteId(),
       this.tags().filter((existing) => existing !== tag),
     );
@@ -195,5 +190,6 @@ export class TagBar {
     this.adding.set(false);
     this.draft.set('');
     this.error.set(null);
+    this.done.emit();
   }
 }

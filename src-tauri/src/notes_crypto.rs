@@ -10,13 +10,15 @@
 //! [`crate::logging::logged`] — never interpolate a password, key, or
 //! decrypted note content into one.
 
-use crate::attachments::reseal_images;
+use crate::attachments::{reseal_attachments, unreferenced, Relink};
 use crate::credentials::SessionKeys;
 use crate::logging::logged;
 use crate::vault::{
     is_markdown_note, join_rel_note_path, master_key_for, note_display_name, resolve_rel_dir,
     resolve_rel_path, split_rel_note_path, write_atomic, CreatedNote, EXT_ENCRYPTED, EXT_PLAIN,
 };
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::Path;
@@ -66,17 +68,21 @@ fn shred(path: &Path) -> Result<(), String> {
 /// Read a plaintext source note as a `.mntl` document, ready to encrypt or to
 /// write out as a `.mntl` file.
 ///
-/// A `.md` file is re-encoded as one: its body and tags are kept, and the
-/// rest of its own YAML frontmatter dropped, since none of that means
-/// anything to a `.mntl` note.
+/// A `.md` file is re-encoded as one: its body is kept, and its own YAML
+/// frontmatter becomes the note's tags and properties. Frontmatter that can't
+/// be read is refused rather than dropped, since the original goes.
 fn read_plaintext_document(source: &Path, rel_path: &str) -> Result<Zeroizing<String>, String> {
     let raw = Zeroizing::new(
         fs::read_to_string(source).map_err(|e| format!("Failed to read note: {e}"))?,
     );
     if is_markdown_note(rel_path) {
         let (_, body) = mntl_core::split_markdown_frontmatter(&raw);
+        let properties = mntl_core::markdown_properties(&raw).ok_or(
+            "Its frontmatter isn't valid YAML, so it would be lost. Fix it in another editor first.",
+        )?;
         let frontmatter = mntl_core::NoteFrontmatter {
             tags: mntl_core::markdown_tags(&raw),
+            properties: properties.into_iter().map(|(key, value)| (key.into(), value)).collect(),
             ..Default::default()
         };
         return mntl_core::encode_note(&frontmatter, body)
@@ -86,6 +92,27 @@ fn read_plaintext_document(source: &Path, rel_path: &str) -> Result<Zeroizing<St
     mntl_core::extract_unencrypted_header(&raw)
         .map_err(|e| format!("Not a valid note, refusing to encrypt it: {e}"))?;
     Ok(raw)
+}
+
+/// [`reseal_attachments`] for a whole `.mntl` document, re-encoding it only if
+/// a link changed. Returns it with the files copied from.
+fn reseal_document(
+    vault_root: &str,
+    rel_path: &str,
+    document: &str,
+    target: Option<(&str, &mntl_core::MasterKey)>,
+    keys: &SessionKeys,
+    mode: Relink,
+) -> Result<(Zeroizing<String>, BTreeSet<String>), String> {
+    let (frontmatter, body) =
+        mntl_core::decode_note(document).map_err(|e| format!("Not a valid note: {e}"))?;
+    let body = Zeroizing::new(body);
+    let (body, relinked, originals) = reseal_attachments(vault_root, rel_path, &body, target, keys, mode)?;
+    if relinked.is_empty() {
+        return Ok((Zeroizing::new(document.to_string()), originals));
+    }
+    let encoded = mntl_core::encode_note(&frontmatter, &body).map_err(|e| e.to_string())?;
+    Ok((Zeroizing::new(encoded), originals))
 }
 
 /// Encrypt an existing plaintext note — a `.mntl`, or a plain Markdown file —
@@ -140,9 +167,11 @@ fn encrypt_note_inner(
         }
 
         let document = read_plaintext_document(&source, rel_path)?;
-        // Its images get sealed copies too; the plaintext originals stay, as
-        // other notes may show them.
-        let (document, _) = reseal_images(vault_root, rel_path, &document, Some((profile_id, &mk)), keys, false)?;
+        // Its attachments get sealed copies too — for a Markdown file, every
+        // file it links — and the plaintext originals stay, as other notes
+        // may use them.
+        let mode = if is_markdown_note(rel_path) { Relink::Import } else { Relink::Convert };
+        let (document, _) = reseal_document(vault_root, rel_path, &document, Some((profile_id, &mk)), keys, mode)?;
 
         let blob =
             mntl_core::encrypt_note(&mk, profile_id, document.as_bytes()).map_err(|e| e.to_string())?;
@@ -166,45 +195,130 @@ fn encrypt_note_inner(
     }
 }
 
-/// Convert a plain Markdown file into a `.mntl` note beside it, dropping the
-/// file's own YAML frontmatter.
+/// A Markdown file to convert, and the name (file stem) its note gets.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConvertRequest {
+    pub rel_path: String,
+    pub name: String,
+}
+
+/// One Markdown file that became a note.
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Conversion {
+    pub from: String,
+    pub name: String,
+    pub rel_path: String,
+}
+
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ConvertFailure {
+    pub rel_path: String,
+    pub error: String,
+}
+
+/// What [`convert_markdown_notes`] did.
+#[derive(Serialize, Debug, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ConvertReport {
+    pub converted: Vec<Conversion>,
+    pub failed: Vec<ConvertFailure>,
+    /// The files the notes linked that were copied into `attachments/` and,
+    /// as no other note uses them, moved to the OS trash.
+    pub removed: Vec<String>,
+}
+
+/// Convert plain Markdown files into `.mntl` notes beside them, each named as
+/// asked. A file's frontmatter becomes the note's tags and properties, and
+/// every local file it links or embeds is copied into `attachments/`; with
+/// `remove_originals`, those originals then go to the OS trash, unless
+/// another note still uses one.
 ///
-/// Like encrypting, the replacement is written and read back before the
+/// Like encrypting, each replacement is written and read back before its
 /// original goes. The original is sent to the OS trash rather than shredded:
-/// nothing here is secret, and the trash keeps the untouched `.md` — with its
-/// frontmatter — recoverable.
+/// nothing here is secret, and the trash keeps the untouched `.md`
+/// recoverable. A file that fails is reported and the rest carry on.
 #[tauri::command]
-pub fn convert_markdown_to_note(vault_root: String, rel_path: String) -> Result<CreatedNote, String> {
-    logged("convert_markdown_to_note", || {
-        convert_markdown_inner(&vault_root, &rel_path)
+pub fn convert_markdown_notes(
+    vault_root: String,
+    notes: Vec<ConvertRequest>,
+    remove_originals: bool,
+    keys: State<SessionKeys>,
+) -> Result<ConvertReport, String> {
+    logged("convert_markdown_notes", || {
+        convert_markdown_batch(&vault_root, &notes, remove_originals, &keys)
     })
 }
 
-/// Send a converted Markdown file to the OS trash. Tests unlink it instead,
-/// rather than filling the developer's recycle bin.
-fn discard_markdown_original(path: &Path) -> Result<(), String> {
+fn convert_markdown_batch(
+    vault_root: &str,
+    notes: &[ConvertRequest],
+    remove_originals: bool,
+    keys: &SessionKeys,
+) -> Result<ConvertReport, String> {
+    let mut report = ConvertReport::default();
+    let mut originals = BTreeSet::new();
+    for note in notes {
+        match convert_markdown_inner(vault_root, &note.rel_path, &note.name, keys) {
+            Ok((created, copied)) => {
+                originals.extend(copied);
+                report.converted.push(Conversion {
+                    from: note.rel_path.clone(),
+                    name: created.name,
+                    rel_path: created.rel_path,
+                });
+            }
+            Err(error) => report.failed.push(ConvertFailure { rel_path: note.rel_path.clone(), error }),
+        }
+    }
+    if remove_originals && !originals.is_empty() {
+        for rel in unreferenced(vault_root, originals, &[], keys)? {
+            if discard(&resolve_rel_path(vault_root, &rel)?).is_ok() {
+                report.removed.push(rel);
+            }
+        }
+    }
+    Ok(report)
+}
+
+/// Send a file to the OS trash. Tests unlink it instead, rather than filling
+/// the developer's recycle bin.
+fn discard(path: &Path) -> Result<(), String> {
     #[cfg(not(test))]
     let result = trash::delete(path).map_err(|e| e.to_string());
     #[cfg(test)]
     let result = fs::remove_file(path).map_err(|e| e.to_string());
-    result.map_err(|e| format!("Failed to remove the original Markdown file: {e}"))
+    result.map_err(|e| format!("Failed to move the original to the trash: {e}"))
 }
 
-fn convert_markdown_inner(vault_root: &str, rel_path: &str) -> Result<CreatedNote, String> {
+/// Convert one Markdown file into the note `name`, returning it and the files
+/// it linked that were copied into `attachments/`.
+fn convert_markdown_inner(
+    vault_root: &str,
+    rel_path: &str,
+    name: &str,
+    keys: &SessionKeys,
+) -> Result<(CreatedNote, BTreeSet<String>), String> {
     if !is_markdown_note(rel_path) {
         return Err("Only a Markdown file can be converted to a note".to_string());
     }
+    if name.is_empty() || name.contains(['/', '\\', ':']) {
+        return Err("Invalid note name".to_string());
+    }
 
     let source = resolve_rel_path(vault_root, rel_path)?;
-    let (dir_rel, stem, _) = split_rel_note_path(rel_path);
-    let dest_rel = join_rel_note_path(&dir_rel, &stem, EXT_PLAIN);
+    let (dir_rel, _, _) = split_rel_note_path(rel_path);
+    let dest_rel = join_rel_note_path(&dir_rel, name, EXT_PLAIN);
     let dest = resolve_rel_path(vault_root, &dest_rel)?;
 
     if dest.exists() {
-        return Err(format!("\"{stem}\" already exists as a note in this folder"));
+        return Err(format!("\"{name}\" already exists as a note in this folder"));
     }
 
     let document = read_plaintext_document(&source, rel_path)?;
+    let (document, copied) = reseal_document(vault_root, rel_path, &document, None, keys, Relink::Import)?;
     write_atomic(&dest, document.as_bytes())?;
 
     let written =
@@ -214,12 +328,9 @@ fn convert_markdown_inner(vault_root: &str, rel_path: &str) -> Result<CreatedNot
         return Err("Converted note failed verification; the original is untouched".to_string());
     }
 
-    discard_markdown_original(&source)?;
+    discard(&source)?;
 
-    Ok(CreatedNote {
-        name: stem,
-        rel_path: dest_rel,
-    })
+    Ok((CreatedNote { name: name.to_string(), rel_path: dest_rel }, copied))
 }
 
 /// Decrypt an encrypted note back to a plaintext `.mntl` file.
@@ -268,15 +379,9 @@ fn decrypt_note_inner(
         let body = Zeroizing::new(body);
         // A plaintext note's favorite lives in `.mantle/state.json`, where the
         // frontend moves it; a stale sealed flag would come back on re-encrypting.
-        let cleared;
-        let document = if frontmatter.favorite {
-            frontmatter.favorite = false;
-            cleared = Zeroizing::new(mntl_core::encode_note(&frontmatter, &body).map_err(|e| e.to_string())?);
-            cleared.as_str()
-        } else {
-            document
-        };
-        let (document, _) = reseal_images(vault_root, rel_path, document, None, keys, false)?;
+        frontmatter.favorite = false;
+        let (body, _, _) = reseal_attachments(vault_root, rel_path, &body, None, keys, Relink::Convert)?;
+        let document = Zeroizing::new(mntl_core::encode_note(&frontmatter, &body).map_err(|e| e.to_string())?);
 
         write_atomic(&dest, document.as_bytes())?;
         fs::remove_file(&source).map_err(|e| format!("Failed to remove the encrypted note: {e}"))?;
@@ -336,8 +441,14 @@ fn move_note_inner(
         let document = mntl_core::decrypt_note(&source_key, &blob).map_err(|e| e.to_string())?;
         let document =
             std::str::from_utf8(&document).map_err(|_| "Decrypted note is not UTF-8".to_string())?;
-        let (document, _) =
-            reseal_images(vault_root, rel_path, document, Some((profile_id, &destination_key)), keys, false)?;
+        let (document, _) = reseal_document(
+            vault_root,
+            rel_path,
+            document,
+            Some((profile_id, &destination_key)),
+            keys,
+            Relink::Convert,
+        )?;
         let resealed = mntl_core::encrypt_note(&destination_key, profile_id, document.as_bytes())
             .map_err(|e| e.to_string())?;
 
@@ -480,47 +591,89 @@ mod tests {
     }
 
     #[test]
-    fn encrypting_a_markdown_file_drops_its_frontmatter_and_removes_it() {
+    fn encrypting_a_markdown_file_keeps_its_frontmatter_and_removes_it() {
         let root = temp_dir("encrypt-markdown");
         let root_str = root.to_string_lossy().into_owned();
         let keys = unlocked(&root_str, &["my-diary"]);
-        fs::write(root.join("secret.md"), format!("---
-tags: [x]
----
-{BODY}")).unwrap();
+        fs::write(root.join("secret.md"), format!("---\ntags: [x]\ndue: 2026-10-17\n---\n{BODY}")).unwrap();
 
         let encrypted = encrypt_note_inner(&root_str, "secret.md", "my-diary", &keys).unwrap();
         assert_eq!(encrypted.rel_path, "secret.mntl.enc");
         assert!(!root.join("secret.md").exists());
-        assert_eq!(read_note_inner(&root_str, "secret.mntl.enc", &keys).unwrap().content, BODY);
+        let doc = read_note_inner(&root_str, "secret.mntl.enc", &keys).unwrap();
+        assert_eq!((doc.content.as_str(), doc.tags), (BODY, vec!["x".to_string()]));
+        assert_eq!(doc.properties.unwrap()[0].key, "due");
+    }
+
+    fn convert(root: &str, rel_path: &str, name: &str) -> Result<CreatedNote, String> {
+        convert_markdown_inner(root, rel_path, name, &SessionKeys::default()).map(|(created, _)| created)
     }
 
     #[test]
-    fn converting_markdown_writes_a_mntl_note_keeping_only_its_tags() {
+    fn converting_markdown_moves_its_frontmatter_into_the_note() {
         let root = temp_dir("convert-markdown");
         let root_str = root.to_string_lossy().into_owned();
         fs::write(root.join("readme.markdown"), format!("---\ntitle: Readme\ntags: [x]\n---\n{BODY}")).unwrap();
 
-        let converted = convert_markdown_inner(&root_str, "readme.markdown").unwrap();
+        let converted = convert(&root_str, "readme.markdown", "readme").unwrap();
         assert_eq!(converted.rel_path, "readme.mntl");
         assert_eq!(converted.name, "readme");
         assert!(!root.join("readme.markdown").exists());
         assert_eq!(
             fs::read_to_string(root.join("readme.mntl")).unwrap(),
-            format!("---\nv: 2\ntags:\n- x\n---\n{BODY}")
+            format!("---\nv: 2\ntags:\n- x\nproperties:\n  title: Readme\n---\n{BODY}")
         );
     }
 
     #[test]
-    fn converting_markdown_refuses_collisions_and_non_markdown_files() {
+    fn converting_markdown_refuses_collisions_bad_frontmatter_and_non_markdown_files() {
         let root = temp_dir("convert-markdown-collision");
         let root_str = root.to_string_lossy().into_owned();
         fs::write(root.join("readme.md"), BODY).unwrap();
         write_plain(&root.join("readme.mntl"), "existing");
 
-        assert!(convert_markdown_inner(&root_str, "readme.md").is_err());
+        assert!(convert(&root_str, "readme.md", "readme").is_err());
         assert!(root.join("readme.md").is_file());
-        assert!(convert_markdown_inner(&root_str, "readme.mntl").is_err());
+        assert!(convert(&root_str, "readme.mntl", "readme").is_err());
+        assert!(convert(&root_str, "readme.md", "a/b").is_err());
+        assert_eq!(convert(&root_str, "readme.md", "readme 2").unwrap().rel_path, "readme 2.mntl");
+
+        fs::write(root.join("broken.md"), "---\n: not [valid\n---\nBody").unwrap();
+        assert!(convert(&root_str, "broken.md", "broken").unwrap_err().contains("frontmatter"));
+        assert!(root.join("broken.md").is_file());
+    }
+
+    #[test]
+    fn converting_markdown_copies_its_files_in_and_can_remove_the_originals() {
+        let root = temp_dir("convert-attachments");
+        let root_str = root.to_string_lossy().into_owned();
+        fs::create_dir_all(root.join("files")).unwrap();
+        fs::write(root.join("files/spec.zip"), b"zip").unwrap();
+        fs::write(root.join("files/shared.pdf"), b"pdf").unwrap();
+        fs::write(root.join("files/cat.png"), b"meow").unwrap();
+        fs::write(
+            root.join("a.md"),
+            "![[cat.png|300]] [spec](files/spec.zip) [[shared.pdf]] [web](https://x/y.pdf) [gone](nope.pdf) [[Other]]\n```\n[code](files/spec.zip)\n```\n",
+        )
+        .unwrap();
+        fs::write(root.join("b.md"), "[keep](files/shared.pdf)").unwrap();
+
+        let notes = vec![ConvertRequest { rel_path: "a.md".into(), name: "a".into() }];
+        let report = convert_markdown_batch(&root_str, &notes, true, &SessionKeys::default()).unwrap();
+        assert_eq!(report.converted[0].rel_path, "a.mntl");
+        assert!(report.failed.is_empty());
+        assert_eq!(report.removed, ["files/cat.png", "files/spec.zip"], "b.md still uses shared.pdf");
+        assert!(root.join("files/shared.pdf").is_file());
+
+        let content = read_note_inner(&root_str, "a.mntl", &SessionKeys::default()).unwrap().content;
+        let targets: Vec<&str> =
+            crate::attachments::link_sources(&content).into_iter().map(|s| &content[s.range]).collect();
+        assert_eq!(targets.len(), 6, "{content}");
+        assert!(targets[..3].iter().all(|t| t.starts_with("attachments/")), "{content}");
+        assert!(targets[0].ends_with(".png") && targets[1].ends_with(".zip"));
+        assert_eq!(&targets[3..], ["https://x/y.pdf", "nope.pdf", "Other"]);
+        assert!(content.contains("|300]]") && content.contains("[code](files/spec.zip)"), "code is untouched");
+        assert_eq!(fs::read(root.join(targets[1])).unwrap(), b"zip");
     }
 
     #[test]
@@ -616,7 +769,7 @@ tags: [x]
         let before = fs::read(root.join("secret.mntl.enc")).unwrap();
         let before_header = mntl_core::extract_encrypted_header(&before).unwrap();
 
-        write_note_inner(&root_str, "secret.mntl.enc", "# Edited", &[], &keys).unwrap();
+        write_note_inner(&root_str, "secret.mntl.enc", "# Edited", &[], None, &keys).unwrap();
 
         assert_eq!(
             read_note_inner(&root_str, "secret.mntl.enc", &keys).unwrap().content,
@@ -647,7 +800,7 @@ tags: [x]
         let before = fs::read(root.join("secret.mntl.enc")).unwrap();
 
         keys.lock_one(&root_str, "my-diary").unwrap();
-        let err = write_note_inner(&root_str, "secret.mntl.enc", "# Edited", &[], &keys).unwrap_err();
+        let err = write_note_inner(&root_str, "secret.mntl.enc", "# Edited", &[], None, &keys).unwrap_err();
 
         assert_eq!(err, format!("{LOCKED_ERR_PREFIX}my-diary"));
         assert_eq!(fs::read(root.join("secret.mntl.enc")).unwrap(), before);
@@ -748,8 +901,8 @@ tags: [x]
         write_plain(&root.join("secret.mntl"), "![cat](attachments/cat.png) ![[cat.png|200]] ![](https://x/y.png)");
 
         let src_of = |content: &str, nth: usize| {
-            let ranges = crate::attachments::image_sources(content);
-            content[ranges[nth].clone()].to_string()
+            let sources = crate::attachments::link_sources(content);
+            content[sources[nth].range.clone()].to_string()
         };
 
         encrypt_note_inner(&root_str, "secret.mntl", "my-diary", &keys).unwrap();

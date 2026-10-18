@@ -11,10 +11,11 @@ import { CredentialsState } from '../../notes/credentials-state';
 import { NewEncryptedNoteState } from '../../notes/new-encrypted-note/new-encrypted-note-state';
 import { NoteEncryptionActions } from '../../notes/note-encryption-actions';
 import { TagGroup } from '../../notes/tags';
+import { VaultActions } from '../../notes/vault-actions';
+import { canUndoDelete } from '../../notes/vault-history-state';
 import { TagActions } from '../../notes/tag-actions';
 import { TagsState } from '../../notes/tags-state';
 import { COLLAPSE_THRESHOLD, SIDEBAR_SECTIONS, SidebarState } from './sidebar-state';
-import { NotesState } from '../../notes/notes-state';
 import { TabsState } from '../../notes/tabs-state';
 import { VaultState } from '../../notes/vault-state';
 import { FavoritesState } from '../../notes/favorites-state';
@@ -70,7 +71,6 @@ export class Sidebar {
   protected readonly state = inject(SidebarState);
   protected readonly vaultState = inject(VaultState);
   private readonly tabsState = inject(TabsState);
-  private readonly notesState = inject(NotesState);
   private readonly contextMenuState = inject(ContextMenuState);
   private readonly clipboardState = inject(VaultClipboardState);
   protected readonly selectionState = inject(VaultSelectionState);
@@ -86,6 +86,7 @@ export class Sidebar {
   private readonly attachments = inject(AttachmentsState);
   private readonly editContext = inject(EditContextState);
   private readonly tagActions = inject(TagActions);
+  private readonly vaultActions = inject(VaultActions);
 
   /** Text in the header's filter field; the tree shows only notes whose name contains it. Session-only. */
   protected readonly filterQuery = signal('');
@@ -182,7 +183,7 @@ export class Sidebar {
     for (let i = 0; i < 50; i++) {
       const name = i === 0 ? base : `${base} ${i + 1}`;
       try {
-        const created = await this.vaultState.createNote(relDir, name);
+        const created = await this.vaultActions.createNote(relDir, name);
         this.tabsState.openNote({ id: created.relPath, title: created.name });
         this.renameState.renamingPath.set(created.relPath);
         return;
@@ -199,7 +200,7 @@ export class Sidebar {
     for (let i = 0; i < 50; i++) {
       const name = i === 0 ? base : `${base} ${i + 1}`;
       try {
-        const created = await this.vaultState.createFolder(relDir, name);
+        const created = await this.vaultActions.createFolder(relDir, name);
         if (selectedNotes.length > 0) {
           await this.onNotesDropped({ relPaths: selectedNotes, destRelDir: created.relPath });
         }
@@ -278,14 +279,16 @@ export class Sidebar {
   }
 
   private async deleteFile(file: VaultFileNode): Promise<void> {
-    const confirmed = await this.dialogState.confirm(
-      `Move "${file.name}" to the system trash? Notes that show it will show a broken image.`,
-      { title: 'Delete File', tone: 'warning', confirmLabel: 'Move to Trash' },
-    );
+    const confirmed =
+      canUndoDelete ||
+      (await this.dialogState.confirm(`Move "${file.name}" to the system trash? Notes that show it will show a broken image.`, {
+        title: 'Delete File',
+        tone: 'warning',
+        confirmLabel: 'Move to Trash',
+      }));
     if (!confirmed) return;
     try {
-      await this.vaultState.deleteFile(file.relPath);
-      this.tabsState.closeByNoteId(file.relPath);
+      await this.vaultActions.delete([file]);
     } catch (err) {
       await this.dialogState.alert(String(err), { title: 'Delete Failed', tone: 'error' });
     }
@@ -311,7 +314,7 @@ export class Sidebar {
       { kind: 'separator' },
       { kind: 'item', label: 'Show in File Explorer', icon: 'reveal', action: () => void this.vaultState.revealInFileExplorer(note.relPath) },
       { kind: 'separator' },
-      { kind: 'item', label: 'Duplicate', icon: 'duplicate', action: () => void this.vaultState.duplicateNote(note.relPath) },
+      { kind: 'item', label: 'Duplicate', icon: 'duplicate', action: () => void this.vaultActions.duplicate(note.relPath) },
       { kind: 'item', label: 'Copy', icon: 'copy', shortcut: 'Ctrl+C', action: () => this.clipboardState.copy([note.relPath]) },
       { kind: 'item', label: 'Cut', icon: 'cut', shortcut: 'Ctrl+X', action: () => this.clipboardState.cut([note.relPath]) },
       ...(note.relPath.includes('/')
@@ -382,6 +385,11 @@ export class Sidebar {
       });
       items.push({ kind: 'separator' });
     }
+    const markdown = this.encryptionActions.markdownNotesIn(selected);
+    if (markdown.length > 0) {
+      items.push(this.convertMenuItem(markdown));
+      items.push({ kind: 'separator' });
+    }
     if (allNotes) {
       const allFavorites = selected.every((path) => this.favorites.isFavorite(path));
       items.push({
@@ -397,9 +405,21 @@ export class Sidebar {
     return true;
   }
 
+  /** Converts the Markdown files `notes` found in a selection or folder, at any depth. */
+  private convertMenuItem(notes: VaultNoteNode[]): ContextMenuItem {
+    const count = notes.length;
+    return {
+      kind: 'item',
+      label: count === 1 ? 'Convert 1 Markdown File to a Mantle Note' : `Convert ${count} Markdown Files to Mantle Notes`,
+      icon: 'convert',
+      action: () => void this.encryptionActions.convertToNotes(notes),
+    };
+  }
+
   protected onFolderContextMenu(payload: { event: MouseEvent; folder: VaultFolderNode }): void {
     const { event, folder } = payload;
     if (this.openSelectionMenu(event, folder.relPath)) return;
+    const markdown = this.encryptionActions.markdownNotesIn([folder.relPath]);
     const items: ContextMenuItem[] = [
       { kind: 'item', label: 'New Note', icon: 'new-note', action: () => void this.onNewNote(folder.relPath) },
       {
@@ -419,6 +439,7 @@ export class Sidebar {
       { kind: 'separator' },
       { kind: 'item', label: 'Rename', icon: 'rename', action: () => this.renameState.renamingPath.set(folder.relPath) },
       { kind: 'separator' },
+      ...(markdown.length > 0 ? [this.convertMenuItem(markdown), { kind: 'separator' as const }] : []),
       {
         kind: 'item',
         label: 'Paste',
@@ -591,83 +612,36 @@ export class Sidebar {
     }
   }
 
-  /**
-   * Moves dropped tree items (notes, folders, files) into `destRelDir`,
-   * skipping any already there to avoid an accidental rename-collision, and
-   * any folder that would land inside itself.
-   */
+  /** Moves dropped tree items (notes, folders, files) into `destRelDir`. */
   protected async onNotesDropped(payload: { relPaths: string[]; destRelDir: string }): Promise<void> {
-    const { relPaths, destRelDir } = payload;
-    const nodes = this.nodesByPath();
-    for (const relPath of topmostPaths(relPaths)) {
-      if (dirOf(relPath) === destRelDir) continue;
-      const type = nodes.get(relPath)?.type;
-      if (type === 'folder') {
-        if (destRelDir === relPath || destRelDir.startsWith(`${relPath}/`)) continue;
-        await this.onFolderDropped({ relPath, destRelDir });
-      } else if (type === 'file') {
-        const moved = await this.vaultState.moveFile(relPath, destRelDir);
-        this.tabsState.renameNoteId(relPath, moved.relPath, moved.name);
-      } else {
-        const moved = await this.vaultState.moveNote(relPath, destRelDir);
-        this.notesState.renameNoteId(relPath, moved.relPath);
-        this.tabsState.renameNoteId(relPath, moved.relPath, moved.name);
-        this.vaultMeta.renameNote(relPath, moved.relPath);
-      }
+    try {
+      await this.vaultActions.move(payload.relPaths, payload.destRelDir);
+    } catch (err) {
+      await this.dialogState.alert(String(err), { title: 'Move Failed', tone: 'error' });
+    } finally {
+      this.selectionState.clear();
     }
-    this.selectionState.clear();
   }
 
-  /** Moves a dropped folder into `destRelDir` and retargets any open tabs for notes nested inside it. */
   protected async onFolderDropped(payload: { relPath: string; destRelDir: string }): Promise<void> {
-    const { relPath, destRelDir } = payload;
-    if (dirOf(relPath) === destRelDir) return;
-    const tree = this.vaultState.tree();
-    const oldPrefix = `${relPath}/`;
-    const affected = tree ? [...flattenVaultNotes(tree)].filter(([notePath]) => notePath.startsWith(oldPrefix)) : [];
     try {
-      const moved = await this.vaultState.moveFolder(relPath, destRelDir);
-      this.vaultMeta.renameFolder(relPath, moved.relPath);
-      const newPrefix = `${moved.relPath}/`;
-      for (const [oldNotePath, name] of affected) {
-        const newNotePath = newPrefix + oldNotePath.slice(oldPrefix.length);
-        this.notesState.renameNoteId(oldNotePath, newNotePath);
-        this.tabsState.renameNoteId(oldNotePath, newNotePath, name);
-        this.vaultMeta.renameNote(oldNotePath, newNotePath);
-      }
+      await this.vaultActions.move([payload.relPath], payload.destRelDir);
     } catch (err) {
       await this.dialogState.alert(String(err), { title: 'Move Failed', tone: 'error' });
     }
   }
 
   protected async onNoteRenamed(payload: { relPath: string; newName: string }): Promise<void> {
-    const { relPath, newName } = payload;
     try {
-      const renamed = await this.vaultState.renameNote(relPath, newName);
-      this.notesState.renameNoteId(relPath, renamed.relPath);
-      this.tabsState.renameNoteId(relPath, renamed.relPath, renamed.name);
-      this.vaultMeta.renameNote(relPath, renamed.relPath);
+      await this.vaultActions.rename('note', payload.relPath, payload.newName);
     } catch (err) {
       await this.dialogState.alert(String(err), { title: 'Rename Failed', tone: 'error' });
     }
   }
 
-  /** Renames a folder and retargets any open tabs for notes nested inside it. */
   protected async onFolderRenamed(payload: { relPath: string; newName: string }): Promise<void> {
-    const { relPath, newName } = payload;
-    const tree = this.vaultState.tree();
-    const oldPrefix = `${relPath}/`;
-    const affected = tree ? [...flattenVaultNotes(tree)].filter(([notePath]) => notePath.startsWith(oldPrefix)) : [];
     try {
-      const renamed = await this.vaultState.renameFolder(relPath, newName);
-      this.vaultMeta.renameFolder(relPath, renamed.relPath);
-      const newPrefix = `${renamed.relPath}/`;
-      for (const [oldNotePath, name] of affected) {
-        const newNotePath = newPrefix + oldNotePath.slice(oldPrefix.length);
-        this.notesState.renameNoteId(oldNotePath, newNotePath);
-        this.tabsState.renameNoteId(oldNotePath, newNotePath, name);
-        this.vaultMeta.renameNote(oldNotePath, newNotePath);
-      }
+      await this.vaultActions.rename('folder', payload.relPath, payload.newName);
     } catch (err) {
       await this.dialogState.alert(String(err), { title: 'Rename Failed', tone: 'error' });
     }
@@ -681,14 +655,10 @@ export class Sidebar {
     });
     if (!confirmed) return;
     try {
-      await this.vaultState.deleteNote(note.relPath);
-      this.tabsState.closeByNoteId(note.relPath);
-      this.vaultMeta.forgetNote(note.relPath);
+      await this.vaultActions.delete([note], attachments);
     } catch (err) {
       await this.dialogState.alert(String(err), { title: 'Delete Failed', tone: 'error' });
-      return;
     }
-    await this.attachments.delete(attachments);
   }
 
   private async deleteFolder(folder: VaultFolderNode): Promise<void> {
@@ -700,23 +670,10 @@ export class Sidebar {
     });
     if (!confirmed) return;
     try {
-      await this.removeFolder(folder);
+      await this.vaultActions.delete([folder], attachments);
     } catch (err) {
       await this.dialogState.alert(String(err), { title: 'Delete Failed', tone: 'error' });
-      return;
     }
-    await this.attachments.delete(attachments);
-  }
-
-  /** Trashes a folder and closes and forgets everything that was in it. */
-  private async removeFolder(folder: VaultFolderNode): Promise<void> {
-    await this.vaultState.deleteFolder(folder.relPath);
-    // Files in it too, not just notes: their preview tabs would show nothing.
-    for (const tab of this.tabsState.tabs().filter((t) => t.noteId.startsWith(`${folder.relPath}/`))) {
-      this.tabsState.closeTab(tab.id);
-    }
-    for (const relPath of flattenVaultNotes(folder).keys()) this.vaultMeta.forgetNote(relPath);
-    this.vaultMeta.forgetFolder(folder.relPath);
   }
 
   /** Deletes every selected item: notes, folders (with their contents) and files. */
@@ -736,24 +693,13 @@ export class Sidebar {
     });
     if (!confirmed) return;
     try {
-      for (const node of items) {
-        if (node.type === 'folder') {
-          await this.removeFolder(node);
-          continue;
-        }
-        // `delete_note` trashes whatever path it's given, files included.
-        await this.vaultState.deleteNote(node.relPath);
-        this.tabsState.closeByNoteId(node.relPath);
-        if (node.type === 'note') this.vaultMeta.forgetNote(node.relPath);
-      }
-    } catch (err) {
       // Attachments only go along once every note they belonged to has.
+      await this.vaultActions.delete(items, attachments);
+    } catch (err) {
       await this.dialogState.alert(String(err), { title: 'Delete Failed', tone: 'error' });
-      return;
     } finally {
       this.selectionState.clear();
     }
-    await this.attachments.delete(attachments);
   }
 
   /** Ctrl/Cmd+A, C, X and V in the tree: the Edit menu's commands, for its items. */
@@ -812,7 +758,7 @@ export class Sidebar {
     if (!clip) return;
     try {
       if (clip.mode === 'copy') {
-        for (const relPath of clip.relPaths) await this.vaultState.copyNote(relPath, destRelDir);
+        for (const relPath of clip.relPaths) await this.vaultActions.copy(relPath, destRelDir);
       } else {
         this.clipboardState.clear();
         await this.onNotesDropped({ relPaths: clip.relPaths, destRelDir });

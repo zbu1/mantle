@@ -4,7 +4,7 @@ import { installTauriMock } from '../../testing/tauri-mock';
 import { MAX_RECENT_NOTES, VaultMeta, VaultMetaState } from './vault-meta-state';
 
 function meta(overrides: Partial<VaultMeta> = {}): VaultMeta {
-  return { version: 1, favorites: [], order: {}, collapsedFolders: [], sortMode: 'name-asc', recentNotes: [], ...overrides };
+  return { version: 1, favorites: [], order: {}, collapsedFolders: [], sortMode: 'name-asc', recentNotes: [], propertyTypes: {}, ...overrides };
 }
 
 async function flushMicrotasks(): Promise<void> {
@@ -296,6 +296,17 @@ describe('VaultMetaState', () => {
           recentNotes: [{ relPath: 'a.mntl', openedAt: 1 }],
         }),
       });
+    });
+
+    it('stores property types by lowercased name, dropping ones it does not know', async () => {
+      mock.respondWith('load_vault_meta', { ...meta(), propertyTypes: { due: 'date', odd: 'hologram' } });
+      await state.load('/other-vault');
+      expect(state.propertyType('Due')).toBe('date');
+      expect(state.propertyType('odd')).toBeUndefined();
+
+      state.setPropertyType('Rating', 'number');
+      jest.advanceTimersByTime(600);
+      expect(saves().at(-1)!.state.propertyTypes).toEqual({ due: 'date', rating: 'number' });
     });
 
     it('flushes a pending save to the old vault before switching to another', async () => {

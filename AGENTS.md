@@ -12,14 +12,22 @@ Angular 22 (frontend, signals-based, no NgModules).
   Markdown under the cursor as editable raw text (`syntax-reveal-plugin.ts`:
   `md_raw` / `md_prefix` marks, saved so the file never changes) — plus
   `shared/` UI primitives (menu surface/item, context menu). The Edit menu acts
-  on whichever of the editor or vault tree last had focus (`EditContextState`).
+  on whichever of the editor or vault tree last had focus (`EditContextState`);
+  undo/redo outside the editor go to `VaultHistoryState`, the session's
+  vault-action history. Structural tree actions live in `VaultActions`, which
+  keeps tabs/notes/`state.json` following moved paths and records each undo
+  step; other actions (favorites, tags, encryption, profiles) record their own.
+  Undoing a delete restores from the OS trash (`restore_from_trash`; not on
+  macOS, where deletes keep their confirmation).
 - **Rust backend** (`src-tauri/`): Tauri commands in `src-tauri/src/vault.rs`
   for scanning a vault directory and reading/writing/creating notes, on top of
   the `mntl-core` crate. Plain Markdown files (`.md` / `.markdown`) also open
   as notes: they're saved in place as Markdown, their own YAML frontmatter is
-  hidden and written back verbatim (except the `tags:` key, which Mantle
-  edits), and they only become `.mntl` through `convert_markdown_to_note` or
-  encryption (both drop that frontmatter but keep its tags).
+  hidden and written back verbatim (except the keys Mantle edits as tags and
+  properties), and they only become `.mntl` through `convert_markdown_notes`
+  or encryption, which move that frontmatter into the note's tags and
+  properties (refusing frontmatter that isn't valid YAML) and copy every local
+  file the note links or embeds into `attachments/`.
   `src-tauri/src/vault_meta.rs` loads/saves
   `.mantle/state.json` inside the vault — favorites, manual sort order, and
   collapsed folders — a vault-local file so this metadata travels with the
@@ -30,10 +38,13 @@ Angular 22 (frontend, signals-based, no NgModules).
   profiles. `src-tauri/src/notes_crypto.rs` converts notes between the
   plaintext and encrypted formats and moves them between profiles.
   `src-tauri/src/tags.rs` renames or removes a tag across the whole vault.
-  `src-tauri/src/attachments.rs` stores images in the vault's `attachments/`
-  folder (content-hashed for plaintext notes, `<random>.<ext>.enc` sealed in
-  the note envelope for encrypted ones) and serves them to the editor through
-  the `mantle://` protocol, decrypting in memory. An attachment belongs to its
+  `src-tauri/src/attachments.rs` stores attachments — images, and any file a
+  converted note linked — in the vault's `attachments/` folder
+  (content-hashed for plaintext notes, `<random>.<ext>.enc` sealed in the note
+  envelope for encrypted ones) and serves images to the editor through the
+  `mantle://` protocol, decrypting in memory; a sealed non-image only leaves
+  as a "Save decrypted copy as…" the user picks. Its link scanner
+  (`link_sources`) skips code, so code is never rewritten. An attachment belongs to its
   profile (or to plaintext notes): encrypting, decrypting or re-homing a note,
   and every `write_note`, copies any attachment that belongs elsewhere and
   re-points the link (`write_note` returns those re-pointings for the editor
@@ -69,6 +80,23 @@ Angular 22 (frontend, signals-based, no NgModules).
   pending writes first and then mirrors the edit into loaded notes
   (`NotesState.retagLoaded`), or the next save would restore the old tags.
   Notes in locked profiles are skipped and reported, not silently missed.
+
+## Properties
+
+- A note's other frontmatter keys are its **properties**: `NoteFrontmatter::properties`
+  (an ordered map nested under `properties:`, sealed for `.mntl.enc`), or a
+  `.md` file's own top-level keys. `read_note` / `write_note` carry them as
+  JSON (`NoteProperty`); for a `.md`, a save rewrites only the keys whose value
+  changed (`mntl_core::set_markdown_property`), and frontmatter that isn't a
+  YAML mapping comes back as `properties: null` and is never written.
+- Types (`properties.ts`) are vault-wide by lowercased name in
+  `.mantle/state.json` `propertyTypes`; a value that doesn't fit its type is
+  shown as what it infers to, never coerced.
+- Panel edits go through the open editor as doc attributes (`tags`,
+  `properties` on the `doc` node), so they share the note's undo history;
+  `NotePropertiesState` routes them, and the editor reports every attribute
+  change back (an undo included). Changes from elsewhere (a vault-wide tag
+  rename) are synced into the doc without a history step.
 
 ## Encryption
 

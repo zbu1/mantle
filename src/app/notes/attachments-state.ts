@@ -1,8 +1,11 @@
 import { Injectable, inject } from '@angular/core';
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
+import { save } from '@tauri-apps/plugin-dialog';
 import { formatError, logError, logInfo } from '../core/logger';
 import { DialogState } from '../shared/dialog/dialog-state';
 import { NotesState } from './notes-state';
+import { TabsState } from './tabs-state';
+import { canUndoDelete } from './vault-history-state';
 import { VaultState } from './vault-state';
 import { fileNameOf } from './vault-tree.model';
 
@@ -45,8 +48,9 @@ export function attachmentUrl(vaultRoot: string, noteRelPath: string, src: strin
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 /**
- * Attachments — the images notes show — as things in their own right: where
- * one comes from, and deleting the ones nothing uses any more.
+ * Attachments — the images notes show, and other files they link — as things
+ * in their own right: where one comes from, opening it, and deleting the ones
+ * nothing uses any more.
  *
  * An attachment belongs to its credential profile (or to plaintext notes): the
  * backend keeps it that way on every save, which is what lets it tell an
@@ -59,11 +63,40 @@ export class AttachmentsState {
   private readonly vaultState = inject(VaultState);
   private readonly notesState = inject(NotesState);
   private readonly dialogState = inject(DialogState);
+  private readonly tabsState = inject(TabsState);
 
   async info(noteRelPath: string, src: string): Promise<AttachmentInfo | null> {
     const vaultRoot = this.vaultState.rootPath();
     if (!vaultRoot) return null;
     return invoke<AttachmentInfo | null>('attachment_info', { vaultRoot, noteRelPath, src });
+  }
+
+  /** Opens the vault file a link `href` in the note `noteRelPath` leads to, in a preview tab. */
+  async openLinked(noteRelPath: string, href: string): Promise<void> {
+    const info = await this.info(noteRelPath, href.split('#')[0]).catch(() => null);
+    if (!info) {
+      await this.dialogState.alert(`"${href}" doesn't lead to a file in this vault.`, { title: "Couldn't Open Link" });
+      return;
+    }
+    this.tabsState.openNote({ id: info.relPath, title: fileNameOf(info.relPath) });
+  }
+
+  /**
+   * Lets the user save a decrypted copy of the sealed attachment `relPath`
+   * somewhere outside the vault: the one way it leaves Mantle as plaintext.
+   */
+  async saveDecryptedCopy(relPath: string): Promise<void> {
+    const vaultRoot = this.vaultState.rootPath();
+    if (!vaultRoot) return;
+    const destPath = await save({ defaultPath: fileNameOf(relPath).replace(/\.enc$/, '') });
+    if (!destPath) return;
+    try {
+      await invoke('save_attachment_copy', { vaultRoot, relPath, destPath });
+      logInfo(`Saved a decrypted copy of "${relPath}"`);
+    } catch (err) {
+      logError(`Failed to save a decrypted copy of "${relPath}": ${formatError(err)}`);
+      await this.dialogState.alert(formatError(err), { title: "Couldn't Save Copy", tone: 'error' });
+    }
   }
 
   /** Opens a vault file in the OS's default app for it. The backend refuses sealed files. */
@@ -121,7 +154,8 @@ export class AttachmentsState {
 
     const options = { title: what.title, tone: 'warning' as const, confirmLabel: 'Move to Trash' };
     const count = unused.paths.length;
-    if (count === 0) return { confirmed: await this.dialogState.confirm(message, options), attachments: [] };
+    // Nothing to choose about, and the delete can be undone: no need to ask.
+    if (count === 0) return { confirmed: canUndoDelete || (await this.dialogState.confirm(message, options)), attachments: [] };
 
     const owner = { note: 'it', folder: 'notes in this folder', notes: 'these notes' }[what.scope];
     const { confirmed, checked } = await this.dialogState.confirmWithCheckbox(message, {

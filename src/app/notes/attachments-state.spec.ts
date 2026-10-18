@@ -39,19 +39,12 @@ describe('AttachmentsState', () => {
     expect(await unticked).toEqual({ confirmed: true, attachments: [] });
   });
 
-  it('asks a plain question when nothing would go along, and says why for locked notes', async () => {
-    mock.respondWith('unused_attachments', { paths: [], unchecked: ['a.mntl.enc', 'b.mntl.enc'] });
+  it("doesn't ask when nothing would go along, since the delete can be undone", async () => {
+    mock.respondWith('unused_attachments', { paths: [], unchecked: ['a.mntl.enc'] });
     const attachments = TestBed.inject(AttachmentsState);
 
-    const pending = attachments.confirmDeleteNotes(['a.mntl.enc', 'b.mntl.enc'], {
-      title: 'Delete Folder',
-      message: 'Trash?',
-      scope: 'folder',
-    });
-    const request = await answer(false);
-    expect(request?.kind === 'confirm' && request.checkboxLabel).toBeNull();
-    expect(request?.message).toContain("2 locked notes can't be checked");
-    expect(await pending).toEqual({ confirmed: false, attachments: [] });
+    const result = await attachments.confirmDeleteNotes(['a.mntl.enc'], { title: 'Delete Note', message: 'Trash?', scope: 'note' });
+    expect(result).toEqual({ confirmed: true, attachments: [] });
   });
 
   it('recognizes images, sealed or not', () => {

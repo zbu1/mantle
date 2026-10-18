@@ -1,7 +1,12 @@
 @if (request(); as req) {
 <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" (pointerdown)="onBackdropPointerDown($event)">
   <div class="w-80 rounded-lg border border-border bg-surface p-4 text-surface-foreground shadow-xl animate-pop-in">
-    <h2 class="text-sm font-semibold">{{ req.title }}</h2>
+    <div class="flex items-start justify-between gap-2">
+      <h2 class="text-sm font-semibold">{{ req.title }}</h2>
+      @if (req.kind === 'confirm' && req.help) {
+      <app-help-popover [text]="req.help" />
+      }
+    </div>
     <p class="mt-2 whitespace-pre-line text-xs text-muted-foreground">{{ req.message }}</p>
 
     @if (req.kind === 'confirm' && req.checkboxLabel) {
@@ -44,6 +49,12 @@
       <button #cancelButton type="button" [disabled]="busy()" (click)="state.cancel()"
         class="rounded-md px-3 py-1.5 text-xs text-foreground/80 hover:bg-background hover:text-foreground disabled:opacity-50">
         {{ req.cancelLabel }}
+      </button>
+      }
+      @if (req.kind === 'confirm' && req.altLabel) {
+      <button type="button" (click)="confirm(true)"
+        class="rounded-md border border-border px-3 py-1.5 text-xs text-foreground hover:bg-background">
+        {{ req.altLabel }}
       </button>
       }
       <button #confirmButton type="button" [disabled]="busy()"

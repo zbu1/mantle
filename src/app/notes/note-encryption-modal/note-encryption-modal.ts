@@ -1,7 +1,8 @@
 import { Component, ElementRef, HostListener, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
 import { LucideFolder, LucideLockKeyhole } from '@lucide/angular';
 import { CredentialsState } from '../credentials-state';
-import { NoteEncryptionActions } from '../note-encryption-actions';
+import { CONVERT_HELP, NoteEncryptionActions } from '../note-encryption-actions';
+import { HelpPopover } from '../../shared/help-popover/help-popover';
 import { ProfilePicker } from '../profile-picker/profile-picker';
 import { ProfileChoice, chosenProfileId } from '../profile-picker/profile-picker.model';
 import { VaultState } from '../vault-state';
@@ -23,7 +24,7 @@ import { dirOf, fileNameOf } from '../vault-tree.model';
  */
 @Component({
   selector: 'app-note-encryption-modal',
-  imports: [LucideFolder, LucideLockKeyhole, ProfilePicker],
+  imports: [HelpPopover, LucideFolder, LucideLockKeyhole, ProfilePicker],
   templateUrl: './note-encryption-modal.html',
 })
 export class NoteEncryptionModal {
@@ -33,6 +34,7 @@ export class NoteEncryptionModal {
   private readonly actions = inject(NoteEncryptionActions);
 
   protected readonly note = this.state.note;
+  protected readonly convertHelp = CONVERT_HELP;
 
   protected readonly choice = signal<ProfileChoice>(null);
   /** True while the picker unlocks or creates a profile — blocks dismissal and double submits. */

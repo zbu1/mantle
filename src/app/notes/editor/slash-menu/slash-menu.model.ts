@@ -22,7 +22,9 @@ export type SlashCommandIcon =
   | 'blockquote'
   | 'code-block'
   | 'divider'
-  | 'image';
+  | 'image'
+  | 'property'
+  | 'tag';
 
 export interface SlashCommandItem {
   id: string;
@@ -31,6 +33,9 @@ export interface SlashCommandItem {
   keywords: string[];
   run: (view: EditorView) => void;
 }
+
+/** Asks the editor's note to start adding a property or (`detail: 'tag'`) a tag. */
+export const ADD_PROPERTY_EVENT = 'mantle-add-property';
 
 export const SLASH_COMMAND_ITEMS: SlashCommandItem[] = [
   {
@@ -102,6 +107,21 @@ export const SLASH_COMMAND_ITEMS: SlashCommandItem[] = [
     icon: 'image',
     keywords: ['image', 'picture', 'photo', 'img'],
     run: (view) => void pickImage(view),
+  },
+  // The note's properties panel lives outside the editor; `NoteEditor` hears these.
+  {
+    id: 'property',
+    label: 'Add Property',
+    icon: 'property',
+    keywords: ['property', 'properties', 'frontmatter', 'metadata', 'field'],
+    run: (view) => void view.dom.dispatchEvent(new CustomEvent(ADD_PROPERTY_EVENT, { detail: 'property' })),
+  },
+  {
+    id: 'tag',
+    label: 'Add Tag',
+    icon: 'tag',
+    keywords: ['tag', 'tags', 'label'],
+    run: (view) => void view.dom.dispatchEvent(new CustomEvent(ADD_PROPERTY_EVENT, { detail: 'tag' })),
   },
 ];
 

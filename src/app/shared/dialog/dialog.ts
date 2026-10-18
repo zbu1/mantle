@@ -1,4 +1,5 @@
 import { Component, ElementRef, HostListener, computed, effect, inject, viewChild } from '@angular/core';
+import { HelpPopover } from '../help-popover/help-popover';
 import { DialogState } from './dialog-state';
 
 /**
@@ -12,6 +13,7 @@ import { DialogState } from './dialog-state';
  */
 @Component({
   selector: 'app-dialog',
+  imports: [HelpPopover],
   templateUrl: './dialog.html',
 })
 export class Dialog {
@@ -65,9 +67,9 @@ export class Dialog {
     if (event.target === event.currentTarget) this.state.cancel();
   }
 
-  /** Confirm a confirm or alert dialog, passing on a confirm's checkbox. */
-  protected confirm(): void {
-    this.state.confirmAction(undefined, this.checkboxInput()?.nativeElement.checked ?? false);
+  /** Confirm a confirm or alert dialog, passing on a confirm's checkbox and whether its alt button was chosen. */
+  protected confirm(alt = false): void {
+    this.state.confirmAction(undefined, this.checkboxInput()?.nativeElement.checked ?? false, alt);
   }
 
   /** Confirm a prompt dialog with whatever is currently in its input. */

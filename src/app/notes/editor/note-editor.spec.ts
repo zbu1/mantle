@@ -2,6 +2,8 @@ import { TestBed } from '@angular/core/testing';
 import { provideZonelessChangeDetection } from '@angular/core';
 import type { EditorView } from 'prosemirror-view';
 import { NoteEditor, countText } from './note-editor';
+import { undoDepth } from 'prosemirror-history';
+import { NotePropertiesState } from '../note-properties-state';
 import { NotesState } from '../notes-state';
 import { EditorFocusState } from './editor-focus-state';
 import { VaultState } from '../vault-state';
@@ -37,6 +39,49 @@ describe('NoteEditor', () => {
 
     expect(fixture.nativeElement.querySelector('.ProseMirror')).toBeTruthy();
     expect(fixture.nativeElement.textContent).toContain(note.content);
+  });
+
+  it('puts tag and property edits in its own undo history, but not loading the note', async () => {
+    const fixture = TestBed.createComponent(NoteEditor);
+    fixture.componentRef.setInput('noteId', 'daily-standup.mntl');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    await flushAsync();
+    fixture.detectChanges();
+
+    const notesState = TestBed.inject(NotesState);
+    const properties = TestBed.inject(NotePropertiesState);
+    const view = getEditorView(fixture.componentInstance);
+    expect(undoDepth(view.state)).toBe(0);
+
+    properties.setProperties('daily-standup.mntl', [{ key: 'due', value: '2026-10-17' }]);
+    properties.setTags('daily-standup.mntl', ['work']);
+    expect(notesState.getNote('daily-standup.mntl')?.properties).toEqual([{ key: 'due', value: '2026-10-17' }]);
+    expect(notesState.getNote('daily-standup.mntl')?.tags).toEqual(['work']);
+
+    properties.undo('daily-standup.mntl');
+    expect(notesState.getNote('daily-standup.mntl')?.tags).toEqual(['work', 'urgent']);
+    properties.undo('daily-standup.mntl');
+    expect(notesState.getNote('daily-standup.mntl')?.properties).toEqual([]);
+    properties.redo('daily-standup.mntl');
+    expect(notesState.getNote('daily-standup.mntl')?.properties).toEqual([{ key: 'due', value: '2026-10-17' }]);
+  });
+
+  it('shows tags changed elsewhere without making them an undo step', async () => {
+    const fixture = TestBed.createComponent(NoteEditor);
+    fixture.componentRef.setInput('noteId', 'daily-standup.mntl');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    await flushAsync();
+    fixture.detectChanges();
+
+    TestBed.inject(NotesState).retagLoaded('work', 'job');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const view = getEditorView(fixture.componentInstance);
+    expect(view.state.doc.attrs['tags']).toEqual(['job', 'urgent']);
+    expect(undoDepth(view.state)).toBe(0);
   });
 
   it('saves edits back into NotesState through transaction', async () => {

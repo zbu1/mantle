@@ -1,6 +1,8 @@
-import { Injectable, computed, signal } from '@angular/core';
+import { Injectable, computed, inject, signal } from '@angular/core';
 import { invoke } from '@tauri-apps/api/core';
 import { formatError, logError } from '../core/logger';
+import { VaultHistoryState } from './vault-history-state';
+import { PROPERTY_TYPES, PropertyType, propertyTypeKey } from './properties';
 import { SORT_MODES, SortMode } from './vault-tree.model';
 
 /** One recently-opened note: its vault-relative path and when it was opened (ms since the Unix epoch). */
@@ -22,6 +24,8 @@ export interface VaultMeta {
   collapsedFolders: string[];
   sortMode: SortMode;
   recentNotes: RecentNote[];
+  /** Each property's vault-wide type, by `propertyTypeKey`. */
+  propertyTypes: Record<string, PropertyType>;
 }
 
 /** How many recent notes are kept in `state.json`; the sidebar shows fewer by default. */
@@ -30,7 +34,7 @@ export const MAX_RECENT_NOTES = 20;
 const SAVE_DEBOUNCE_MS = 500;
 
 function emptyMeta(): VaultMeta {
-  return { version: 1, favorites: [], order: {}, collapsedFolders: [], sortMode: 'name-asc', recentNotes: [] };
+  return { version: 1, favorites: [], order: {}, collapsedFolders: [], sortMode: 'name-asc', recentNotes: [], propertyTypes: {} };
 }
 
 /** Tolerates a missing or partial payload, filling absent fields with defaults. */
@@ -47,6 +51,12 @@ function normalizeMeta(raw: unknown): VaultMeta {
   meta.collapsedFolders = Array.isArray(meta.collapsedFolders)
     ? meta.collapsedFolders.filter((relPath) => typeof relPath === 'string')
     : [];
+  // A type from a newer build is dropped, so the property infers one instead.
+  meta.propertyTypes = Object.fromEntries(
+    Object.entries(meta.propertyTypes && typeof meta.propertyTypes === 'object' ? meta.propertyTypes : {}).filter(([, type]) =>
+      PROPERTY_TYPES.some((known) => known.id === type),
+    ),
+  );
   // A mode from a newer build falls back rather than sorting nonsensically.
   if (!SORT_MODES.some((mode) => mode.id === meta.sortMode)) meta.sortMode = 'name-asc';
   return meta;
@@ -67,6 +77,7 @@ function normalizeMeta(raw: unknown): VaultMeta {
  */
 @Injectable({ providedIn: 'root' })
 export class VaultMetaState {
+  private readonly history = inject(VaultHistoryState);
   private readonly meta = signal<VaultMeta | null>(null);
   private root: string | null = null;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -89,6 +100,20 @@ export class VaultMetaState {
 
   /** Folders collapsed in the vault tree; every other folder shows open. */
   readonly collapsedFolders = computed<ReadonlySet<string>>(() => new Set(this.meta()?.collapsedFolders ?? []));
+
+  /** The vault-wide type of the property `name`, if it has been given one. */
+  propertyType(name: string): PropertyType | undefined {
+    return this.meta()?.propertyTypes[propertyTypeKey(name)];
+  }
+
+  /** Makes `name` a `type` in every note. Not an undo step of its own: it comes with a property edit, which is. */
+  setPropertyType(name: string, type: PropertyType): void {
+    const meta = this.meta();
+    const key = propertyTypeKey(name);
+    if (!meta || meta.propertyTypes[key] === type) return;
+    this.meta.set({ ...meta, propertyTypes: { ...meta.propertyTypes, [key]: type } });
+    this.scheduleSave();
+  }
 
   /** True once the open vault's metadata has been read successfully. */
   readonly loaded = computed(() => this.meta() !== null);
@@ -174,6 +199,11 @@ export class VaultMetaState {
     });
   }
 
+  /** Replaces the favorites list outright, e.g. to undo a change to it. */
+  setFavorites(relPaths: readonly string[]): void {
+    this.updateList('favorites', () => [...relPaths]);
+  }
+
   removeFavorites(relPaths: readonly string[]): void {
     const removed = new Set(relPaths);
     this.updateList('favorites', (favorites) => favorites.filter((relPath) => !removed.has(relPath)));
@@ -222,6 +252,12 @@ export class VaultMetaState {
     if (!meta || meta.sortMode === sortMode) return;
     this.meta.set({ ...meta, sortMode });
     this.scheduleSave();
+    const before = meta.sortMode;
+    this.history.record({
+      label: 'Change Sort Order',
+      undo: async () => this.setSortMode(before),
+      redo: async () => this.setSortMode(sortMode),
+    });
   }
 
   setFolderCollapsed(relPath: string, collapsed: boolean): void {
@@ -235,11 +271,13 @@ export class VaultMetaState {
     this.updateList('collapsedFolders', () => [...relPaths]);
   }
 
-  /** A folder was renamed or moved in-app: its collapsed state, its subfolders' and its manual order follow it. */
+  /** A folder was renamed or moved in-app: its collapsed state, its manual order and everything in it follow it. */
   renameFolder(oldRelPath: string, newRelPath: string): void {
     const move = (path: string) =>
       path === oldRelPath || path.startsWith(`${oldRelPath}/`) ? newRelPath + path.slice(oldRelPath.length) : path;
     this.updateList('collapsedFolders', (folders) => folders.map(move));
+    this.updateList('favorites', (favorites) => favorites.map(move));
+    this.updateList('recentNotes', (recents) => recents.map((entry) => (move(entry.relPath) === entry.relPath ? entry : { ...entry, relPath: move(entry.relPath) })));
     const meta = this.meta();
     if (!meta || !Object.keys(meta.order).some((key) => move(key) !== key)) return;
     this.meta.set({ ...meta, order: Object.fromEntries(Object.entries(meta.order).map(([key, names]) => [move(key), names])) });

@@ -1,16 +1,17 @@
 import { Component, computed, inject, input, linkedSignal } from '@angular/core';
-import { LucideExternalLink, LucideFileQuestion, LucideFolderOpen } from '@lucide/angular';
+import { LucideDownload, LucideExternalLink, LucideFileQuestion, LucideFolderOpen } from '@lucide/angular';
 import { AttachmentsState, attachmentUrl, isImagePath } from '../attachments-state';
 import { VaultState } from '../vault-state';
 
 /**
  * A read-only tab for a file in the vault that isn't a note: an image is
  * shown (decrypted in memory, if sealed); anything else gets an "unsupported"
- * notice with ways to open it outside Mantle.
+ * notice with ways to open it outside Mantle — for a sealed one, saving a
+ * decrypted copy, never a temporary file.
  */
 @Component({
   selector: 'app-file-preview',
-  imports: [LucideExternalLink, LucideFileQuestion, LucideFolderOpen],
+  imports: [LucideDownload, LucideExternalLink, LucideFileQuestion, LucideFolderOpen],
   template: `
     @if (isImage() && !failed()) {
       <img [src]="url()" [alt]="relPath()" (error)="failed.set(true)"
@@ -24,7 +25,9 @@ import { VaultState } from '../vault-state';
         <div class="max-w-md text-xs text-muted-foreground">
           {{ isImage()
             ? 'It may be missing, damaged, or encrypted under a locked profile.'
-            : "Mantle can't preview this kind of file. You can still open it in another app." }}
+            : sealed()
+              ? "Mantle can't preview this kind of file, and it's encrypted. To open it in another app, save a decrypted copy outside the vault."
+              : "Mantle can't preview this kind of file. You can still open it in another app." }}
         </div>
         <div class="mt-1 flex items-center gap-2">
           <button type="button" (click)="vaultState.revealInFileExplorer(relPath())"
@@ -32,7 +35,15 @@ import { VaultState } from '../vault-state';
             <svg lucideFolderOpen [size]="13"></svg>
             Show in File Explorer
           </button>
-          @if (!relPath().endsWith('.enc')) {
+          @if (sealed()) {
+            @if (!isImage()) {
+              <button type="button" (click)="attachments.saveDecryptedCopy(relPath())"
+                class="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:opacity-90">
+                <svg lucideDownload [size]="13"></svg>
+                Save Decrypted Copy As…
+              </button>
+            }
+          } @else {
             <button type="button" (click)="attachments.openInDefaultApp(relPath())"
               class="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:opacity-90">
               <svg lucideExternalLink [size]="13"></svg>
@@ -54,6 +65,7 @@ export class FilePreview {
   protected readonly attachments = inject(AttachmentsState);
 
   protected readonly isImage = computed(() => isImagePath(this.relPath()));
+  protected readonly sealed = computed(() => this.relPath().endsWith('.enc'));
   protected readonly url = computed(() => attachmentUrl(this.vaultState.rootPath() ?? '', '', this.relPath()));
   /** The image failed to load; reset when the tab shows another file. */
   protected readonly failed = linkedSignal({ source: this.relPath, computation: () => false });

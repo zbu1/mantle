@@ -33,7 +33,7 @@ describe('TagBar', () => {
 
   async function openInput(fixture: Awaited<ReturnType<typeof setup>>): Promise<HTMLInputElement> {
     const root: HTMLElement = fixture.nativeElement;
-    const add = [...root.querySelectorAll('button')].find((b) => /^(Add tag|Tag)$/.test(b.textContent!.trim()))!;
+    const add = root.querySelector<HTMLButtonElement>('button[aria-label="Add tag"]')!;
     add.click();
     fixture.detectChanges();
     await fixture.whenStable();

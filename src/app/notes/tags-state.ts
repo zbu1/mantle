@@ -4,7 +4,9 @@ import { formatError, logError, logInfo } from '../core/logger';
 import { CredentialsState } from './credentials-state';
 import { NotesState } from './notes-state';
 import { buildTagGroups, normalizeTag, tagKey } from './tags';
+import { VaultHistoryState } from './vault-history-state';
 import { VaultState } from './vault-state';
+import { flattenAllNotes } from './vault-tree.model';
 
 /** What the Rust `rename_tag` / `remove_tag` commands return. */
 export interface TagEditReport {
@@ -26,6 +28,7 @@ export class TagsState {
   private readonly vaultState = inject(VaultState);
   private readonly notesState = inject(NotesState);
   private readonly credentialsState = inject(CredentialsState);
+  private readonly history = inject(VaultHistoryState);
 
   /** Every tag in the vault with the notes that have it, sorted by name. */
   readonly groups = computed(() => {
@@ -67,20 +70,48 @@ export class TagsState {
   async renameTag(from: string, to: string): Promise<TagEditReport> {
     const normalized = normalizeTag(to);
     if (!normalized) throw new Error(`"${to}" isn't a valid tag.`);
+    const before = this.tagsByNote();
     const report = await this.editVaultWide('rename_tag', { from, to: normalized });
     this.notesState.retagLoaded(from, normalized);
     logInfo(`Renamed tag "${from}" to "${normalized}" in ${report.updated.length} notes`);
+    this.recordEdit(`Rename Tag "${from}"`, before, report, () => this.renameTag(from, to));
     await this.vaultState.refresh();
     return report;
   }
 
   /** Removes `tag` from every note that has it. Throws with a user-facing message on failure. */
   async removeTag(tag: string): Promise<TagEditReport> {
+    const before = this.tagsByNote();
     const report = await this.editVaultWide('remove_tag', { tag });
     this.notesState.retagLoaded(tag, null);
     logInfo(`Removed tag "${tag}" from ${report.updated.length} notes`);
+    this.recordEdit(`Remove Tag "${tag}"`, before, report, () => this.removeTag(tag));
     await this.vaultState.refresh();
     return report;
+  }
+
+  /** Every readable note's tags, as the last scan saw them. */
+  private tagsByNote(): Map<string, string[]> {
+    const tree = this.vaultState.tree();
+    return new Map(tree ? flattenAllNotes(tree).flatMap((note) => (note.tags ? [[note.relPath, note.tags]] : [])) : []);
+  }
+
+  /** Undo puts back each rewritten note's own tags, so undoing a merge doesn't rename the merged notes too. */
+  private recordEdit(label: string, before: Map<string, string[]>, report: TagEditReport, redo: () => Promise<unknown>): void {
+    // A note the scan couldn't read (locked then) has no known tags to restore; it keeps the edit.
+    const tagsByNote = Object.fromEntries(report.updated.flatMap((relPath) => (before.has(relPath) ? [[relPath, before.get(relPath)!]] : [])));
+    if (Object.keys(tagsByNote).length === 0) return;
+    this.history.record({
+      label,
+      undo: async () => {
+        const vaultRoot = this.vaultState.rootPath();
+        await this.notesState.flushPending();
+        await invoke('set_note_tags', { vaultRoot, tagsByNote });
+        this.notesState.setLoadedTags(tagsByNote);
+        await this.vaultState.refresh();
+      },
+      redo,
+    });
   }
 
   private async editVaultWide(command: string, args: Record<string, string>): Promise<TagEditReport> {

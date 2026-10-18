@@ -6,10 +6,17 @@ export interface ConfirmOptions {
   tone?: DialogTone;
   confirmLabel?: string;
   cancelLabel?: string;
+  /** An explanation behind a `?` beside the title. */
+  help?: string;
 }
 
 export interface ConfirmWithCheckboxOptions extends ConfirmOptions {
   checkboxLabel: string;
+}
+
+export interface ChooseOptions extends ConfirmOptions {
+  /** The second way to go ahead, shown beside the confirm button. */
+  altLabel: string;
 }
 
 export interface AlertOptions {
@@ -63,7 +70,27 @@ export class DialogState {
         confirmLabel: options.confirmLabel ?? 'Confirm',
         cancelLabel: options.cancelLabel ?? 'Cancel',
         checkboxLabel: null,
+        altLabel: null,
+        help: options.help ?? null,
         resolve: (confirmed) => resolve(confirmed),
+      });
+    });
+  }
+
+  /** A confirm with two ways to go ahead. Resolves which was chosen, or null if cancelled. */
+  choose(message: string, options: ChooseOptions): Promise<'confirm' | 'alt' | null> {
+    return new Promise((resolve) => {
+      this.request.set({
+        kind: 'confirm',
+        title: options.title,
+        message,
+        tone: options.tone ?? 'default',
+        confirmLabel: options.confirmLabel ?? 'Confirm',
+        cancelLabel: options.cancelLabel ?? 'Cancel',
+        checkboxLabel: null,
+        altLabel: options.altLabel,
+        help: options.help ?? null,
+        resolve: (confirmed, _, alt) => resolve(!confirmed ? null : alt ? 'alt' : 'confirm'),
       });
     });
   }
@@ -82,6 +109,8 @@ export class DialogState {
         confirmLabel: options.confirmLabel ?? 'Confirm',
         cancelLabel: options.cancelLabel ?? 'Cancel',
         checkboxLabel: options.checkboxLabel,
+        altLabel: null,
+        help: options.help ?? null,
         resolve: (confirmed, checked) => resolve({ confirmed, checked }),
       });
     });
@@ -173,8 +202,8 @@ export class DialogState {
     this.inlineError.set(message);
   }
 
-  /** `value` is a prompt's text; `checked` a confirm's checkbox. */
-  confirmAction(value?: string, checked = false): void {
+  /** `value` is a prompt's text; `checked` a confirm's checkbox; `alt` whether its alt button was chosen. */
+  confirmAction(value?: string, checked = false, alt = false): void {
     const req = this.request();
     if (!req) return;
     // `password` closes only through submitPassword, which has to await
@@ -182,7 +211,7 @@ export class DialogState {
     if (req.kind === 'password') return;
 
     this.request.set(null);
-    if (req.kind === 'confirm') req.resolve(true, checked);
+    if (req.kind === 'confirm') req.resolve(true, checked, alt);
     else if (req.kind === 'prompt') req.resolve(value ?? '');
     else req.resolve();
   }
@@ -194,7 +223,7 @@ export class DialogState {
 
     this.request.set(null);
     this.inlineError.set(null);
-    if (req.kind === 'confirm') req.resolve(false, false);
+    if (req.kind === 'confirm') req.resolve(false, false, false);
     else if (req.kind === 'prompt') req.resolve(null);
     else if (req.kind === 'password') req.resolve(false);
     else req.resolve();

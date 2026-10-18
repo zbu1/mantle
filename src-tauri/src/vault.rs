@@ -12,10 +12,10 @@
 //! rename, move, duplicate, copy, delete — works regardless, because those
 //! operations never look at a note's contents.
 
-use crate::attachments::reseal_images;
+use crate::attachments::{reseal_attachments, Relink};
 use crate::credentials::SessionKeys;
 use crate::logging::logged;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::Read;
@@ -178,7 +178,7 @@ pub(crate) fn read_header_prefix(path: &Path) -> Result<Vec<u8>, String> {
 /// Returns `None` for anything malformed rather than an error: one corrupt
 /// file must never make a whole vault fail to open. Such a note simply shows
 /// up with no profile, which the UI presents as an orphan.
-fn read_profile_id(path: &Path) -> Option<String> {
+pub(crate) fn read_profile_id(path: &Path) -> Option<String> {
     let buf = read_header_prefix(path).ok()?;
     mntl_core::extract_encrypted_header(&buf)
         .ok()
@@ -490,11 +490,70 @@ pub(crate) fn master_key_for(
     }
 }
 
-/// A note as the editor sees it: its Markdown body and its tags.
-#[derive(Serialize, Debug, PartialEq, Eq)]
+/// A note as the editor sees it: its Markdown body, its tags and its other
+/// properties.
+#[derive(Serialize, Debug, PartialEq)]
 pub struct NoteDocument {
     pub content: String,
     pub tags: Vec<String>,
+    /// `None` for a Markdown file whose frontmatter can't be read, which is
+    /// then left as it is.
+    pub properties: Option<Vec<NoteProperty>>,
+}
+
+/// One of a note's properties, with its value as JSON for the editor.
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+pub struct NoteProperty {
+    pub key: String,
+    pub value: serde_json::Value,
+}
+
+/// YAML properties as the editor sees them. A value JSON can't hold (a map
+/// with non-string keys, say) is left out, so it's never rewritten either.
+// ponytail: such a value is hidden rather than shown read-only; show its raw YAML if anyone has one.
+fn json_properties(pairs: impl IntoIterator<Item = (String, serde_yaml::Value)>) -> Vec<NoteProperty> {
+    pairs
+        .into_iter()
+        .filter_map(|(key, value)| Some(NoteProperty { key, value: serde_json::to_value(value).ok()? }))
+        .collect()
+}
+
+fn mapping_properties(map: &serde_yaml::Mapping) -> Vec<NoteProperty> {
+    json_properties(map.iter().filter_map(|(key, value)| Some((key.as_str()?.to_string(), value.clone()))))
+}
+
+fn yaml_value(value: &serde_json::Value) -> serde_yaml::Value {
+    serde_yaml::to_value(value).unwrap_or(serde_yaml::Value::Null)
+}
+
+fn properties_mapping(properties: &[NoteProperty]) -> serde_yaml::Mapping {
+    properties.iter().map(|p| (p.key.clone().into(), yaml_value(&p.value))).collect()
+}
+
+/// Whether two property values are the same, counting `1` and `1.0` as
+/// equal: a number makes the round trip through JavaScript without its
+/// `.0`, and that alone mustn't make a save rewrite the line.
+fn same_json(a: &serde_json::Value, b: &serde_json::Value) -> bool {
+    use serde_json::Value::*;
+    match (a, b) {
+        (Number(x), Number(y)) => x == y || x.as_f64() == y.as_f64(),
+        (Array(x), Array(y)) => x.len() == y.len() && x.iter().zip(y).all(|(x, y)| same_json(x, y)),
+        (Object(x), Object(y)) => {
+            x.len() == y.len() && x.iter().all(|(k, v)| y.get(k).is_some_and(|w| same_json(v, w)))
+        }
+        _ => a == b,
+    }
+}
+
+/// Properties as the frontend sent them, minus blank names, repeats and
+/// `tags`, which has its own field.
+fn clean_properties(properties: &[NoteProperty]) -> Vec<NoteProperty> {
+    let mut seen = std::collections::HashSet::new();
+    properties
+        .iter()
+        .filter(|p| !p.key.trim().is_empty() && p.key != "tags" && seen.insert(p.key.clone()))
+        .cloned()
+        .collect()
 }
 
 #[tauri::command]
@@ -520,7 +579,8 @@ pub(crate) fn read_note_inner(
         let document =
             std::str::from_utf8(&document).map_err(|_| "Decrypted note is not UTF-8".to_string())?;
         let (frontmatter, content) = mntl_core::decode_note(document).map_err(|e| e.to_string())?;
-        return Ok(NoteDocument { content, tags: frontmatter.tags });
+        let properties = Some(mapping_properties(&frontmatter.properties));
+        return Ok(NoteDocument { content, tags: frontmatter.tags, properties });
     }
 
     let raw = fs::read_to_string(&path).map_err(|e| format!("Failed to read note: {e}"))?;
@@ -530,10 +590,12 @@ pub(crate) fn read_note_inner(
         return Ok(NoteDocument {
             content: body.to_string(),
             tags: mntl_core::markdown_tags(&raw),
+            properties: mntl_core::markdown_properties(&raw).map(json_properties),
         });
     }
     let (frontmatter, content) = mntl_core::decode_note(&raw).map_err(|e| e.to_string())?;
-    Ok(NoteDocument { content, tags: frontmatter.tags })
+    let properties = Some(mapping_properties(&frontmatter.properties));
+    Ok(NoteDocument { content, tags: frontmatter.tags, properties })
 }
 
 /// Saves a note, returning each attachment source it re-pointed (see
@@ -544,43 +606,51 @@ pub fn write_note(
     rel_path: String,
     content: String,
     tags: Vec<String>,
+    properties: Option<Vec<NoteProperty>>,
     keys: State<SessionKeys>,
 ) -> Result<HashMap<String, String>, String> {
     logged("write_note", || {
-        write_note_inner(&vault_root, &rel_path, &content, &tags, &keys)
+        write_note_inner(&vault_root, &rel_path, &content, &tags, properties.as_deref(), &keys)
     })
 }
 
-/// Save a note's body and tags. `tags` replaces the note's tags wholesale,
-/// the same way `content` replaces its body.
+/// Save a note's body, tags and properties. `tags` and `properties` replace
+/// the note's own wholesale, the same way `content` replaces its body;
+/// `properties` of `None` leaves them as they are.
 ///
 /// An attachment the note shows that belongs elsewhere — pasted in from a
 /// note of another profile, or a plaintext one into an encrypted note — is
 /// copied to belong to this note's profile first, and the link re-pointed
-/// (see [`reseal_images`]).
+/// (see [`reseal_attachments`]).
 pub(crate) fn write_note_inner(
     vault_root: &str,
     rel_path: &str,
     content: &str,
     tags: &[String],
+    properties: Option<&[NoteProperty]>,
     keys: &SessionKeys,
 ) -> Result<HashMap<String, String>, String> {
     let path = resolve_rel_path(vault_root, rel_path)?;
     let tags = clean_tags(tags);
+    let properties = properties.map(clean_properties);
 
     if rel_path.ends_with(EXT_ENCRYPTED) {
         let (profile_id, mk) = master_key_for(vault_root, &read_header_prefix(&path)?, keys)?;
-        let (content, relinked) = reseal_images(vault_root, rel_path, content, Some((&profile_id, &mk)), keys, true)?;
+        let (content, relinked, _) =
+            reseal_attachments(vault_root, rel_path, content, Some((&profile_id, &mk)), keys, Relink::Save)?;
         // Decrypting the old version, not just reading its header, is what
         // keeps the note's sealed favorite flag across a save.
         reseal_note(vault_root, &path, keys, |frontmatter, body| {
             frontmatter.tags = tags;
+            if let Some(properties) = &properties {
+                frontmatter.properties = properties_mapping(properties);
+            }
             *body = content.to_string();
         })?;
         return Ok(relinked);
     }
 
-    let (content, relinked) = reseal_images(vault_root, rel_path, content, None, keys, true)?;
+    let (content, relinked, _) = reseal_attachments(vault_root, rel_path, content, None, keys, Relink::Save)?;
     let content = content.as_str();
 
     if is_markdown_note(rel_path) {
@@ -595,11 +665,32 @@ pub(crate) fn write_note_inner(
         if mntl_core::markdown_tags(&existing) != tags {
             updated = mntl_core::set_markdown_tags(&updated, &tags);
         }
+        // The same goes for each property: only keys that differ are
+        // rewritten, and frontmatter that can't be read is left alone.
+        let on_disk = mntl_core::markdown_properties(&existing).map(json_properties);
+        if let (Some(properties), Some(on_disk)) = (&properties, on_disk) {
+            for old in on_disk.iter().filter(|old| !properties.iter().any(|p| p.key == old.key)) {
+                updated = mntl_core::set_markdown_property(&updated, &old.key, None);
+            }
+            for p in properties {
+                if !on_disk.iter().any(|old| old.key == p.key && same_json(&old.value, &p.value)) {
+                    updated = mntl_core::set_markdown_property(&updated, &p.key, Some(&yaml_value(&p.value)));
+                }
+            }
+        }
         fs::write(&path, updated).map_err(|e| format!("Failed to write note: {e}"))?;
         return Ok(relinked);
     }
 
-    let frontmatter = mntl_core::NoteFrontmatter { tags, ..Default::default() };
+    let properties = match &properties {
+        Some(properties) => properties_mapping(properties),
+        None => fs::read_to_string(&path)
+            .ok()
+            .and_then(|raw| mntl_core::extract_unencrypted_header(&raw).ok())
+            .map(|header| header.properties)
+            .unwrap_or_default(),
+    };
+    let frontmatter = mntl_core::NoteFrontmatter { tags, properties, ..Default::default() };
     let encoded = mntl_core::encode_note(&frontmatter, content).map_err(|e| e.to_string())?;
     fs::write(&path, encoded).map_err(|e| format!("Failed to write note: {e}"))?;
     Ok(relinked)
@@ -806,6 +897,46 @@ pub fn delete_folder(vault_root: String, rel_path: String) -> Result<(), String>
         // Same recycle-bin behavior as delete_note; trash::delete handles directories recursively.
         trash::delete(&path).map_err(|e| format!("Failed to delete folder: {e}"))
     })
+}
+
+/// Put deleted vault items back from the OS trash, for undoing a delete. Each
+/// path gets the item most recently trashed from there. Refuses, rather than
+/// overwriting, when something new sits at the path or the item is gone from
+/// the trash.
+#[tauri::command]
+pub fn restore_from_trash(vault_root: String, rel_paths: Vec<String>) -> Result<(), String> {
+    logged("restore_from_trash", || restore_from_trash_inner(&vault_root, &rel_paths))
+}
+
+#[cfg(any(target_os = "windows", all(unix, not(target_os = "macos"))))]
+fn restore_from_trash_inner(vault_root: &str, rel_paths: &[String]) -> Result<(), String> {
+    // The trash reports plain paths; ours may carry Windows' `\\?\` prefix.
+    fn key(path: &Path) -> String {
+        let text = path.to_string_lossy();
+        let text = text.strip_prefix(r"\\?\").unwrap_or(&text).replace('\\', "/");
+        if cfg!(windows) { text.to_lowercase() } else { text }
+    }
+    let mut trashed = trash::os_limited::list().map_err(|e| format!("Failed to read the trash: {e}"))?;
+    trashed.sort_by_key(|item| std::cmp::Reverse(item.time_deleted));
+    let mut items = Vec::new();
+    for rel_path in rel_paths {
+        let path = resolve_rel_path(vault_root, rel_path)?;
+        if path.exists() {
+            return Err(format!("\"{rel_path}\" already exists"));
+        }
+        let wanted = key(&path);
+        let index = trashed
+            .iter()
+            .position(|item| key(&item.original_path()) == wanted)
+            .ok_or_else(|| format!("\"{rel_path}\" is no longer in the trash"))?;
+        items.push(trashed.remove(index));
+    }
+    trash::os_limited::restore_all(items).map_err(|e| format!("Failed to restore from the trash: {e}"))
+}
+
+#[cfg(not(any(target_os = "windows", all(unix, not(target_os = "macos")))))]
+fn restore_from_trash_inner(_vault_root: &str, _rel_paths: &[String]) -> Result<(), String> {
+    Err("Restoring from the trash isn't supported on this system".to_string())
 }
 
 /// Resolve a vault-relative directory (empty string means the vault root)
@@ -1270,18 +1401,18 @@ tags: [x]
 
         assert_eq!(
             read_note_inner(&root_str, "readme.md", &keys).unwrap(),
-            NoteDocument { content: "# Old\n".into(), tags: vec!["x".into()] }
+            NoteDocument { content: "# Old\n".into(), tags: vec!["x".into()], properties: Some(vec![]) }
         );
 
         // Unchanged tags leave the frontmatter byte for byte.
-        write_note_inner(&root_str, "readme.md", "# New\n", &["x".into()], &keys).unwrap();
+        write_note_inner(&root_str, "readme.md", "# New\n", &["x".into()], None, &keys).unwrap();
         assert_eq!(
             fs::read_to_string(root.join("readme.md")).unwrap(),
             "---\ntags: [x]\n---\n# New\n"
         );
 
         // Changed tags rewrite only the `tags:` key, in its own style.
-        write_note_inner(&root_str, "readme.md", "# New\n", &["x".into(), "y".into()], &keys).unwrap();
+        write_note_inner(&root_str, "readme.md", "# New\n", &["x".into(), "y".into()], None, &keys).unwrap();
         assert_eq!(
             fs::read_to_string(root.join("readme.md")).unwrap(),
             "---\ntags: [x, y]\n---\n# New\n"
@@ -1295,13 +1426,82 @@ tags: [x]
         let keys = SessionKeys::default();
         fs::write(root.join("plan.mntl"), "---\nv: 2\n---\nBody").unwrap();
 
-        write_note_inner(&root_str, "plan.mntl", "Body", &["Idea".into(), "idea".into(), " ".into()], &keys)
+        write_note_inner(&root_str, "plan.mntl", "Body", &["Idea".into(), "idea".into(), " ".into()], None, &keys)
             .unwrap();
         assert_eq!(
             fs::read_to_string(root.join("plan.mntl")).unwrap(),
             "---\nv: 2\ntags:\n- Idea\n---\nBody"
         );
         assert_eq!(read_note_inner(&root_str, "plan.mntl", &keys).unwrap().tags, vec!["Idea"]);
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    fn prop(key: &str, value: serde_json::Value) -> NoteProperty {
+        NoteProperty { key: key.into(), value }
+    }
+
+    #[test]
+    fn mntl_notes_keep_their_properties_nested_and_in_order() {
+        let root = temp_dir("mntl-props");
+        let root_str = root.to_string_lossy().into_owned();
+        let keys = SessionKeys::default();
+        fs::write(root.join("plan.mntl"), "---\nv: 2\n---\nBody").unwrap();
+
+        let props = vec![
+            prop("zeta", serde_json::json!(1.5)),
+            prop("tags", serde_json::json!(["dropped"])),
+            prop("done", serde_json::json!(true)),
+            prop("list", serde_json::json!(["a", "b"])),
+        ];
+        write_note_inner(&root_str, "plan.mntl", "Body", &[], Some(&props), &keys).unwrap();
+        assert_eq!(
+            fs::read_to_string(root.join("plan.mntl")).unwrap(),
+            "---\nv: 2\nproperties:\n  zeta: 1.5\n  done: true\n  list:\n  - a\n  - b\n---\nBody"
+        );
+        let read = read_note_inner(&root_str, "plan.mntl", &keys).unwrap().properties.unwrap();
+        assert_eq!(read, vec![props[0].clone(), props[2].clone(), props[3].clone()]);
+
+        // A save that doesn't carry properties leaves them be.
+        write_note_inner(&root_str, "plan.mntl", "Edited", &[], None, &keys).unwrap();
+        assert_eq!(read_note_inner(&root_str, "plan.mntl", &keys).unwrap().properties.unwrap(), read);
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn markdown_property_edits_rewrite_only_the_changed_keys() {
+        let root = temp_dir("md-props");
+        let root_str = root.to_string_lossy().into_owned();
+        let keys = SessionKeys::default();
+        let file = "---\ntitle:   Plan  # mine\ncount: 1.0\nnested:\n  a: 1\ngone: x\n---\nBody";
+        fs::write(root.join("plan.md"), file).unwrap();
+
+        let read = read_note_inner(&root_str, "plan.md", &keys).unwrap().properties.unwrap();
+        let keys_of = |props: &[NoteProperty]| props.iter().map(|p| p.key.clone()).collect::<Vec<_>>();
+        assert_eq!(keys_of(&read), vec!["title", "count", "nested", "gone"]);
+
+        // Sent back unchanged (`1.0` comes back from JavaScript as `1`), nothing moves.
+        let mut sent = read.clone();
+        sent[1].value = serde_json::json!(1);
+        write_note_inner(&root_str, "plan.md", "Body", &[], Some(&sent), &keys).unwrap();
+        assert_eq!(fs::read_to_string(root.join("plan.md")).unwrap(), file);
+
+        // Changing one, dropping one and adding one touch only those lines.
+        sent[1].value = serde_json::json!(2);
+        sent.remove(3);
+        sent.push(prop("due", serde_json::json!("2026-10-17")));
+        write_note_inner(&root_str, "plan.md", "Body", &[], Some(&sent), &keys).unwrap();
+        assert_eq!(
+            fs::read_to_string(root.join("plan.md")).unwrap(),
+            "---\ntitle:   Plan  # mine\ncount: 2\nnested:\n  a: 1\ndue: 2026-10-17\n---\nBody"
+        );
+
+        // Frontmatter that can't be read is reported as such, and left alone.
+        fs::write(root.join("broken.md"), "---\n: [oops\n---\nBody").unwrap();
+        assert_eq!(read_note_inner(&root_str, "broken.md", &keys).unwrap().properties, None);
+        write_note_inner(&root_str, "broken.md", "Body", &[], Some(&sent), &keys).unwrap();
+        assert_eq!(fs::read_to_string(root.join("broken.md")).unwrap(), "---\n: [oops\n---\nBody");
 
         let _ = fs::remove_dir_all(&root);
     }
@@ -1366,10 +1566,17 @@ tags: [x]
         set_note_favorite_inner(&root_str, "secret.mntl.enc", true, &unlocked).unwrap();
         assert!(favorite_in(&unlocked));
 
-        write_note_inner(&root_str, "secret.mntl.enc", "Edited", &["t".into()], &unlocked).unwrap();
+        write_note_inner(&root_str, "secret.mntl.enc", "Edited", &["t".into()], None, &unlocked).unwrap();
         assert!(favorite_in(&unlocked), "a save must not drop the favorite");
         let saved = read_note_inner(&root_str, "secret.mntl.enc", &unlocked).unwrap();
-        assert_eq!(saved, NoteDocument { content: "Edited".into(), tags: vec!["t".into()] });
+        assert_eq!(saved, NoteDocument { content: "Edited".into(), tags: vec!["t".into()], properties: Some(vec![]) });
+
+        // Properties are sealed in the note too, and a save without them keeps them.
+        let props = vec![prop("due", serde_json::json!("2026-10-17"))];
+        write_note_inner(&root_str, "secret.mntl.enc", "Edited", &[], Some(&props), &unlocked).unwrap();
+        write_note_inner(&root_str, "secret.mntl.enc", "Again", &[], None, &unlocked).unwrap();
+        assert_eq!(read_note_inner(&root_str, "secret.mntl.enc", &unlocked).unwrap().properties, Some(props));
+        assert!(favorite_in(&unlocked));
 
         assert!(!favorite_in(&SessionKeys::default()), "a locked note reveals nothing");
         assert!(set_note_favorite_inner(&root_str, "secret.mntl.enc", false, &SessionKeys::default()).is_err());
@@ -1387,7 +1594,7 @@ tags: [x]
 ").unwrap();
 
         assert_eq!(read_note_inner(&root_str, "todo.markdown", &keys).unwrap().content, "- [ ] one\n");
-        write_note_inner(&root_str, "todo.markdown", "- [x] one\n", &[], &keys).unwrap();
+        write_note_inner(&root_str, "todo.markdown", "- [x] one\n", &[], None, &keys).unwrap();
         assert_eq!(fs::read_to_string(root.join("todo.markdown")).unwrap(), "- [x] one
 ");
     }
