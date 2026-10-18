@@ -48,7 +48,7 @@ export class SidebarItemButton {
         ? 'text-foreground hover:bg-surface'
         : 'text-foreground/75 hover:bg-surface hover:text-foreground';
     const focus = this.forceFocusRing() ? ' focus-ring-forced' : '';
-    return `relative flex items-center gap-2 rounded-md text-xs ${layout} ${tone}${rail}${focus}`;
+    return `focus-ring-inset relative flex items-center gap-2 rounded-md text-xs ${layout} ${tone}${rail}${focus}`;
   });
 
   // Browsers suppress the native :focus-visible ring for mouse-originated

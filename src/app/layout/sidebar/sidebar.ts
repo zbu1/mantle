@@ -799,11 +799,11 @@ export class Sidebar {
       const focused = this.lastFocusedTreePath;
       void this.pasteInto(focused === undefined ? '' : this.nodesByPath().get(focused)?.type === 'folder' ? focused : dirOf(focused));
     } else {
-      // Every direct child of the folder holding the focused item.
+      // Everything at any depth in the folder holding the focused item.
       const focused = this.lastFocusedTreePath;
       const tree = this.visibleTree();
       const folder = tree && findFolder(tree, focused ? dirOf(focused) : '');
-      if (folder) this.selectionState.selectAll(folder.children.map((child) => child.relPath));
+      if (folder) this.selectionState.selectAll([...flattenTreeNodes(folder).keys()]);
     }
   }
 

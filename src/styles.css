@@ -37,6 +37,13 @@
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 25%, transparent);
 }
 
+/* Rows in clipped containers (the vault tree) draw the same ring inside their box. */
+button.focus-ring-inset:focus-visible,
+.focus-ring-inset.focus-ring-forced {
+  outline-offset: -2px;
+  box-shadow: inset 0 0 0 5px color-mix(in oklab, var(--ring) 25%, transparent);
+}
+
 ::selection {
   background-color: color-mix(in oklab, var(--primary) 25%, transparent);
 }
@@ -151,6 +158,8 @@
   outline: none;
   width: 100%;
   min-height: 100%;
+  /* Room to scroll the last line up off the bottom edge. */
+  padding-bottom: 40vh;
   overflow-wrap: break-word;
   word-break: break-word;
   min-width: 0;

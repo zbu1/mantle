@@ -502,12 +502,12 @@ describe('Sidebar', () => {
       expect(folderRow.getAttribute('aria-expanded')).toBe('true');
     });
 
-    it('Ctrl+A selects the direct children of the focused item’s folder, or of the root', async () => {
+    it('Ctrl+A selects everything inside the focused item’s folder, or the whole vault', async () => {
       const fixture = await setup();
       const selection = TestBed.inject(VaultSelectionState);
 
       pressCtrlA(fixture.nativeElement.querySelector('[data-vault-tree]'));
-      expect([...selection.selected()]).toEqual(['Work', 'todo.mntl']);
+      expect([...selection.selected()].sort()).toEqual(['Work', 'Work/Roadmap.mntl', 'Work/standup.mntl', 'todo.mntl']);
 
       pressCtrlA(fixture.nativeElement.querySelector('[data-tree-path="Work/standup.mntl"] button'));
       expect([...selection.selected()]).toEqual(['Work/Roadmap.mntl', 'Work/standup.mntl']);

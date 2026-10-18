@@ -1,5 +1,5 @@
 import { Component, computed, effect, inject } from '@angular/core';
-import { isTauri } from '@tauri-apps/api/core';
+import { invoke, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { MainLayout } from './layout/main-layout/main-layout';
 import { NotesState } from './notes/notes-state';
@@ -33,5 +33,15 @@ export class App {
       document.title = title;
       if (isTauri()) void getCurrentWindow().setTitle(title);
     });
+
+    // Every close path (title bar, File › Exit, Alt+F4) lands here: write out
+    // debounced edits while the keys are still there, then lock. The Rust
+    // side wipes keys again on exit as a backstop.
+    if (isTauri()) {
+      void getCurrentWindow().onCloseRequested(async () => {
+        await this.notesState.flushPending();
+        await invoke('lock_all_credential_profiles').catch(() => {});
+      });
+    }
   }
 }
