@@ -584,3 +584,88 @@ fn test_decrypts_a_golden_hidden_fixture_blob() {
     assert!(!extract_encrypted_header(&blob).unwrap().hidden);
     assert!(matches!(decrypt_note(&mk, &blob), Err(MntlError::DecryptionFailed)));
 }
+
+#[test]
+fn test_encodes_a_note_as_markdown() {
+    let mut frontmatter = mntl_core::NoteFrontmatter { tags: vec!["idea".into()], ..Default::default() };
+    frontmatter.properties.insert("due".into(), "2026-10-17".into());
+    let md = mntl_core::encode_markdown_note(&frontmatter, "Body").unwrap();
+    assert_eq!(md, "---\ntags:\n- idea\ndue: 2026-10-17\n---\nBody");
+    assert_eq!(mntl_core::markdown_tags(&md), ["idea"]);
+
+    let bare = mntl_core::NoteFrontmatter::default();
+    assert_eq!(mntl_core::encode_markdown_note(&bare, "Body").unwrap(), "Body");
+    let rule = "---\nnot: frontmatter\n---\nBody";
+    assert_eq!(split_markdown_frontmatter(&mntl_core::encode_markdown_note(&bare, rule).unwrap()).1, rule);
+}
+
+/// A chunked envelope written once by `encrypt_stream` under
+/// [`GOLDEN_MASTER_KEY`], 12 bytes to a chunk. Like [`GOLDEN_ENVELOPE`], it
+/// pins the format: if this stops decrypting, existing sealed videos and PDFs
+/// would too.
+const GOLDEN_STREAM: [u8; 254] = [
+    0x4d, 0x45, 0x4e, 0x43, 0xa8, 0x00, 0x00, 0x00, 0x7b, 0x22, 0x76, 0x22,
+    0x3a, 0x34, 0x2c, 0x22, 0x63, 0x72, 0x65, 0x64, 0x65, 0x6e, 0x74, 0x69,
+    0x61, 0x6c, 0x5f, 0x70, 0x72, 0x6f, 0x66, 0x69, 0x6c, 0x65, 0x22, 0x3a,
+    0x22, 0x67, 0x6f, 0x6c, 0x64, 0x65, 0x6e, 0x22, 0x2c, 0x22, 0x63, 0x72,
+    0x79, 0x70, 0x74, 0x6f, 0x22, 0x3a, 0x7b, 0x22, 0x69, 0x76, 0x22, 0x3a,
+    0x22, 0x79, 0x6e, 0x72, 0x7a, 0x4a, 0x76, 0x45, 0x39, 0x31, 0x66, 0x51,
+    0x74, 0x6f, 0x66, 0x6a, 0x4e, 0x6e, 0x42, 0x6c, 0x30, 0x33, 0x63, 0x44,
+    0x50, 0x55, 0x67, 0x3d, 0x3d, 0x22, 0x2c, 0x22, 0x77, 0x72, 0x61, 0x70,
+    0x70, 0x65, 0x64, 0x5f, 0x6b, 0x65, 0x79, 0x22, 0x3a, 0x22, 0x4f, 0x59,
+    0x77, 0x68, 0x6d, 0x78, 0x57, 0x73, 0x4a, 0x64, 0x6c, 0x45, 0x69, 0x57,
+    0x75, 0x33, 0x42, 0x48, 0x2f, 0x33, 0x72, 0x65, 0x56, 0x45, 0x75, 0x74,
+    0x32, 0x77, 0x6b, 0x2b, 0x65, 0x6e, 0x57, 0x6b, 0x71, 0x4a, 0x35, 0x74,
+    0x4a, 0x39, 0x69, 0x6f, 0x54, 0x4f, 0x61, 0x4d, 0x49, 0x43, 0x4f, 0x7a,
+    0x6e, 0x5a, 0x38, 0x77, 0x3d, 0x3d, 0x22, 0x7d, 0x2c, 0x22, 0x63, 0x68,
+    0x75, 0x6e, 0x6b, 0x22, 0x3a, 0x31, 0x32, 0x7d, 0x8c, 0xf4, 0x8a, 0x46,
+    0xeb, 0x85, 0x72, 0xc7, 0x07, 0x27, 0x84, 0x7e, 0xf4, 0xa5, 0xa2, 0xc3,
+    0x66, 0x66, 0xbf, 0xf8, 0x28, 0x60, 0x81, 0xe3, 0x19, 0x9d, 0x00, 0x1b,
+    0x39, 0xf3, 0x14, 0x4d, 0x21, 0x05, 0xe1, 0xe2, 0x46, 0x0f, 0x65, 0xcf,
+    0x35, 0xd2, 0x6f, 0xb4, 0x77, 0xd8, 0x19, 0x07, 0x35, 0x3f, 0x1b, 0xe7,
+    0x77, 0xe4, 0x28, 0x42, 0x94, 0x8a, 0x18, 0xc0, 0x1a, 0x96, 0x6f, 0x04,
+    0xb7, 0x23, 0x65, 0x7b, 0x9e, 0x8d, 0x0c, 0x89, 0xa2, 0x3f, 0xdd, 0x2c,
+    0x1a, 0x38,
+];
+
+const GOLDEN_STREAM_PLAINTEXT: &[u8] = b"Chunked fixture, three chunks.";
+
+#[test]
+fn test_decrypts_a_golden_chunked_fixture_whole_and_by_range() {
+    let mk = MasterKey::from_bytes(GOLDEN_MASTER_KEY);
+    let header = extract_encrypted_header(&GOLDEN_STREAM).unwrap();
+    assert_eq!((header.v, header.chunk, header.credential_profile.as_str()), (mntl_core::STREAM_VERSION, Some(12), "golden"));
+    assert_eq!(&decrypt_note(&mk, &GOLDEN_STREAM).unwrap()[..], GOLDEN_STREAM_PLAINTEXT);
+
+    let stream = mntl_core::SealedStream::open(&mk, &GOLDEN_STREAM[..200], GOLDEN_STREAM.len() as u64).unwrap();
+    assert_eq!(stream.len(), GOLDEN_STREAM_PLAINTEXT.len() as u64);
+    let span = stream.chunks_for(14, 20);
+    assert_eq!((span.first, span.plaintext_offset), (1, 12));
+    let sealed = &GOLDEN_STREAM[span.file_offset as usize..(span.file_offset + span.file_len) as usize];
+    let plain = stream.decrypt_chunks(span.first, sealed).unwrap();
+    assert_eq!(&plain[..], &GOLDEN_STREAM_PLAINTEXT[12..24]);
+}
+
+#[test]
+fn test_chunked_envelopes_refuse_reordering_truncation_and_tampering() {
+    let mk = test_mk();
+    let plaintext: Vec<u8> = (0..100u8).collect();
+    let blob = mntl_core::encrypt_stream(&mk, "p", &plaintext, 16).unwrap();
+    assert_eq!(&decrypt_note(&mk, &blob).unwrap()[..], &plaintext[..]);
+    assert_eq!(decrypt_note(&mk, &mntl_core::encrypt_stream(&mk, "p", b"", 16).unwrap()).unwrap().len(), 0);
+
+    let stream = mntl_core::SealedStream::open(&mk, &blob, blob.len() as u64).unwrap();
+    let offset = stream.chunks_for(0, 1).file_offset;
+    let chunk = 16 + 16;
+    // Cut at a chunk boundary: the new last chunk was never sealed as last.
+    let cut = &blob[..offset as usize + 2 * chunk];
+    assert!(matches!(decrypt_note(&mk, cut), Err(MntlError::DecryptionFailed)));
+    // Swap the first two chunks.
+    let mut swapped = blob.clone();
+    let start = offset as usize;
+    swapped[start..start + 2 * chunk].rotate_left(chunk);
+    assert!(matches!(decrypt_note(&mk, &swapped), Err(MntlError::DecryptionFailed)));
+    let mut flipped = blob.clone();
+    *flipped.last_mut().unwrap() ^= 1;
+    assert!(matches!(decrypt_note(&mk, &flipped), Err(MntlError::DecryptionFailed)));
+}

@@ -95,6 +95,15 @@ export class NoteEncryptionActions {
 
   /** The Markdown files among `relPaths`, and every one inside a folder among them at any depth. */
   markdownNotesIn(relPaths: readonly string[]): VaultNoteNode[] {
+    return this.notesIn(relPaths, (note) => !!markdownExtensionOf(note.relPath));
+  }
+
+  /** The Mantle notes (`.mntl`, `.mntl.enc`) among `relPaths`, and every one inside a folder among them. */
+  mantleNotesIn(relPaths: readonly string[]): VaultNoteNode[] {
+    return this.notesIn(relPaths, (note) => !markdownExtensionOf(note.relPath));
+  }
+
+  private notesIn(relPaths: readonly string[], keep: (note: VaultNoteNode) => boolean): VaultNoteNode[] {
     const tree = this.vaultState.tree();
     if (!tree) return [];
     const nodes = flattenTreeNodes(tree);
@@ -102,7 +111,7 @@ export class NoteEncryptionActions {
     for (const path of relPaths) {
       const node = nodes.get(path);
       const notes = node?.type === 'folder' ? flattenAllNotes(node) : node?.type === 'note' ? [node] : [];
-      for (const note of notes) if (markdownExtensionOf(note.relPath)) found.set(note.relPath, note);
+      for (const note of notes) if (keep(note)) found.set(note.relPath, note);
     }
     return [...found.values()];
   }

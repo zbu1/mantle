@@ -25,12 +25,27 @@ interface UnusedAttachments {
   unchecked: string[];
 }
 
-const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'bmp'];
+export const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'bmp'];
+export const VIDEO_EXTENSIONS = ['mp4', 'm4v', 'webm', 'mov', 'ogv'];
+
+/** The extension of the file at `relPath`, lowercase and without any `.enc`. */
+function extOf(relPath: string): string {
+  const plain = relPath.replace(/\.enc$/, '');
+  return plain.includes('.') ? (plain.split('.').pop()?.toLowerCase() ?? '') : '';
+}
 
 /** Whether Mantle can show the file at `relPath` (sealed or not) as an image. */
 export function isImagePath(relPath: string): boolean {
-  const ext = relPath.replace(/\.enc$/, '').split('.').pop()?.toLowerCase() ?? '';
-  return relPath.includes('.') && IMAGE_EXTENSIONS.includes(ext);
+  return IMAGE_EXTENSIONS.includes(extOf(relPath));
+}
+
+/** Whether Mantle can play the file at `relPath` (sealed or not) as a video. */
+export function isVideoPath(relPath: string): boolean {
+  return VIDEO_EXTENSIONS.includes(extOf(relPath));
+}
+
+export function isPdfPath(relPath: string): boolean {
+  return extOf(relPath) === 'pdf';
 }
 
 /**

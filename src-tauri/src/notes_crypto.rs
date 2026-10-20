@@ -240,20 +240,23 @@ pub fn convert_markdown_notes(
     keys: State<SessionKeys>,
 ) -> Result<ConvertReport, String> {
     logged("convert_markdown_notes", || {
-        convert_markdown_batch(&vault_root, &notes, remove_originals, &keys)
+        convert_markdown_batch(&vault_root, &notes, remove_originals, discard, &keys)
     })
 }
 
-fn convert_markdown_batch(
+/// [`convert_markdown_notes`], with `remove` taking each original away: to
+/// the OS trash ([`discard`]), or for a copy made just to import, unlinked.
+pub(crate) fn convert_markdown_batch(
     vault_root: &str,
     notes: &[ConvertRequest],
     remove_originals: bool,
+    remove: fn(&Path) -> Result<(), String>,
     keys: &SessionKeys,
 ) -> Result<ConvertReport, String> {
     let mut report = ConvertReport::default();
     let mut originals = BTreeSet::new();
     for note in notes {
-        match convert_markdown_inner(vault_root, &note.rel_path, &note.name, keys) {
+        match convert_markdown_inner(vault_root, &note.rel_path, &note.name, remove, keys) {
             Ok((created, copied)) => {
                 originals.extend(copied);
                 report.converted.push(Conversion {
@@ -267,7 +270,7 @@ fn convert_markdown_batch(
     }
     if remove_originals && !originals.is_empty() {
         for rel in unreferenced(vault_root, originals, &[], keys)? {
-            if discard(&resolve_rel_path(vault_root, &rel)?).is_ok() {
+            if remove(&resolve_rel_path(vault_root, &rel)?).is_ok() {
                 report.removed.push(rel);
             }
         }
@@ -277,7 +280,7 @@ fn convert_markdown_batch(
 
 /// Send a file to the OS trash. Tests unlink it instead, rather than filling
 /// the developer's recycle bin.
-fn discard(path: &Path) -> Result<(), String> {
+pub(crate) fn discard(path: &Path) -> Result<(), String> {
     #[cfg(not(test))]
     let result = trash::delete(path).map_err(|e| e.to_string());
     #[cfg(test)]
@@ -291,6 +294,7 @@ fn convert_markdown_inner(
     vault_root: &str,
     rel_path: &str,
     name: &str,
+    remove: fn(&Path) -> Result<(), String>,
     keys: &SessionKeys,
 ) -> Result<(CreatedNote, BTreeSet<String>), String> {
     if !is_markdown_note(rel_path) {
@@ -305,7 +309,8 @@ fn convert_markdown_inner(
     let dest_rel = join_rel_note_path(&dir_rel, name, EXT_PLAIN);
     let dest = resolve_rel_path(vault_root, &dest_rel)?;
 
-    if dest.exists() {
+    // A hidden note may be known by that path too.
+    if hidden::taken(vault_root, &dest_rel, keys)? {
         return Err(format!("\"{name}\" already exists as a note in this folder"));
     }
 
@@ -320,7 +325,7 @@ fn convert_markdown_inner(
         return Err("Converted note failed verification; the original is untouched".to_string());
     }
 
-    discard(&source)?;
+    remove(&source)?;
 
     Ok((CreatedNote { name: name.to_string(), rel_path: dest_rel }, copied))
 }
@@ -619,7 +624,7 @@ mod tests {
     }
 
     fn convert(root: &str, rel_path: &str, name: &str) -> Result<CreatedNote, String> {
-        convert_markdown_inner(root, rel_path, name, &SessionKeys::default()).map(|(created, _)| created)
+        convert_markdown_inner(root, rel_path, name, discard, &SessionKeys::default()).map(|(created, _)| created)
     }
 
     #[test]
@@ -672,7 +677,7 @@ mod tests {
         fs::write(root.join("b.md"), "[keep](files/shared.pdf)").unwrap();
 
         let notes = vec![ConvertRequest { rel_path: "a.md".into(), name: "a".into() }];
-        let report = convert_markdown_batch(&root_str, &notes, true, &SessionKeys::default()).unwrap();
+        let report = convert_markdown_batch(&root_str, &notes, true, discard, &SessionKeys::default()).unwrap();
         assert_eq!(report.converted[0].rel_path, "a.mntl");
         assert!(report.failed.is_empty());
         assert_eq!(report.removed, ["files/cat.png", "files/spec.zip"], "b.md still uses shared.pdf");

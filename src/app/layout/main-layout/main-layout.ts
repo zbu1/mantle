@@ -2,7 +2,8 @@ import { Component, ElementRef, effect, inject, viewChild } from '@angular/core'
 import { Header } from '../header/header';
 import { IconRail } from '../icon-rail/icon-rail';
 import { Sidebar } from '../sidebar/sidebar';
-import { ContentArea } from '../content/content-area/content-area';
+import { PaneLayout } from '../pane-layout/pane-layout';
+import { TabsState } from '../../notes/tabs-state';
 import { Welcome } from '../welcome/welcome';
 import { CommandPalette } from '../../shared/command-palette/command-palette';
 import { ContextMenu } from '../../shared/context-menu/context-menu';
@@ -15,6 +16,7 @@ import { HoverTooltipState } from '../../shared/hover-tooltip/hover-tooltip-stat
 import { EncryptionPanel } from '../../notes/encryption-panel/encryption-panel';
 import { NewEncryptedNote } from '../../notes/new-encrypted-note/new-encrypted-note';
 import { NoteEncryptionModal } from '../../notes/note-encryption-modal/note-encryption-modal';
+import { MarkdownExportModal } from '../../notes/markdown-export/markdown-export-modal';
 import { VaultRootState } from '../../notes/vault-root-state';
 import { VaultState } from '../../notes/vault-state';
 import { ZoomState } from '../../shared/zoom-state';
@@ -25,12 +27,13 @@ import { ZoomState } from '../../shared/zoom-state';
     Header,
     IconRail,
     Sidebar,
-    ContentArea,
+    PaneLayout,
     Welcome,
     ContextMenu,
     Dialog,
     NewEncryptedNote,
     NoteEncryptionModal,
+    MarkdownExportModal,
     SettingsModal,
     VaultDragPreview,
     QuickSwitcher,
@@ -43,6 +46,7 @@ import { ZoomState } from '../../shared/zoom-state';
 export class MainLayout {
   protected readonly vaultRoot = inject(VaultRootState);
   protected readonly vaultState = inject(VaultState);
+  protected readonly tabsState = inject(TabsState);
   private readonly hoverTooltipState = inject(HoverTooltipState);
   // Created here so the saved zoom applies, and its shortcuts work, from startup.
   private readonly zoom = inject(ZoomState);

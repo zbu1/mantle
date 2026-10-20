@@ -58,6 +58,10 @@
           (hovered)="hoveredItem.set('openVault')" (selected)="openVault()">
           <svg menuItemIcon lucideFolders [size]="14"></svg>
         </app-menu-item>
+        <app-menu-item label="Export Vault as Markdown…" [disabled]="!hasVault()" [active]="hoveredItem() === 'exportVault'"
+          (hovered)="hoveredItem.set('exportVault')" (selected)="exportVault()">
+          <svg menuItemIcon lucideFileDown [size]="14"></svg>
+        </app-menu-item>
         <app-menu-item label="Close Vault" [disabled]="!hasVault()" [active]="hoveredItem() === 'closeVault'"
           (hovered)="hoveredItem.set('closeVault')" (selected)="closeVault()">
           <svg menuItemIcon lucideFolderX [size]="14"></svg>

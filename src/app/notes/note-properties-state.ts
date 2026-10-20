@@ -32,6 +32,11 @@ export class NotePropertiesState {
   /** Set by the note menus and the slash menu; the note's panel consumes it. */
   readonly addRequest = signal<AddPropertyRequest | null>(null);
 
+  /** Whether "Linked from" is expanded, in every note's panel. */
+  readonly backlinksOpen = signal(false);
+  /** Set by "Show Backlinks"; the note's panel consumes it. */
+  readonly backlinksRequest = signal<{ noteId: string } | null>(null);
+
   /** `view` now shows `noteId`. */
   attach(noteId: string, view: EditorView): void {
     this.detach(view);
@@ -76,6 +81,11 @@ export class NotePropertiesState {
   redo(noteId: string): void {
     const view = this.editors.get(noteId);
     if (view) redo(view.state, view.dispatch);
+  }
+
+  showBacklinks(noteId: string): void {
+    this.backlinksOpen.set(true);
+    this.backlinksRequest.set({ noteId });
   }
 
   requestAdd(noteId: string, kind: AddPropertyRequest['kind']): void {

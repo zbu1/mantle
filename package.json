@@ -24,6 +24,7 @@
     "highlight.js": "^11.12.0",
     "markdown-it": "^14.1.0",
     "orderedmap": "^2.1.1",
+    "pdfjs-dist": "^6.4.299",
     "prosemirror-commands": "^1.6.0",
     "prosemirror-gapcursor": "^1.4.1",
     "prosemirror-history": "^1.4.1",

@@ -81,6 +81,21 @@
             class="transition duration-200 group-hover:translate-x-0.5 group-hover:text-primary"></svg>
         </span>
       </button>
+
+      <button type="button" (click)="importVault()" [disabled]="busy()" data-welcome-import
+        class="group grid grid-cols-[auto_1fr_auto] items-center gap-4 rounded-xl border border-border bg-background py-3 pl-3 pr-4 text-left shadow-card transition duration-200 hover:border-input hover:bg-accent/40 disabled:opacity-60">
+        <span class="inline-flex size-9 items-center justify-center rounded-lg bg-muted text-foreground">
+          <svg lucideFolderInput [size]="16"></svg>
+        </span>
+        <span class="flex min-w-0 flex-col">
+          <span class="text-sm font-semibold text-foreground">{{ importing() ? 'Importing…' : 'Import from Obsidian' }}</span>
+          <span class="text-xs text-muted-foreground">Copy an Obsidian vault into a new Mantle vault. The original stays as it is.</span>
+        </span>
+        <span class="flex items-center gap-3 text-muted-foreground">
+          <svg lucideArrowRight [size]="14"
+            class="transition duration-200 group-hover:translate-x-0.5 group-hover:text-primary"></svg>
+        </span>
+      </button>
     </div>
 
     @if (vaultState.error(); as err) {

@@ -34,6 +34,13 @@ export interface CreatedNote {
   relPath: string;
 }
 
+/** Mirrors `ImportReport` in `migrate.rs`. */
+export interface ImportReport {
+  notes: number;
+  files: number;
+  failed: { relPath: string; error: string }[];
+}
+
 export interface CreatedFolder {
   name: string;
   relPath: string;
@@ -156,6 +163,30 @@ export class VaultState {
     if (!selected || Array.isArray(selected)) return;
     this.rootPath.set(selected);
     await this.refresh();
+  }
+
+  /**
+   * Copies an Obsidian vault into a new Mantle vault and opens it: one folder
+   * dialog for the Obsidian vault, one save dialog for where the new vault
+   * goes. Resolves what the import did, or null if a dialog was cancelled.
+   */
+  async importObsidianVault(): Promise<ImportReport | null> {
+    const source = await open({ directory: true, multiple: false, title: 'Choose an Obsidian Vault' });
+    if (!source || Array.isArray(source)) return null;
+    const dest = await save({ title: 'Create the New Mantle Vault', defaultPath: `${vaultNameFromPath(source)} (Mantle)` });
+    if (!dest) return null;
+    this.error.set(null);
+    try {
+      const report = await invoke<ImportReport>('import_obsidian_vault', { source, dest });
+      logInfo(`Imported "${source}" into "${dest}": ${report.notes} notes, ${report.failed.length} failed`);
+      this.rootPath.set(dest);
+      await this.refresh();
+      return report;
+    } catch (err) {
+      logError(`Failed to import "${source}": ${formatError(err)}`);
+      this.error.set(formatError(err));
+      return null;
+    }
   }
 
   /**

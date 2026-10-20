@@ -1,6 +1,9 @@
 mod attachments;
 mod credentials;
+mod export;
 mod hidden;
+mod links;
+mod migrate;
 mod logging;
 mod notes_crypto;
 mod tags;
@@ -71,6 +74,9 @@ pub fn run() {
             notes_crypto::move_note_to_profile,
             notes_crypto::create_encrypted_note,
             notes_crypto::convert_markdown_notes,
+            export::convert_to_markdown,
+            export::export_vault,
+            migrate::import_obsidian_vault,
             attachments::save_attachment,
             attachments::import_attachment,
             attachments::save_attachment_copy,
@@ -81,6 +87,7 @@ pub fn run() {
             tags::rename_tag,
             tags::remove_tag,
             tags::set_note_tags,
+            links::rewrite_links,
             watcher::start_vault_watch,
             watcher::stop_vault_watch,
         ])

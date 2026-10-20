@@ -266,4 +266,55 @@ describe('TabsState', () => {
     TestBed.tick();
     expect(setItemSpy).toHaveBeenCalledWith('mantle.tabs.v2', expect.stringContaining(`"noteId":"${noteA.id}"`));
   });
+  describe('panes', () => {
+    it('splits beside the active pane, nesting a split of the other direction', () => {
+      const state = TestBed.inject(TabsState);
+      state.openNote(noteA);
+      const first = state.activePane().id;
+      state.openBeside(noteB, 'row');
+      expect(state.panes().map((p) => state.tabsOf(p.id).map((t) => t.noteId))).toEqual([[noteA.id], [noteB.id]]);
+      expect(state.tabs().find((t) => t.id === state.activeId())?.noteId).toBe(noteB.id);
+      state.openBeside(noteA, 'column');
+      const layout = state.layout();
+      expect(layout.kind === 'split' && layout.direction).toBe('row');
+      expect(layout.kind === 'split' && layout.children[1].kind).toBe('split');
+      state.focusPane(first);
+      expect(state.tabs().find((t) => t.id === state.activeId())?.noteId).toBe(noteA.id);
+    });
+
+    it('moves tabs between panes, reorders them, and drops a pane once it is empty', () => {
+      const state = TestBed.inject(TabsState);
+      state.openNote(noteA);
+      state.openInNewTab(noteB);
+      state.openBeside(noteC);
+      const [left, right] = state.panes();
+      const [tabA, tabB] = state.tabsOf(left.id);
+      state.moveTab(tabB.id, left.id, 0);
+      expect(state.tabsOf(left.id).map((t) => t.noteId)).toEqual([noteB.id, noteA.id]);
+      state.moveTab(tabA.id, right.id, 0);
+      expect(state.tabsOf(right.id).map((t) => t.noteId)).toEqual([noteA.id, noteC.id]);
+      expect(state.activeId()).toBe(tabA.id);
+      state.moveTab(tabB.id, right.id, 2);
+      expect(state.panes()).toHaveLength(1);
+      expect(state.layout().kind).toBe('pane');
+    });
+
+    it('collapses a split when a pane closes its last tab, and restores the layout from storage', () => {
+      const state = TestBed.inject(TabsState);
+      state.openNote(noteA);
+      state.openBeside(noteB);
+      TestBed.tick();
+      const saved = JSON.parse(localStorage.getItem('mantle.tabs.v2')!);
+      expect(saved.layout.kind).toBe('split');
+
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({ providers: [provideZonelessChangeDetection()] });
+      TestBed.inject(VaultRootState).path.set('/vault');
+      const restored = TestBed.inject(TabsState);
+      expect(restored.panes()).toHaveLength(2);
+      restored.closeTab(restored.activeId()!);
+      expect(restored.layout().kind).toBe('pane');
+      expect(restored.tabs().map((t) => t.noteId)).toEqual([noteA.id]);
+    });
+  });
 });

@@ -10,7 +10,10 @@ Angular 22 (frontend, signals-based, no NgModules).
   tree, content area) around a `notes/` feature — a tabbed, ProseMirror-based
   Markdown editor (`notes/editor/`) with a slash command menu, which shows the
   Markdown under the cursor as editable raw text (`syntax-reveal-plugin.ts`:
-  `md_raw` / `md_prefix` marks, saved so the file never changes) — plus
+  `md_raw` / `md_prefix` marks, saved so the file never changes). The editor
+  area splits into nested panes (`TabsState.layout`, rendered by
+  `layout/pane-layout/`), each with its own `TabStrip`; two panes showing one
+  note share its `NotesState` entry and copy each other's edits in — plus
   `shared/` UI primitives (menu surface/item, context menu). The Edit menu acts
   on whichever of the editor or vault tree last had focus (`EditContextState`);
   undo/redo outside the editor go to `VaultHistoryState`, the session's
@@ -37,13 +40,26 @@ Angular 22 (frontend, signals-based, no NgModules).
   `.mantle/profiles.json` registry and the in-memory session keys of unlocked
   profiles. `src-tauri/src/notes_crypto.rs` converts notes between the
   plaintext and encrypted formats and moves them between profiles.
-  `src-tauri/src/tags.rs` renames or removes a tag across the whole vault.
+  `src-tauri/src/tags.rs` renames or removes a tag across the whole vault;
+  its `edit_note` rewrites one note of any kind, which `src-tauri/src/links.rs`
+  also uses to rewrite `[[links]]` after a rename or move.
+  `src-tauri/src/export.rs` turns Mantle notes back into Markdown — in place
+  (`convert_to_markdown`) or as a copy of the vault elsewhere (`export_vault`)
+  — writing their `attachments/` files out decrypted where the user picks
+  (`Placement`), never into `attachments/` itself; notes of locked profiles
+  are skipped and reported. `src-tauri/src/migrate.rs` imports an Obsidian
+  vault into a new Mantle vault (copy, resolve `![[embeds]]` the way Obsidian
+  does, then `convert_markdown_notes` on the copy); the source is never changed.
   `src-tauri/src/attachments.rs` stores attachments — images, and any file a
   converted note linked — in the vault's `attachments/` folder
   (content-hashed for plaintext notes, `<random>.<ext>.enc` sealed in the note
-  envelope for encrypted ones) and serves images to the editor through the
-  `mantle://` protocol, decrypting in memory; a sealed non-image only leaves
-  as a "Save decrypted copy as…" the user picks. Its link scanner
+  envelope for encrypted ones) and serves images, videos and PDFs to the
+  editor and preview tabs through the `mantle://` protocol, decrypting in
+  memory. Videos and PDFs are sealed in `mntl-core`'s chunked envelope
+  (`stream.rs`, version 4), so the protocol answers HTTP range requests by
+  decrypting only the chunks asked for; other files keep the whole-file
+  envelope, and old ones are never rewritten. Any other sealed file only
+  leaves as a "Save decrypted copy as…" the user picks. Its link scanner
   (`link_sources`) skips code, so code is never rewritten. An attachment belongs to its
   profile (or to plaintext notes): encrypting, decrypting or re-homing a note,
   and every `write_note`, copies any attachment that belongs elsewhere and
@@ -80,6 +96,18 @@ Angular 22 (frontend, signals-based, no NgModules).
   pending writes first and then mirrors the edit into loaded notes
   (`NotesState.retagLoaded`), or the next save would restore the old tags.
   Notes in locked profiles are skipped and reported, not silently missed.
+
+## Links
+
+- `[[target#heading|alias]]` (and `![[note]]`) is a `wikilink` mark in the
+  editor, saved verbatim. Like tags, each note's link targets come from
+  `scan_vault` (`links`, null while locked); `NoteLinksState` /
+  `LinkIndex` (`links.ts`) resolve them by name (full path, then path
+  suffix, then same folder, then shortest path) and derive backlinks.
+- Renames and moves go through `VaultActions`, which hands the tree from
+  before to `NoteLinksState.fixAfterMove`: every link that no longer leads
+  where it did is rewritten (`rewrite_links`), loaded notes reload, and notes
+  of locked profiles are reported. Undo is the reverse move, fixed the same way.
 
 ## Properties
 
@@ -161,7 +189,7 @@ Package manager is **pnpm** (see `pnpm-lock.yaml`), not npm.
 
 - Frontend tests use Jest with `jest-preset-angular` (config in `jest.config.ts`, setup in `setup-jest.ts`).
 - Test files live next to the code they test (e.g. `header.spec.ts` next to `header.ts`).
-- Rust: `#[cfg(test)]` unit tests in `src-tauri/src/vault.rs` (path traversal, note classification, compound `.mntl.enc` extension handling, scanning), `src-tauri/src/vault_meta.rs` (default-on-missing, round trip, forward-compatible parsing), `src-tauri/src/credentials.rs` (slugs, registry, unlock), `src-tauri/src/notes_crypto.rs` (encrypt/decrypt conversion), `src-tauri/src/tags.rs` (vault-wide rename/remove), `src-tauri/src/hidden.rs` (hiding and un-hiding a profile's notes), and `src-tauri/src/attachments.rs` (image storage, link scanning, path resolution); `crates/mntl-core/tests/crypto_tests.rs` covers the key hierarchy and the envelope format, and `crates/mntl-core/src/tags.rs` has unit tests for tag validation and Markdown frontmatter editing.
+- Rust: `#[cfg(test)]` unit tests in `src-tauri/src/vault.rs` (path traversal, note classification, compound `.mntl.enc` extension handling, scanning), `src-tauri/src/vault_meta.rs` (default-on-missing, round trip, forward-compatible parsing), `src-tauri/src/credentials.rs` (slugs, registry, unlock), `src-tauri/src/notes_crypto.rs` (encrypt/decrypt conversion), `src-tauri/src/tags.rs` (vault-wide rename/remove), `src-tauri/src/hidden.rs` (hiding and un-hiding a profile's notes), `src-tauri/src/export.rs` (Markdown conversion and export), `src-tauri/src/links.rs` (link rewrites), `src-tauri/src/migrate.rs` (Obsidian import), and `src-tauri/src/attachments.rs` (image storage, link scanning, path resolution); `crates/mntl-core/tests/crypto_tests.rs` covers the key hierarchy and the envelope formats (golden fixtures for the note envelope and the chunked one), and `crates/mntl-core/src/tags.rs` has unit tests for tag validation and Markdown frontmatter editing.
 - Rust tests that need an unlocked profile use `SessionKeys::unlock_for_test` and cheap `KdfParams`, rather than paying for a production-cost Argon2id derivation per test.
 
 ## Conventions

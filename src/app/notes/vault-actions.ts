@@ -2,6 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { invoke } from '@tauri-apps/api/core';
 import { DialogState } from '../shared/dialog/dialog-state';
 import { AttachmentsState } from './attachments-state';
+import { NoteLinksState } from './note-links-state';
 import { NotesState, titleFromRelPath } from './notes-state';
 import { TabsState } from './tabs-state';
 import { VaultHistoryState, canUndoDelete } from './vault-history-state';
@@ -17,6 +18,15 @@ interface Moved {
   from: string;
   to: string;
 }
+
+/** Maps a path from before `moves` to where it is after. */
+const movedBy = (moves: readonly Moved[]) => (relPath: string) => {
+  for (const { kind, from, to } of moves) {
+    if (relPath === from) return to;
+    if (kind === 'folder' && relPath.startsWith(`${from}/`)) return to + relPath.slice(from.length);
+  }
+  return relPath;
+};
 
 const quoted = (items: readonly { name: string }[], what: string) =>
   items.length === 1 ? `"${items[0].name}"` : `${items.length} ${what}`;
@@ -35,6 +45,7 @@ export class VaultActions {
   private readonly attachments = inject(AttachmentsState);
   private readonly history = inject(VaultHistoryState);
   private readonly dialogState = inject(DialogState);
+  private readonly links = inject(NoteLinksState);
 
   async createNote(relDir: string, name: string): Promise<CreatedNote> {
     const created = await this.vaultState.createNote(relDir, name);
@@ -97,9 +108,11 @@ export class VaultActions {
   }
 
   private async renameOnly(kind: 'note' | 'folder', relPath: string, newName: string): Promise<string> {
+    const before = this.vaultState.tree();
     const renamed =
       kind === 'note' ? await this.vaultState.renameNote(relPath, newName) : await this.vaultState.renameFolder(relPath, newName);
     this.follow(kind, relPath, renamed.relPath);
+    await this.links.fixAfterMove(before, movedBy([{ kind, from: relPath, to: renamed.relPath }]), kind === 'note');
     return renamed.relPath;
   }
 
@@ -135,7 +148,18 @@ export class VaultActions {
   }
 
   private async moveEach(items: readonly { kind: ItemKind; relPath: string; destRelDir: string }[]): Promise<Moved[]> {
+    const before = this.vaultState.tree();
     const moved: Moved[] = [];
+    try {
+      await this.moveAll(items, moved);
+    } finally {
+      // Even a move that failed partway keeps the links of what did move.
+      if (moved.some((item) => item.kind !== 'file')) await this.links.fixAfterMove(before, movedBy(moved), false);
+    }
+    return moved;
+  }
+
+  private async moveAll(items: readonly { kind: ItemKind; relPath: string; destRelDir: string }[], moved: Moved[]): Promise<void> {
     for (const { kind, relPath, destRelDir } of items) {
       const result =
         kind === 'note'
@@ -146,7 +170,6 @@ export class VaultActions {
       this.follow(kind, relPath, result.relPath);
       moved.push({ kind, from: relPath, to: result.relPath });
     }
-    return moved;
   }
 
   /**

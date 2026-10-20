@@ -85,6 +85,7 @@ pub mod error;
 pub mod header;
 pub mod keys;
 pub mod properties;
+pub mod stream;
 pub mod tags;
 
 use aes_kw::KekAes256;
@@ -106,6 +107,7 @@ pub use keys::{
     KeyEncryptionKey, MasterKey, WRAPPED_KEY_LEN,
 };
 pub use properties::{markdown_properties, set_markdown_property};
+pub use stream::{decrypt_stream, encrypt_stream, ChunkSpan, SealedStream, STREAM_CHUNK, STREAM_VERSION};
 pub use tags::{dedupe_tags, markdown_tags, normalize_tag, same_tag, set_markdown_tags};
 
 /// Derive a 256-bit Key Encryption Key (KEK) using Argon2id with explicit KDF parameters.
@@ -278,6 +280,10 @@ pub fn decrypt_note(
     // 3. Deserialize JSON Header
     let header: EncryptedHeader = serde_json::from_slice(header_json_bytes)?;
 
+    // A large attachment, sealed in chunks.
+    if header.v == STREAM_VERSION {
+        return decrypt_stream(mk, mntl_enc_bytes);
+    }
     if header.v != ENVELOPE_VERSION {
         return Err(MntlError::UnsupportedVersion(header.v));
     }
@@ -411,6 +417,32 @@ pub fn decode_note(note: &str) -> Result<(NoteFrontmatter, String), MntlError> {
     }
 
     Ok((header, body.to_string()))
+}
+
+/// Encode a note as a plain Markdown file: its tags and properties as the
+/// top-level keys of a YAML frontmatter block, then `content`. A note with
+/// neither gets no frontmatter, unless its body opens with a `---` line that
+/// would read as one.
+///
+/// # Errors
+///
+/// Returns [`MntlError::FrontmatterParseError`] if the YAML fails to serialize.
+pub fn encode_markdown_note(frontmatter: &NoteFrontmatter, content: &str) -> Result<String, MntlError> {
+    let mut map = serde_yaml::Mapping::new();
+    if !frontmatter.tags.is_empty() {
+        map.insert("tags".into(), frontmatter.tags.clone().into());
+    }
+    for (key, value) in &frontmatter.properties {
+        if key.as_str() != Some("tags") {
+            map.insert(key.clone(), value.clone());
+        }
+    }
+    if map.is_empty() {
+        let opens_with_delim = split_frontmatter(content).is_ok();
+        return Ok(if opens_with_delim { format!("---\n---\n{content}") } else { content.to_string() });
+    }
+    let yaml = serde_yaml::to_string(&map)?;
+    Ok(format!("{FRONTMATTER_DELIM}\n{yaml}{FRONTMATTER_DELIM}\n{content}"))
 }
 
 /// Split a plain Markdown (`.md`) file into its YAML frontmatter block and

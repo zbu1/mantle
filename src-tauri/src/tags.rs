@@ -111,7 +111,7 @@ fn set_note_tags_inner(
     Ok(())
 }
 
-enum NoteEditError {
+pub(crate) enum NoteEditError {
     Locked,
     Failed(String),
 }
@@ -120,6 +120,24 @@ impl From<String> for NoteEditError {
     fn from(e: String) -> Self {
         NoteEditError::Failed(e)
     }
+}
+
+/// Rewrite one note's tags with `edit`, which returns `None` when the note
+/// needs no rewrite. `Ok(true)` if it was rewritten.
+fn edit_note_tags(
+    vault_root: &str,
+    path: &Path,
+    rel_path: &str,
+    edit: impl Fn(&[String]) -> Option<Vec<String>>,
+    keys: &SessionKeys,
+) -> Result<bool, NoteEditError> {
+    edit_note(vault_root, path, rel_path, keys, |tags, _| match edit(tags) {
+        Some(edited) => {
+            *tags = edited;
+            true
+        }
+        None => false,
+    })
 }
 
 /// `tags` with `from` renamed to `to` (or dropped), or `None` if `from` isn't
@@ -138,14 +156,16 @@ fn edited_tags(tags: &[String], from: &str, to: Option<&str>) -> Option<Vec<Stri
     Some(clean_tags(&edited.collect::<Vec<_>>()))
 }
 
-/// Rewrite one note's tags with `edit`, which returns `None` when the note
-/// needs no rewrite. `Ok(true)` if it was rewritten.
-fn edit_note_tags(
+/// Rewrite one note in place with `edit`, given its tags and body, which
+/// returns whether it changed either. `Ok(true)` if the note was rewritten.
+/// Shared by vault-wide edits that touch every note: tags here, links in
+/// [`crate::links`].
+pub(crate) fn edit_note(
     vault_root: &str,
     path: &Path,
     rel_path: &str,
-    edit: impl Fn(&[String]) -> Option<Vec<String>>,
     keys: &SessionKeys,
+    edit: impl FnOnce(&mut Vec<String>, &mut String) -> bool,
 ) -> Result<bool, NoteEditError> {
     if rel_path.ends_with(EXT_ENCRYPTED) {
         let blob = fs::read(path).map_err(|e| e.to_string())?;
@@ -157,11 +177,10 @@ fn edit_note_tags(
         let document = mntl_core::decrypt_note(&mk, &blob).map_err(|e| e.to_string())?;
         let document = std::str::from_utf8(&document).map_err(|_| "Decrypted note is not UTF-8".to_string())?;
         let (mut frontmatter, body) = mntl_core::decode_note(document).map_err(|e| e.to_string())?;
-        let body = zeroize::Zeroizing::new(body);
-        let Some(tags) = edit(&frontmatter.tags) else {
+        let mut body = zeroize::Zeroizing::new(body);
+        if !edit(&mut frontmatter.tags, &mut body) {
             return Ok(false);
-        };
-        frontmatter.tags = tags;
+        }
         let encoded = zeroize::Zeroizing::new(
             mntl_core::encode_note(&frontmatter, &body).map_err(|e| e.to_string())?,
         );
@@ -173,22 +192,30 @@ fn edit_note_tags(
 
     let raw = fs::read_to_string(path).map_err(|e| e.to_string())?;
     if is_markdown_note(rel_path) {
-        let Some(tags) = edit(&mntl_core::markdown_tags(&raw)) else {
+        let old_tags = mntl_core::markdown_tags(&raw);
+        let mut tags = old_tags.clone();
+        let (frontmatter, body) = mntl_core::split_markdown_frontmatter(&raw);
+        let mut body = body.to_string();
+        if !edit(&mut tags, &mut body) {
             return Ok(false);
-        };
-        fs::write(path, mntl_core::set_markdown_tags(&raw, &tags)).map_err(|e| e.to_string())?;
+        }
+        // Only the lines that changed: the frontmatter is another tool's.
+        let mut updated = format!("{frontmatter}{body}");
+        if tags != old_tags {
+            updated = mntl_core::set_markdown_tags(&updated, &tags);
+        }
+        fs::write(path, updated).map_err(|e| e.to_string())?;
         return Ok(true);
     }
 
-    // A `.mntl` that doesn't parse can't have the tag in any readable form;
-    // leave it alone rather than failing the whole rename over it.
-    let Ok((mut frontmatter, body)) = mntl_core::decode_note(&raw) else {
+    // A `.mntl` that doesn't parse can't be edited in any readable form;
+    // leave it alone rather than failing the whole edit over it.
+    let Ok((mut frontmatter, mut body)) = mntl_core::decode_note(&raw) else {
         return Ok(false);
     };
-    let Some(tags) = edit(&frontmatter.tags) else {
+    if !edit(&mut frontmatter.tags, &mut body) {
         return Ok(false);
-    };
-    frontmatter.tags = tags;
+    }
     let encoded = mntl_core::encode_note(&frontmatter, &body).map_err(|e| e.to_string())?;
     fs::write(path, encoded).map_err(|e| e.to_string())?;
     Ok(true)

@@ -13,6 +13,7 @@ import {
   LucideCopy,
   LucideDoorOpen,
   LucideExpand,
+  LucideFileDown,
   LucideFilePlus,
   LucideFileSearch,
   LucideFolderPlus,
@@ -51,6 +52,7 @@ import { NotesState } from '../../../notes/notes-state';
 import { TabsState } from '../../../notes/tabs-state';
 import { VaultRenameState } from '../../../notes/vault-rename-state';
 import { VaultState } from '../../../notes/vault-state';
+import { MarkdownExportState } from '../../../notes/markdown-export/markdown-export-state';
 import { isTauri } from '../../../core/tauri-env';
 import { SectionId, SidebarState } from '../../sidebar/sidebar-state';
 import { EditCommand, EditContextState } from '../../../shared/edit-context-state';
@@ -105,6 +107,7 @@ type MenuCategory = 'file' | 'edit' | 'view' | 'help';
     LucideArrowLeft,
     LucideArrowRight,
     LucideExpand,
+    LucideFileDown,
     LucideRefreshCw,
     LucideZoomIn,
     LucideZoomOut,
@@ -126,6 +129,7 @@ export class MainMenu {
   protected readonly sidebarState = inject(SidebarState);
   private readonly dialogState = inject(DialogState);
   private readonly settingsModalState = inject(SettingsModalState);
+  private readonly markdownExport = inject(MarkdownExportState);
   protected readonly editContext = inject(EditContextState);
   protected readonly zoom = inject(ZoomState);
 
@@ -262,6 +266,11 @@ export class MainMenu {
   protected async openVault(): Promise<void> {
     this.closeMenu();
     await this.vaultState.pickVault();
+  }
+
+  protected exportVault(): void {
+    this.closeMenu();
+    this.markdownExport.openExport();
   }
 
   protected closeVault(): void {

@@ -2,7 +2,7 @@ import { Component, ElementRef, HostListener, computed, inject, signal } from '@
 import { dirname, join } from '@tauri-apps/api/path';
 import { save } from '@tauri-apps/plugin-dialog';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
-import { LucideArrowLeft, LucideArrowRight, LucideEllipsis, LucideFolderOpen, LucideFolderPlus } from '@lucide/angular';
+import { LucideArrowLeft, LucideArrowRight, LucideEllipsis, LucideFolderInput, LucideFolderOpen, LucideFolderPlus } from '@lucide/angular';
 import { CredentialsState } from '../../notes/credentials-state';
 import { VaultState, vaultNameFromPath } from '../../notes/vault-state';
 import { ContextMenuState } from '../../shared/context-menu/context-menu-state';
@@ -128,7 +128,7 @@ const STRATA: StrataLayer[] = Array.from({ length: STRATA_COUNT }, (_, layer) =>
  */
 @Component({
   selector: 'app-welcome',
-  imports: [WindowControls, LucideFolderPlus, LucideFolderOpen, LucideArrowRight, LucideArrowLeft, LucideEllipsis],
+  imports: [WindowControls, LucideFolderPlus, LucideFolderOpen, LucideFolderInput, LucideArrowRight, LucideArrowLeft, LucideEllipsis],
   templateUrl: './welcome.html',
   host: { class: 'relative flex min-h-0 flex-1 flex-col overflow-hidden' },
 })
@@ -149,6 +149,7 @@ export class Welcome {
 
   /** True while a native dialog from this screen is up, so a double press doesn't stack a second one. */
   protected readonly busy = signal(false);
+  protected readonly importing = signal(false);
 
   /** Path of the recent vault whose name is being edited inline, if any. */
   protected readonly renaming = signal<string | null>(null);
@@ -167,6 +168,20 @@ export class Welcome {
 
   protected openVault(): Promise<void> {
     return this.run(() => this.vaultState.pickVault());
+  }
+
+  /** Imports an Obsidian vault into a new Mantle vault, then says what didn't convert. */
+  protected importVault(): Promise<void> {
+    return this.run(async () => {
+      this.importing.set(true);
+      const report = await this.vaultState.importObsidianVault().finally(() => this.importing.set(false));
+      if (!report || report.failed.length === 0) return;
+      await this.dialog.alert(
+        `${report.notes} notes imported. These Markdown files couldn't be converted and were copied as they are:\n\n` +
+          report.failed.map((f) => `${f.relPath}: ${f.error}`).join('\n'),
+        { title: 'Some Files Not Converted', tone: 'warning' },
+      );
+    });
   }
 
   protected openRecent(path: string): Promise<void> {

@@ -65,6 +65,11 @@ fn classify_note_file(filename: &str) -> Option<(String, bool)> {
     None
 }
 
+/// Whether `filename` is a note file: `.mntl`, `.mntl.enc` or Markdown.
+pub(crate) fn is_note_file(filename: &str) -> bool {
+    classify_note_file(filename).is_some()
+}
+
 /// Prefix of the error returned when a note's credential profile is locked,
 /// followed by the profile's id (e.g. `mantle:locked:my-diary`).
 ///
@@ -114,6 +119,10 @@ pub enum VaultNode {
         /// encrypted note whose profile is locked (its tags are sealed inside
         /// the ciphertext), or a file that can't be read or parsed.
         tags: Option<Vec<String>>,
+        /// The targets of the note's `[[wikilinks]]`, as written (without any
+        /// `#heading` or `|alias`), or `None` when they can't be read right
+        /// now, as for `tags`.
+        links: Option<Vec<String>>,
         /// Whether this encrypted note is a favorite, sealed in its
         /// frontmatter. Always false for a locked note and for plaintext
         /// notes, whose favorites live in `.mantle/state.json`.
@@ -217,86 +226,75 @@ pub(crate) fn read_header(path: &Path) -> Option<mntl_core::EncryptedHeader> {
     mntl_core::extract_encrypted_header(&read_header_prefix(path).ok()?).ok()
 }
 
-/// Largest frontmatter block a scan reads to find a plaintext note's tags.
-/// Real ones are a few lines; this bounds the read for a file that opens with
-/// `---` but never closes it.
-const MAX_SCANNED_FRONTMATTER_LEN: usize = 64 * 1024;
-
-/// Read just the leading `---` frontmatter block of a text file, delimiters
-/// included, without reading the (potentially large) body. `None` if the file
-/// has no complete frontmatter block within [`MAX_SCANNED_FRONTMATTER_LEN`].
-fn read_frontmatter_prefix(path: &Path) -> Option<String> {
-    use std::io::BufRead;
-
-    let mut reader = std::io::BufReader::new(File::open(path).ok()?);
-    let mut prefix = String::new();
-    let mut first = true;
-    loop {
-        let read = reader.read_line(&mut prefix).ok()?;
-        if read == 0 || prefix.len() > MAX_SCANNED_FRONTMATTER_LEN {
-            return None;
-        }
-        let line = prefix[prefix.len() - read..].trim_end_matches(['\r', '\n']);
-        if line == "---" && !first {
-            return Some(prefix);
-        }
-        if line != "---" && first {
-            return None;
-        }
-        first = false;
-    }
+/// What a vault scan reads of a note: its tags and wikilink targets, and
+/// whether it's a sealed favorite.
+#[derive(Default)]
+struct NoteInfo {
+    tags: Option<Vec<String>>,
+    links: Option<Vec<String>>,
+    favorite: bool,
 }
 
-/// The tags of the note at `path`, for a vault scan, and whether it's a sealed
-/// favorite: read from the frontmatter of a plaintext note, or by decrypting
-/// an encrypted one whose profile is unlocked. Tags are `None` when they can't
-/// be known right now; like [`read_profile_id`], a scan never fails over one
-/// unreadable note.
-fn read_note_tags(
-    path: &Path,
-    file_name: &str,
-    profile: Option<&str>,
-    vault_root: &str,
-    keys: &SessionKeys,
-) -> (Option<Vec<String>>, bool) {
+/// The [`NoteInfo`] of the note at `path`: read from a plaintext note, or by
+/// decrypting an encrypted one whose profile is unlocked. Tags and links are
+/// `None` when they can't be known right now; like [`read_profile_id`], a
+/// scan never fails over one unreadable note.
+// ponytail: reads every note whole on every scan, for its links; keep a link
+// index if big vaults scan slowly.
+fn read_note_info(path: &Path, file_name: &str, profile: Option<&str>, vault_root: &str, keys: &SessionKeys) -> NoteInfo {
     if file_name.ends_with(EXT_ENCRYPTED) {
-        return read_sealed_frontmatter(path, profile, vault_root, keys)
-            .map_or((None, false), |h| (Some(h.tags), h.favorite));
+        return read_sealed_note(path, profile, vault_root, keys).map_or_else(NoteInfo::default, |(h, links)| NoteInfo {
+            tags: Some(h.tags),
+            links: Some(links),
+            favorite: h.favorite,
+        });
     }
-    (read_plaintext_tags(path, file_name), false)
+    let Ok(raw) = fs::read_to_string(path) else { return NoteInfo::default() };
+    if is_markdown_note(file_name) {
+        let (_, body) = mntl_core::split_markdown_frontmatter(&raw);
+        return NoteInfo { tags: Some(mntl_core::markdown_tags(&raw)), links: Some(wikilink_targets(body)), favorite: false };
+    }
+    mntl_core::decode_note(&raw).map_or_else(
+        |_| NoteInfo::default(),
+        |(h, body)| NoteInfo { tags: Some(h.tags), links: Some(wikilink_targets(&body)), favorite: false },
+    )
 }
 
-fn read_sealed_frontmatter(
+/// The distinct targets of the `[[wikilinks]]` in `body`, outside code.
+pub(crate) fn wikilink_targets(body: &str) -> Vec<String> {
+    let mut targets: Vec<String> = Vec::new();
+    for source in crate::attachments::link_sources(body).into_iter().filter(|s| s.wiki) {
+        let target = body[source.range].trim();
+        if !target.is_empty() && !targets.iter().any(|t| t == target) {
+            targets.push(target.to_string());
+        }
+    }
+    targets
+}
+
+/// Decrypt the `.mntl.enc` at `path` if its profile is unlocked, for its
+/// frontmatter and wikilink targets.
+fn read_sealed_note(
     path: &Path,
     profile: Option<&str>,
     vault_root: &str,
     keys: &SessionKeys,
-) -> Option<mntl_core::NoteFrontmatter> {
+) -> Option<(mntl_core::NoteFrontmatter, Vec<String>)> {
     let mk = keys.get(vault_root, profile?).ok()??;
     let blob = fs::read(path).ok()?;
     let document = mntl_core::decrypt_note(&mk, &blob).ok()?;
     let document = std::str::from_utf8(&document).ok()?;
-    mntl_core::extract_unencrypted_header(document).ok()
-}
-
-fn read_plaintext_tags(path: &Path, file_name: &str) -> Option<Vec<String>> {
-
-    let Some(prefix) = read_frontmatter_prefix(path) else {
-        // A Markdown file needs no frontmatter; it just has no tags.
-        return is_markdown_note(file_name).then(Vec::new);
-    };
-    if is_markdown_note(file_name) {
-        return Some(mntl_core::markdown_tags(&prefix));
-    }
-    mntl_core::extract_unencrypted_header(&prefix).ok().map(|h| h.tags)
+    let (frontmatter, body) = mntl_core::decode_note(document).ok()?;
+    let links = wikilink_targets(&body);
+    Some((frontmatter, links))
 }
 
 /// The hidden notes a scan came across, which it lists at their sealed path
 /// rather than where their files are.
 #[derive(Default)]
 struct HiddenScan {
-    /// Those of unlocked profiles: disk path, profile, sealed frontmatter and times.
-    open: Vec<(String, String, mntl_core::NoteFrontmatter, u64, u64)>,
+    /// Those of unlocked profiles: disk path, profile, sealed frontmatter, links and times.
+    open: Vec<(String, String, mntl_core::NoteFrontmatter, Vec<String>, u64, u64)>,
     /// How many each locked profile has.
     locked: BTreeMap<String, usize>,
     /// Every hidden note's disk path, which no listed path may take.
@@ -345,21 +343,24 @@ fn scan_dir(
                 let profile = header.as_ref().map(|h| h.credential_profile.clone());
                 if let Some(profile) = profile.clone().filter(|_| header.as_ref().is_some_and(|h| h.hidden)) {
                     let rel = to_slash(&child_rel);
-                    match read_sealed_frontmatter(&entry.path(), Some(&profile), vault_root, keys) {
-                        Some(frontmatter) => hidden.open.push((rel.clone(), profile, frontmatter, modified, created)),
+                    match read_sealed_note(&entry.path(), Some(&profile), vault_root, keys) {
+                        Some((frontmatter, links)) => {
+                            hidden.open.push((rel.clone(), profile, frontmatter, links, modified, created))
+                        }
                         None => *hidden.locked.entry(profile).or_default() += 1,
                     }
                     hidden.disk.insert(rel);
                     continue;
                 }
-                let (tags, favorite) =
-                    read_note_tags(&entry.path(), &name, profile.as_deref(), vault_root, keys);
+                let NoteInfo { tags, links, favorite } =
+                    read_note_info(&entry.path(), &name, profile.as_deref(), vault_root, keys);
                 notes.push(VaultNode::Note {
                     name: title,
                     rel_path: to_slash(&child_rel),
                     encrypted,
                     profile,
                     tags,
+                    links,
                     favorite,
                     modified,
                     created,
@@ -393,7 +394,7 @@ fn insert_hidden(root: &mut Vec<VaultNode>, hidden: HiddenScan) -> HashMap<Strin
     let mut map = HashMap::new();
     let mut open = hidden.open;
     open.sort_by(|a, b| a.0.cmp(&b.0));
-    for (disk, profile, frontmatter, modified, created) in open {
+    for (disk, profile, frontmatter, links, modified, created) in open {
         let (_, disk_stem, _) = split_rel_note_path(&disk);
         let location = frontmatter
             .location
@@ -447,6 +448,7 @@ fn insert_hidden(root: &mut Vec<VaultNode>, hidden: HiddenScan) -> HashMap<Strin
             encrypted: true,
             profile: Some(profile.clone()),
             tags: Some(frontmatter.tags),
+            links: Some(links),
             favorite: frontmatter.favorite,
             modified,
             created,
@@ -2029,6 +2031,22 @@ tags: [x]
             other => panic!("expected a note, got {other:?}"),
         }
 
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn scan_vault_lists_each_notes_wikilinks() {
+        let root = temp_dir("scan-links");
+        fs::write(root.join("a.mntl"), mntl_core::encode_unencrypted_note("[[B]] [[C#x|y]] [[B]] `[[code]]`").unwrap()).unwrap();
+        fs::write(root.join("b.md"), "---\ntags: [t]\n---\n[[A]]").unwrap();
+        let tree = scan_vault_inner(&root.to_string_lossy(), &SessionKeys::default()).unwrap();
+        let VaultNode::Folder { children, .. } = &tree else { panic!() };
+        let links = |name| match find_note(children, name) {
+            VaultNode::Note { links, .. } => links.clone(),
+            _ => panic!(),
+        };
+        assert_eq!(links("a"), Some(vec!["B".to_string(), "C".to_string()]));
+        assert_eq!(links("b"), Some(vec!["A".to_string()]));
         let _ = fs::remove_dir_all(&root);
     }
 

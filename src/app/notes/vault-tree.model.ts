@@ -55,6 +55,8 @@ export interface VaultNoteNode extends Timestamps {
    * profile was locked at scan time, or an unparseable file.
    */
   tags: string[] | null;
+  /** The targets of the note's `[[links]]` as written, or null when they can't be read, as for `tags`. */
+  links?: string[] | null;
   /**
    * Whether this encrypted note is a favorite — sealed inside the note, so
    * only known while its profile is unlocked. Plaintext notes' favorites live
@@ -132,7 +134,7 @@ export function withRenamedNote(root: VaultFolderNode, relPath: string, newRelPa
 export function withNoteFields(
   root: VaultFolderNode,
   relPath: string,
-  fields: Partial<Pick<VaultNoteNode, 'tags' | 'favorite'>>,
+  fields: Partial<Pick<VaultNoteNode, 'tags' | 'favorite' | 'links'>>,
 ): VaultFolderNode {
   const retag = (node: VaultNode): VaultNode => {
     if (node.type === 'file') return node;

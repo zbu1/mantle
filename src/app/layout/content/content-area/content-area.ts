@@ -1,4 +1,4 @@
-import { Component, ElementRef, HostListener, computed, effect, inject, viewChild } from '@angular/core';
+import { Component, ElementRef, HostListener, computed, effect, inject, input, viewChild } from '@angular/core';
 import { VaultActions } from '../../../notes/vault-actions';
 import {
   LucideArrowLeft,
@@ -91,8 +91,17 @@ export class ContentArea {
   private readonly encryptionButton = viewChild<ElementRef<HTMLButtonElement>>('encryptionButton');
   private readonly pendingRenames = new Map<string, ReturnType<typeof setTimeout>>();
 
+  /** The pane this shows; the active one if none is given. */
+  readonly paneId = input<string | null>(null);
+
+  private readonly pane = computed(
+    () => this.tabsState.panes().find((pane) => pane.id === this.paneId()) ?? this.tabsState.activePane(),
+  );
+  private readonly isActivePane = computed(() => this.pane()?.id === this.tabsState.activePaneId());
+
+  /** The tab this pane shows. */
   protected readonly activeTab = computed<NoteTab | undefined>(() => {
-    const activeId = this.tabsState.activeId();
+    const activeId = this.pane()?.activeTabId;
     return activeId ? this.tabsState.tabs().find((t) => t.id === activeId) : undefined;
   });
 
@@ -159,6 +168,7 @@ export class ContentArea {
 
   @HostListener('document:keydown', ['$event'])
   protected onDocumentKeydown(event: KeyboardEvent): void {
+    if (!this.isActivePane()) return;
     if (!(event.ctrlKey || event.metaKey) || !event.shiftKey || event.altKey || event.key.toLowerCase() !== 'b') return;
     if (this.favoritableNoteId() === null) return;
     event.preventDefault();

@@ -23,7 +23,7 @@ import { gapCursor } from 'prosemirror-gapcursor';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 
-import { AttachmentsState, attachmentUrl } from '../attachments-state';
+import { AttachmentsState, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, attachmentUrl } from '../attachments-state';
 import { CredentialsState } from '../credentials-state';
 import { NotePropertiesState } from '../note-properties-state';
 import { NotesState } from '../notes-state';
@@ -68,6 +68,16 @@ import { formatSelection, insertHorizontalRule, linkSelection, pastePlainText } 
 import { pickImage } from './prosemirror/plugins/image-plugin';
 import { ContextMenuAction } from '../../shared/context-menu/context-menu.model';
 import { SlashMenuState } from './slash-menu/slash-menu-state';
+import { LinkMenu } from './link-menu/link-menu';
+import { LinkMenuState, LinkSuggestion } from './link-menu/link-menu-state';
+import { WikilinkContext, wikilinkKey, wikilinkPlugin, wikilinkTargets } from './prosemirror/plugins/wikilink-plugin';
+import { NoteLinksState } from '../note-links-state';
+import { TabsState } from '../tabs-state';
+import { isFileLink, linkPath, splitLink } from '../links';
+import { dirOf } from '../vault-tree.model';
+
+/** Meta on a transaction that brings in an edit made in another pane, so it isn't saved again. */
+const OTHER_PANE = 'mantle:other-pane';
 
 function buildEditorKeymap() {
   const keys: Record<string, Command> = {
@@ -134,7 +144,7 @@ export function countText(doc: ProseMirrorNode): { words: number; characters: nu
 
 @Component({
   selector: 'app-note-editor',
-  imports: [SlashMenu, CodeLanguagePicker],
+  imports: [SlashMenu, LinkMenu, CodeLanguagePicker],
   templateUrl: './note-editor.html',
 })
 export class NoteEditor {
@@ -150,14 +160,20 @@ export class NoteEditor {
   private readonly dialogState = inject(DialogState);
   private readonly editContext = inject(EditContextState);
   private readonly noteProperties = inject(NotePropertiesState);
+  private readonly links = inject(NoteLinksState);
+  private readonly linkMenuState = inject(LinkMenuState);
+  private readonly tabsState = inject(TabsState);
 
   readonly noteId = input.required<string>();
 
   private readonly mount = viewChild.required<ElementRef<HTMLElement>>('mount');
   private readonly slashMenuCmp = viewChild.required<SlashMenu>('slashMenu');
+  private readonly linkMenuCmp = viewChild.required<LinkMenu>('linkMenu');
 
   private editorView: EditorView | undefined;
   private lastAppliedNoteId: string | undefined;
+  /** The Markdown this editor last saved or loaded; anything else in `NotesState` came from another pane. */
+  private lastMarkdown: string | undefined;
 
   /** Words and non-whitespace characters of the rendered text, for the content area's toolbar. */
   readonly textStats = signal({ words: 0, characters: 0 });
@@ -183,10 +199,15 @@ export class NoteEditor {
           // while the slash menu is open — otherwise the editor's own Enter
           // keymap splits the block before the menu can confirm a selection.
           createSlashMenuPlugin(this.slashMenuState, () => this.slashMenuCmp().panelElement()),
+          // Before the keymap too, for the `[[` menu.
+          wikilinkPlugin(this.wikilinkContext(), this.linkMenuState, () => this.linkMenuCmp().panelElement()),
           buildEditorKeymap(),
           gapCursor(),
           trailingParagraphPlugin(),
-          syntaxRevealPlugin((href) => void this.attachments.openLinked(this.noteId(), href)),
+          syntaxRevealPlugin(
+            (href) => void this.attachments.openLinked(this.noteId(), href),
+            (target) => void this.openLink(target),
+          ),
           // Last, so images and code blocks get their own menus first.
           new Plugin({
             props: { handleDOMEvents: { contextmenu: (view, event) => (this.openTextMenu(event, view), true) } },
@@ -214,7 +235,11 @@ export class NoteEditor {
         clipboardTextParser: (text) => Slice.maxOpen(parseMarkdown(text).content),
         // The Edit menu acts on whichever editor last had focus.
         handleDOMEvents: {
-          focus: (view) => void this.editContext.focusEditor(view),
+          focus: (view) => {
+            this.editContext.focusEditor(view);
+            // With the note open in two panes, the panel edits the one last used.
+            this.noteProperties.attach(this.noteId(), view);
+          },
           [ADD_PROPERTY_EVENT]: (_view, event) =>
             void this.noteProperties.requestAdd(this.noteId(), (event as CustomEvent).detail === 'tag' ? 'tag' : 'property'),
         },
@@ -229,10 +254,14 @@ export class NoteEditor {
           }
           if (tr.docChanged) {
             const markdown = serializeMarkdown(newState.doc);
+            this.lastMarkdown = markdown;
             // Counted from the saved Markdown, so revealed syntax doesn't count.
             // ponytail: reparses the note per edit; count the doc minus revealed syntax if long notes lag.
-            this.textStats.set(countText(parseMarkdown(markdown)));
+            const saved = parseMarkdown(markdown);
+            this.textStats.set(countText(saved));
+            if (tr.getMeta(OTHER_PANE)) return;
             this.notesState.updateContent(this.noteId(), markdown);
+            this.links.setLinks(this.noteId(), wikilinkTargets(saved));
           }
         },
       });
@@ -260,6 +289,35 @@ export class NoteEditor {
         if (JSON.stringify(tags) !== JSON.stringify(note.tags)) tr = tr.setDocAttribute('tags', note.tags);
         if (!sameProperties(properties, note.properties)) tr = tr.setDocAttribute('properties', note.properties);
         if (tr.docChanged) view.dispatch(tr.setMeta('addToHistory', false));
+      });
+    });
+
+    // The vault changed, so a link may lead somewhere (or nowhere) now.
+    effect(() => {
+      this.links.index();
+      this.links.lockedHiddenNotes();
+      untracked(() => this.editorView?.dispatch(this.editorView.state.tr.setMeta(wikilinkKey, true)));
+    });
+
+    // The same note, edited in another pane: take its text, keeping this
+    // pane's history and selection by replacing only what differs.
+    effect(() => {
+      const note = this.notesState.getNote(this.noteId());
+      const view = this.editorView;
+      if (!note || !view || this.lastAppliedNoteId !== note.id || note.content === this.lastMarkdown) return;
+      untracked(() => {
+        this.lastMarkdown = note.content;
+        const next = parseMarkdown(note.content);
+        const doc = view.state.doc;
+        const start = doc.content.findDiffStart(next.content);
+        if (start === null) return;
+        let { a: endA, b: endB } = doc.content.findDiffEnd(next.content)!;
+        const overlap = start - Math.min(endA, endB);
+        if (overlap > 0) {
+          endA += overlap;
+          endB += overlap;
+        }
+        view.dispatch(view.state.tr.replace(start, endA, next.slice(start, endB)).setMeta('addToHistory', false).setMeta(OTHER_PANE, true));
       });
     });
 
@@ -292,13 +350,16 @@ export class NoteEditor {
           reader.onerror = () => reject(reader.error);
           reader.readAsDataURL(file);
         });
-        const ext = file.type.slice('image/'.length).replace('+xml', '');
+        // A video's type (`video/quicktime`) doesn't name its extension; its file name does.
+        const ext = file.type.startsWith('image/')
+          ? file.type.slice('image/'.length).replace('+xml', '')
+          : (file.name.split('.').pop()?.toLowerCase() ?? '');
         return invoke<string>('save_attachment', { ...args(), data: dataUrl.slice(dataUrl.indexOf(',') + 1), ext });
       },
       pick: async () => {
         const sourcePath = await open({
           multiple: false,
-          filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'bmp'] }],
+          filters: [{ name: 'Images and Videos', extensions: [...IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS] }],
         });
         return sourcePath ? invoke<string>('import_attachment', { ...args(), sourcePath }) : null;
       },
@@ -315,6 +376,44 @@ export class NoteEditor {
           initialValue: markdown,
         }),
     };
+  }
+
+  private wikilinkContext(): WikilinkContext {
+    return {
+      status: (target) => {
+        if (this.links.index().resolve(target, this.noteId()) || isFileLink(target)) return 'ok';
+        return this.links.lockedHiddenNotes() ? 'maybe-locked' : 'missing';
+      },
+      suggest: (query) => {
+        const index = this.links.index();
+        const self = this.noteId();
+        const q = query.trim().toLowerCase();
+        const matches = (relPath: string, name: string) =>
+          q.includes('/') ? linkPath(relPath).toLowerCase().includes(q) : name.toLowerCase().includes(q);
+        const rank = (name: string) => (name.toLowerCase().startsWith(q) ? 0 : 1);
+        return index.notes
+          .filter((note) => note.relPath !== self && matches(note.relPath, note.name))
+          .sort((a, b) => rank(a.name) - rank(b.name) || a.name.length - b.name.length || a.name.localeCompare(b.name))
+          .slice(0, 20)
+          .map<LinkSuggestion>((note) => ({
+            relPath: note.relPath,
+            name: note.name,
+            dir: dirOf(note.relPath),
+            link: index.linkText(note),
+            exposes: note.encrypted && !self.endsWith('.mntl.enc'),
+          }));
+      },
+    };
+  }
+
+  /** Opens the note a Ctrl/Cmd-clicked `[[link]]` leads to. */
+  private async openLink(raw: string): Promise<void> {
+    const { target } = splitLink(raw);
+    const note = this.links.index().resolve(target, this.noteId());
+    if (note) return this.tabsState.openNote({ id: note.relPath, title: note.name });
+    if (isFileLink(target)) return this.attachments.openLinked(this.noteId(), target);
+    const locked = this.links.lockedHiddenNotes() ? ' It may be a hidden note in a locked profile.' : '';
+    await this.dialogState.alert(`No note is called "${target}".${locked}`, { title: "Couldn't Open Link" });
   }
 
   protected onLanguagePicked(id: string): void {
@@ -489,6 +588,7 @@ export class NoteEditor {
       .setDocAttribute('properties', entry.note.properties)
       // Loading the note isn't an edit to undo.
       .setMeta('addToHistory', false);
+    this.lastMarkdown = entry.note.content;
     view.dispatch(tr);
     this.lastAppliedNoteId = id;
     if (this.editorFocus.consume(id)) view.focus();

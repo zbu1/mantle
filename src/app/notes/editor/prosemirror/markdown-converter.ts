@@ -11,11 +11,11 @@ const md = markdownIt('commonmark', { html: false });
 md.enable('strikethrough');
 
 /**
- * Obsidian `![[photo.png|300]]` image embeds, including the sealed
+ * Obsidian `![[photo.png|300]]` image (and video) embeds, including the sealed
  * `….png.enc` an encrypted note's embed gets re-pointed at; embeds of anything
  * else (notes) stay text.
  */
-const IMAGE_EMBED = /^!\[\[([^\]|\n]+\.(?:png|jpe?g|gif|webp|svg|avif|bmp)(?:\.enc)?)(?:\|([^\]\n]*))?\]\]/i;
+const IMAGE_EMBED = /^!\[\[([^\]|\n]+\.(?:png|jpe?g|gif|webp|svg|avif|bmp|mp4|m4v|webm|mov|ogv)(?:\.enc)?)(?:\|([^\]\n]*))?\]\]/i;
 md.inline.ruler.before('image', 'image_embed', (state, silent) => {
   const match = IMAGE_EMBED.exec(state.src.slice(state.pos));
   if (!match) return false;
@@ -23,6 +23,26 @@ md.inline.ruler.before('image', 'image_embed', (state, silent) => {
     const token = state.push('image_embed', '', 0);
     token.attrs = [['src', match[1]]];
     token.meta = { size: match[2] || null };
+  }
+  state.pos += match[0].length;
+  return true;
+});
+
+/**
+ * `[[target#heading|alias]]` links to notes, and `![[…]]` embeds of them,
+ * shown as links. Image embeds are left to `image_embed`.
+ */
+const WIKILINK = /^(!?)\[\[([^[\]|\n]+)(?:\|([^[\]\n]+))?\]\]/;
+md.inline.ruler.before('link', 'wikilink', (state, silent) => {
+  const rest = state.src.slice(state.pos);
+  const match = WIKILINK.exec(rest);
+  if (!match || (match[1] && IMAGE_EMBED.test(rest))) return false;
+  if (!silent) {
+    const open = state.push('wikilink_open', 'a', 1);
+    open.attrs = [['target', match[2]]];
+    open.meta = { alias: match[3] !== undefined, embed: !!match[1] };
+    state.push('text', '', 0).content = match[3] ?? match[2];
+    state.push('wikilink_close', 'a', -1);
   }
   state.pos += match[0].length;
   return true;
@@ -75,6 +95,10 @@ export const markdownParser = new MarkdownParser(schema, md, {
     }),
   },
   code_inline: { mark: 'code', noCloseToken: true },
+  wikilink: {
+    mark: 'wikilink',
+    getAttrs: (tok) => ({ target: tok.attrGet('target'), alias: tok.meta.alias, embed: tok.meta.embed }),
+  },
 });
 
 /** The textblock without its revealed `## ` / `> ` prefix, which is never saved. */
@@ -163,6 +187,12 @@ export const markdownSerializer = new MarkdownSerializer(
     ...defaultMarkdownSerializer.marks,
     em: delimiter,
     strong: delimiter,
+    wikilink: {
+      open: (_state: unknown, mark: PMMark) =>
+        `${mark.attrs['embed'] ? '!' : ''}[[${mark.attrs['alias'] ? `${mark.attrs['target']}|` : ''}`,
+      close: ']]',
+      escape: false,
+    },
     md_raw: { open: '', close: '', escape: false },
     md_prefix: { open: '', close: '', escape: false },
     strike: { open: '~~', close: '~~', mixable: true, expelEnclosingWhitespace: true },

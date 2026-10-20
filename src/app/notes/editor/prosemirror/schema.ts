@@ -186,6 +186,22 @@ export const marks: Record<string, MarkSpec> = {
       return ['a', { href: mark.attrs['href'], title: mark.attrs['title'] }, 0];
     },
   },
+  // A `[[target#heading|alias]]` link to another note (or `![[…]]`, an embed
+  // of one, shown as a link). Its text is the alias, or else the target as
+  // written, so the link saves verbatim.
+  wikilink: {
+    attrs: { target: {}, alias: { default: false }, embed: { default: false } },
+    inclusive: false,
+    parseDOM: [
+      {
+        tag: 'a.wikilink[data-target]',
+        getAttrs: (dom: string | Node) => ({ target: (dom as HTMLElement).dataset['target'] }),
+      },
+    ],
+    toDOM(mark: PMMark) {
+      return ['a', { class: 'wikilink', 'data-target': mark.attrs['target'] }, 0];
+    },
+  },
   // Raw Markdown shown while the cursor is in a construct (see syntax-reveal-plugin).
   // Saved verbatim; `image` marks an image's source, shown just before the image it stands for.
   // Inclusive, so what's typed straight after it stays raw until the cursor leaves.

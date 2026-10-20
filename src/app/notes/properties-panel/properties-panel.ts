@@ -3,6 +3,7 @@ import {
   LucideBinary,
   LucideBraces,
   LucideCalendar,
+  LucideChevronRight,
   LucideCalendarClock,
   LucideList,
   LucidePlus,
@@ -15,7 +16,10 @@ import {
 import { ContextMenuState } from '../../shared/context-menu/context-menu-state';
 import { DialogState } from '../../shared/dialog/dialog-state';
 import { EditContextState } from '../../shared/edit-context-state';
+import { NoteLinksState } from '../note-links-state';
 import { NotePropertiesState } from '../note-properties-state';
+import { TabsState } from '../tabs-state';
+import { dirOf } from '../vault-tree.model';
 import { NotesState } from '../notes-state';
 import { NoteProperty, PROPERTY_TYPES, PropertyType, PropertyValue, convertValue, displayValue } from '../properties';
 import { TagBar } from '../tag-bar/tag-bar';
@@ -41,6 +45,7 @@ function isTextField(el: EventTarget | null): boolean {
     LucideBinary,
     LucideBraces,
     LucideCalendar,
+    LucideChevronRight,
     LucideCalendarClock,
     LucideList,
     LucidePlus,
@@ -60,6 +65,8 @@ export class PropertiesPanel {
   private readonly dialogState = inject(DialogState);
   private readonly editContext = inject(EditContextState);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly links = inject(NoteLinksState);
+  private readonly tabsState = inject(TabsState);
 
   readonly noteId = input.required<string>();
 
@@ -80,11 +87,35 @@ export class PropertiesPanel {
   protected readonly nameError = signal<string | null>(null);
 
   protected readonly showTags = computed(() => this.tags().length > 0 || this.addingTag());
+
+  /** The notes that link here, each with its folder. */
+  protected readonly backlinks = computed(() =>
+    this.links.index().backlinks(this.noteId()).map((note) => ({ note, dir: dirOf(note.relPath) })),
+  );
+  protected readonly backlinksOpen = this.noteProperties.backlinksOpen;
+  /** Asked for by "Show Backlinks", so the section shows even with none. */
+  protected readonly backlinksWanted = signal(false);
+  protected readonly showBacklinks = computed(() => this.backlinks().length > 0 || this.backlinksWanted());
+  /** Notes of locked profiles, whose links can't be read. */
+  protected readonly backlinksIncomplete = computed(() => this.links.unreadable() > 0 || this.links.lockedHiddenNotes());
+
   protected readonly visible = computed(
-    () => !!this.note() && (this.showTags() || this.rows().length > 0 || this.addingProperty() || this.properties() === null),
+    () =>
+      !!this.note() &&
+      (this.showTags() || this.rows().length > 0 || this.addingProperty() || this.properties() === null || this.showBacklinks()),
   );
 
   constructor() {
+    effect(() => {
+      const request = this.noteProperties.backlinksRequest();
+      if (!request || request.noteId !== this.noteId()) return;
+      untracked(() => {
+        this.noteProperties.backlinksRequest.set(null);
+        this.backlinksWanted.set(true);
+        setTimeout(() => this.host.nativeElement.querySelector('[data-backlinks]')?.scrollIntoView({ block: 'nearest' }));
+      });
+    });
+
     effect(() => {
       const request = this.noteProperties.addRequest();
       if (!request || request.noteId !== this.noteId()) return;
@@ -94,6 +125,10 @@ export class PropertiesPanel {
         else this.startAddingProperty();
       });
     });
+  }
+
+  protected openBacklink(relPath: string, name: string): void {
+    this.tabsState.openNote({ id: relPath, title: name });
   }
 
   startAddingProperty(): void {

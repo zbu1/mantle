@@ -1,5 +1,6 @@
 import { Node as PMNode } from 'prosemirror-model';
 import { EditorView, NodeView } from 'prosemirror-view';
+import { isVideoPath } from '../../../attachments-state';
 import { editImageSource, imageContext } from '../plugins/image-plugin';
 
 const LOCK_ICON =
@@ -7,7 +8,7 @@ const LOCK_ICON =
 
 /**
  * Renders an image node, loading a vault image through the `mantle://`
- * protocol rather than its Markdown `src`. A missing image, or one whose
+ * protocol rather than its Markdown `src` — as a player, for a video. A missing image, or one whose
  * profile is locked, shows the browser's own broken-image box with its alt
  * text.
  *
@@ -18,7 +19,7 @@ const LOCK_ICON =
  */
 export class ImageView implements NodeView {
   readonly dom: HTMLElement;
-  private readonly img: HTMLImageElement;
+  private img: HTMLImageElement | HTMLVideoElement;
   private readonly bar: HTMLElement;
   private readonly barText: HTMLElement;
   /** Bumped per selection, so a slow lookup can't fill in a bar that has since moved on. */
@@ -32,7 +33,6 @@ export class ImageView implements NodeView {
     this.dom = document.createElement('span');
     this.dom.className = 'relative inline-block max-w-full align-bottom';
     this.img = document.createElement('img');
-    this.img.className = 'note-image';
     this.dom.append(this.img);
 
     this.bar = document.createElement('span');
@@ -58,9 +58,18 @@ export class ImageView implements NodeView {
 
   private render(): void {
     const { src, alt, title, size } = this.node.attrs;
+    const tag = isVideoPath(src) ? 'video' : 'img';
+    if (this.img.localName !== tag) {
+      const media = document.createElement(tag);
+      if (media instanceof HTMLVideoElement) media.controls = true;
+      media.className = this.img.className || 'note-image';
+      this.img.replaceWith(media);
+      this.img = media;
+    }
     // Resolved on every render: a relative `src` depends on which note this is.
-    this.img.src = imageContext(this.view)?.url(src) ?? src;
-    this.img.alt = alt ?? '';
+    const url = imageContext(this.view)?.url(src) ?? src;
+    if (this.img.getAttribute('src') !== url) this.img.src = url;
+    if (this.img instanceof HTMLImageElement) this.img.alt = alt ?? '';
     this.img.title = title ?? alt ?? '';
     const width = parseInt(size ?? '', 10);
     if (width > 0) this.img.width = width;

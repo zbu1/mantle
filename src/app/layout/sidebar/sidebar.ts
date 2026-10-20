@@ -9,6 +9,7 @@ import { TagGroupRow } from './tag-group-row/tag-group-row';
 import { AttachmentsState } from '../../notes/attachments-state';
 import { CredentialsState } from '../../notes/credentials-state';
 import { NewEncryptedNoteState } from '../../notes/new-encrypted-note/new-encrypted-note-state';
+import { MarkdownExportState } from '../../notes/markdown-export/markdown-export-state';
 import { NoteEncryptionActions } from '../../notes/note-encryption-actions';
 import { TagGroup } from '../../notes/tags';
 import { VaultActions } from '../../notes/vault-actions';
@@ -36,6 +37,7 @@ import {
   flattenVaultNotes,
   isNoteLocked,
   isVaultTreeDrag,
+  markdownExtensionOf,
   NOTE_REFERENCE_DRAG_MIME,
   VAULT_FOLDER_DRAG_MIME,
   VAULT_NOTE_DRAG_MIME,
@@ -79,6 +81,7 @@ export class Sidebar {
   private readonly dialogState = inject(DialogState);
   protected readonly credentialsState = inject(CredentialsState);
   private readonly encryptionActions = inject(NoteEncryptionActions);
+  private readonly markdownExport = inject(MarkdownExportState);
   private readonly newEncryptedNoteState = inject(NewEncryptedNoteState);
   private readonly vaultMeta = inject(VaultMetaState);
   private readonly favorites = inject(FavoritesState);
@@ -330,8 +333,11 @@ export class Sidebar {
     const items: ContextMenuItem[] = [
       { kind: 'item', label: 'Open', icon: 'open', action: () => this.onOpenNote(note) },
       { kind: 'item', label: 'Open in New Tab', icon: 'open-new-tab', action: () => this.onOpenNoteInBackground(note) },
-      // Planned: split panes.
-      { kind: 'item', label: 'Open to the Right', disabled: true, action: () => undefined },
+      {
+        kind: 'item',
+        label: 'Open to the Right',
+        action: () => this.tabsState.openBeside({ id: note.relPath, title: note.name }),
+      },
       { kind: 'separator' },
       { kind: 'item', label: 'Show in File Explorer', icon: 'reveal', action: () => void this.vaultState.revealInFileExplorer(note.relPath) },
       { kind: 'separator' },
@@ -350,6 +356,16 @@ export class Sidebar {
         : []),
       { kind: 'separator' },
       ...this.encryptionActions.menuItems(note),
+      ...(markdownExtensionOf(note.relPath) || (note.encrypted && !this.credentialsState.isUnlocked(note.profile))
+        ? []
+        : [
+            {
+              kind: 'item' as const,
+              label: 'Convert to Markdown…',
+              icon: 'convert' as const,
+              action: () => this.markdownExport.openConvert([note]),
+            },
+          ]),
       { kind: 'separator' },
       { kind: 'item', label: 'Rename', icon: 'rename', action: () => this.renameState.renamingPath.set(note.relPath) },
       this.favoriteMenuItem(note.relPath),
@@ -407,10 +423,10 @@ export class Sidebar {
       items.push({ kind: 'separator' });
     }
     const markdown = this.encryptionActions.markdownNotesIn(selected);
-    if (markdown.length > 0) {
-      items.push(this.convertMenuItem(markdown));
-      items.push({ kind: 'separator' });
-    }
+    const mantle = this.encryptionActions.mantleNotesIn(selected);
+    if (markdown.length > 0) items.push(this.convertMenuItem(markdown));
+    if (mantle.length > 0) items.push(this.toMarkdownMenuItem(mantle));
+    if (markdown.length > 0 || mantle.length > 0) items.push({ kind: 'separator' });
     if (allNotes) {
       const allFavorites = selected.every((path) => this.favorites.isFavorite(path));
       items.push({
@@ -437,10 +453,22 @@ export class Sidebar {
     };
   }
 
+  /** Converts the Mantle notes `notes` found in a selection or folder back to Markdown files. */
+  private toMarkdownMenuItem(notes: VaultNoteNode[]): ContextMenuItem {
+    const count = notes.length;
+    return {
+      kind: 'item',
+      label: count === 1 ? 'Convert 1 Note to Markdown…' : `Convert ${count} Notes to Markdown…`,
+      icon: 'convert',
+      action: () => this.markdownExport.openConvert(notes),
+    };
+  }
+
   protected onFolderContextMenu(payload: { event: MouseEvent; folder: VaultFolderNode }): void {
     const { event, folder } = payload;
     if (this.openSelectionMenu(event, folder.relPath)) return;
     const markdown = this.encryptionActions.markdownNotesIn([folder.relPath]);
+    const mantle = this.encryptionActions.mantleNotesIn([folder.relPath]);
     const items: ContextMenuItem[] = [
       { kind: 'item', label: 'New Note', icon: 'new-note', action: () => void this.onNewNote(folder.relPath) },
       {
@@ -460,7 +488,9 @@ export class Sidebar {
       { kind: 'separator' },
       { kind: 'item', label: 'Rename', icon: 'rename', action: () => this.renameState.renamingPath.set(folder.relPath) },
       { kind: 'separator' },
-      ...(markdown.length > 0 ? [this.convertMenuItem(markdown), { kind: 'separator' as const }] : []),
+      ...(markdown.length > 0 ? [this.convertMenuItem(markdown)] : []),
+      ...(mantle.length > 0 ? [this.toMarkdownMenuItem(mantle)] : []),
+      ...(markdown.length > 0 || mantle.length > 0 ? [{ kind: 'separator' as const }] : []),
       {
         kind: 'item',
         label: 'Paste',

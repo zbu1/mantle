@@ -204,14 +204,14 @@ button.focus-ring-inset:focus-visible,
   font-size: 0.9em;
 }
 
-.ProseMirror img.note-image {
+.ProseMirror .note-image {
   display: inline-block;
   max-width: 100%;
   border-radius: 6px;
   vertical-align: bottom;
 }
 
-.ProseMirror img.ProseMirror-selectednode {
+.ProseMirror .note-image.ProseMirror-selectednode {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
@@ -434,4 +434,14 @@ button.focus-ring-inset:focus-visible,
 .ProseMirror a {
   color: var(--primary);
   text-decoration: underline;
+}
+/* A `[[link]]` to another note; dashed while it leads nowhere. */
+.ProseMirror a.wikilink {
+  text-decoration-style: solid;
+  cursor: text;
+}
+
+.ProseMirror a.wikilink:has(.wikilink-broken) {
+  color: var(--muted-foreground);
+  text-decoration-style: dashed;
 }

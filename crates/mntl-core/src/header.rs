@@ -113,6 +113,10 @@ pub struct EncryptedHeader {
     /// forged or stripped.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hidden: bool,
+    /// Plaintext bytes per chunk of a chunked envelope ([`crate::stream`],
+    /// version [`crate::STREAM_VERSION`]); absent from every other header.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chunk: Option<u32>,
 }
 
 impl EncryptedHeader {
@@ -123,6 +127,7 @@ impl EncryptedHeader {
             credential_profile: profile_id.into(),
             crypto,
             hidden: false,
+            chunk: None,
         }
     }
 }

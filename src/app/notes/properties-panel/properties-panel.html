@@ -95,12 +95,43 @@
     <span class="text-destructive">{{ message }}</span>
     }
   </div>
-  } @else if (properties() !== null) {
+  } @else if (properties() !== null && (showTags() || rows().length > 0)) {
   <button type="button" (click)="startAddingProperty()"
     class="inline-flex h-7 w-fit items-center gap-1.5 rounded-md px-1.5 text-muted-foreground/70 transition-colors hover:bg-surface hover:text-foreground">
     <svg lucidePlus [size]="13"></svg>
     Add property
   </button>
+  }
+
+  @if (showBacklinks()) {
+  <div data-backlinks class="flex flex-col">
+    <button type="button" (click)="backlinksOpen.set(!backlinksOpen())" [attr.aria-expanded]="backlinksOpen()"
+      class="inline-flex h-7 w-fit items-center gap-1.5 rounded-md px-1.5 text-muted-foreground transition-colors hover:bg-surface hover:text-foreground">
+      <svg lucideChevronRight [size]="13" class="transition-transform" [class.rotate-90]="backlinksOpen()"></svg>
+      Linked from
+      <span class="text-muted-foreground/70">{{ backlinks().length }}</span>
+    </button>
+    @if (backlinksOpen()) {
+    <ul class="ml-5 flex flex-col">
+      @for (link of backlinks(); track link.note.relPath) {
+      <li>
+        <button type="button" (click)="openBacklink(link.note.relPath, link.note.name)" [title]="link.note.relPath"
+          class="flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-1.5 text-left transition-colors hover:bg-surface">
+          <span class="truncate text-foreground">{{ link.note.name }}</span>
+          @if (link.dir) {
+          <span class="truncate text-muted-foreground">{{ link.dir }}</span>
+          }
+        </button>
+      </li>
+      } @empty {
+      <li class="px-1.5 py-1 text-muted-foreground">No notes link here.</li>
+      }
+      @if (backlinksIncomplete()) {
+      <li class="px-1.5 py-1 text-muted-foreground">Notes in locked profiles aren't included.</li>
+      }
+    </ul>
+    }
+  </div>
   }
 </section>
 }

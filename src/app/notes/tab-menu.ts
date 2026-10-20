@@ -28,7 +28,9 @@ export class TabMenu {
   private readonly noteProperties = inject(NotePropertiesState);
 
   open(event: MouseEvent, tab: NoteTab): void {
-    const tabs = this.tabsState.tabs();
+    // The tab's own pane's tabs.
+    const pane = this.tabsState.paneOf(tab.id);
+    const tabs = pane ? this.tabsState.tabsOf(pane.id) : [tab];
     const index = tabs.findIndex((t) => t.id === tab.id);
     const isNote = isNotePath(tab.noteId);
     const tree = this.vaultState.tree();
@@ -41,12 +43,27 @@ export class TabMenu {
       { kind: 'item', label: 'Close', icon: 'close', shortcut: 'Ctrl+W', action: () => this.tabsState.closeTab(tab.id) },
       { kind: 'item', label: 'Close Others', disabled: tabs.length < 2, action: closeAll((t) => t.id === tab.id) },
       { kind: 'item', label: 'Close to the Right', disabled: index === tabs.length - 1, action: closeAll((_t, i) => i <= index) },
-      { kind: 'item', label: 'Close All', action: () => this.tabsState.closeAllTabs() },
+      { kind: 'item', label: 'Close All', action: closeAll(() => false) },
       { kind: 'separator' },
-      // Planned: split panes.
-      { kind: 'item', label: 'Open to the Right', disabled: true, action: () => undefined },
-      // Planned: backlinks.
-      { kind: 'item', label: 'Show Backlinks', disabled: true, action: () => undefined },
+      {
+        kind: 'item',
+        label: 'Open to the Right',
+        action: () => this.tabsState.openBeside({ id: tab.noteId, title: tab.title }, 'row', pane?.id),
+      },
+      {
+        kind: 'item',
+        label: 'Open Below',
+        action: () => this.tabsState.openBeside({ id: tab.noteId, title: tab.title }, 'column', pane?.id),
+      },
+      {
+        kind: 'item',
+        label: 'Show Backlinks',
+        disabled: !isNote || !exists,
+        action: () => {
+          this.tabsState.setActive(tab.id);
+          this.noteProperties.showBacklinks(tab.noteId);
+        },
+      },
       { kind: 'separator' },
       { kind: 'item', label: 'Copy Path', icon: 'copy', action: () => void navigator.clipboard.writeText(tab.noteId) },
       { kind: 'item', label: 'Copy Title', action: () => void navigator.clipboard.writeText(tab.title) },

@@ -5,7 +5,7 @@
     <app-icon-rail />
     <app-sidebar />
     <main #editorBoundary class="shadow-card mr-2 mb-2 flex-1 overflow-hidden rounded-xl border border-input bg-background">
-      <app-content-area />
+      <app-pane-layout [node]="tabsState.layout()" />
     </main>
   </div>
   } @else {
@@ -16,6 +16,7 @@
   <app-dialog />
   <app-new-encrypted-note />
   <app-note-encryption-modal />
+  <app-markdown-export-modal />
   <app-settings-modal />
   <app-vault-drag-preview />
   <app-quick-switcher />

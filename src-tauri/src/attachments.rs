@@ -46,10 +46,11 @@ use zeroize::Zeroizing;
 pub(crate) const ATTACHMENTS_DIR: &str = "attachments";
 
 /// Suffix of an attachment sealed under a credential profile.
-const EXT_SEALED: &str = ".enc";
+pub(crate) const EXT_SEALED: &str = ".enc";
 
-/// The image types an attachment may have, and the media type each is served as.
-const IMAGE_TYPES: [(&str, &str); 8] = [
+/// The media an attachment may be that the editor shows (images, videos,
+/// PDFs), and the media type each is served as.
+const MEDIA_TYPES: [(&str, &str); 14] = [
     ("png", "image/png"),
     ("jpg", "image/jpeg"),
     ("jpeg", "image/jpeg"),
@@ -58,18 +59,30 @@ const IMAGE_TYPES: [(&str, &str); 8] = [
     ("svg", "image/svg+xml"),
     ("avif", "image/avif"),
     ("bmp", "image/bmp"),
+    ("pdf", "application/pdf"),
+    ("mp4", "video/mp4"),
+    ("m4v", "video/mp4"),
+    ("webm", "video/webm"),
+    ("mov", "video/quicktime"),
+    ("ogv", "video/ogg"),
 ];
 
 fn media_type(ext: &str) -> Option<&'static str> {
-    IMAGE_TYPES
+    MEDIA_TYPES
         .iter()
         .find(|(known, _)| known.eq_ignore_ascii_case(ext))
         .map(|(_, media)| *media)
 }
 
-/// The image extension of `path` (lowercase, without any `.enc`) and whether
-/// it is sealed, or `None` if it isn't an image — which is also what stops
-/// [`serve`] from handing out anything else.
+/// Whether a sealed copy of a file of this type goes in the chunked envelope
+/// ([`mntl_core::encrypt_stream`]): the large media that's read a range at a time.
+fn streamed(ext: &str) -> bool {
+    media_type(ext).is_some_and(|media| media.starts_with("video/") || media == "application/pdf")
+}
+
+/// The media extension of `path` (lowercase, without any `.enc`) and whether
+/// it is sealed, or `None` if it isn't media the editor shows — which is also
+/// what stops [`serve`] from handing out anything else.
 fn image_ext(path: &str) -> Option<(String, bool)> {
     let plain = path.strip_suffix(EXT_SEALED);
     let (_, ext) = plain.unwrap_or(path).rsplit_once('.')?;
@@ -122,7 +135,12 @@ fn store(
             let mut id = [0u8; 16];
             OsRng.fill_bytes(&mut id);
             let name = format!("{}{dot_ext}{EXT_SEALED}", hex(&id));
-            let blob = mntl_core::encrypt_note(mk, profile_id, bytes).map_err(|e| e.to_string())?;
+            let blob = if streamed(&ext) {
+                mntl_core::encrypt_stream(mk, profile_id, bytes, mntl_core::STREAM_CHUNK)
+            } else {
+                mntl_core::encrypt_note(mk, profile_id, bytes)
+            }
+            .map_err(|e| e.to_string())?;
             write_atomic(&dir.join(&name), &blob)?;
             name
         }
@@ -141,7 +159,7 @@ fn store(
 /// The attachment at vault-relative `rel_path`, decrypted if it is sealed. One
 /// sealed under a locked profile is the `mantle:locked:<id>` sentinel, as for
 /// a note.
-fn load(vault_root: &str, rel_path: &str, keys: &SessionKeys) -> Result<Zeroizing<Vec<u8>>, String> {
+pub(crate) fn load(vault_root: &str, rel_path: &str, keys: &SessionKeys) -> Result<Zeroizing<Vec<u8>>, String> {
     if is_note(rel_path) {
         return Err("Not an attachment".to_string());
     }
@@ -298,6 +316,8 @@ pub(crate) struct Source {
     pub range: Range<usize>,
     /// Whether it embeds (`![…]`) rather than links.
     pub embed: bool,
+    /// Whether it's a `[[wikilink]]`, rather than a Markdown link.
+    pub wiki: bool,
 }
 
 /// Every link and embed in `markdown` outside code, in document order: the
@@ -322,7 +342,7 @@ pub(crate) fn link_sources(markdown: &str) -> Vec<Source> {
         if let Some(inner) = markdown[from..line_end].strip_prefix('[') {
             let Some(close) = inner.find("]]") else { continue };
             let len = inner[..close].find(['|', '#']).unwrap_or(close);
-            sources.push(Source { range: at + 2..at + 2 + len, embed });
+            sources.push(Source { range: at + 2..at + 2 + len, embed, wiki: true });
             from = at + 2 + close + 2;
             continue;
         }
@@ -350,7 +370,7 @@ pub(crate) fn link_sources(markdown: &str) -> Vec<Source> {
         };
         let end = markdown[range.clone()].find('#').map_or(range.end, |i| range.start + i);
         // Scanning goes on inside the text: `[![img](a.png)](b.pdf)` has two.
-        sources.push(Source { range: range.start..end, embed });
+        sources.push(Source { range: range.start..end, embed, wiki: false });
     }
     sources.retain(|source| !source.range.is_empty());
     sources.sort_by_key(|source| source.range.start);
@@ -400,7 +420,7 @@ pub(crate) fn reseal_attachments(
     let mut relinked = HashMap::new();
     let mut last = 0;
 
-    for Source { range, embed } in link_sources(document) {
+    for Source { range, embed, .. } in link_sources(document) {
         let src = &document[range.clone()];
         let Some(rel) = resolve_attachment(vault_root, note_rel, src) else {
             continue;
@@ -448,7 +468,7 @@ pub(crate) fn reseal_attachments(
 
 /// Whether `rel` is a file directly in the vault-root `attachments/` folder —
 /// one Mantle stored and manages — rather than one of the user's own files.
-fn is_managed(rel: &str) -> bool {
+pub(crate) fn is_managed(rel: &str) -> bool {
     rel.strip_prefix(ATTACHMENTS_DIR)
         .and_then(|rest| rest.strip_prefix('/'))
         .is_some_and(|name| !name.is_empty() && !name.contains('/'))
@@ -675,7 +695,7 @@ pub fn import_attachment(
     keys: State<SessionKeys>,
 ) -> Result<String, String> {
     logged("import_attachment", || {
-        let (ext, _) = image_ext(&source_path).ok_or("Not a supported image file")?;
+        let (ext, _) = image_ext(&source_path).ok_or("Not a supported image, video or PDF file")?;
         let bytes = Zeroizing::new(fs::read(&source_path).map_err(|e| format!("Failed to read image: {e}"))?);
         save_for_note(&vault_root, &note_rel_path, &bytes, &ext, &keys)
     })
@@ -704,10 +724,88 @@ fn query_param(query: &str, key: &str) -> Option<String> {
     })
 }
 
-/// Answer a `mantle://localhost/?vault=…&note=…&src=…` request with the image
-/// `src` refers to from that note, decrypting it if it is sealed.
+/// Most a request for an open-ended range (`bytes=N-`, which is how a video
+/// asks for the rest of itself) gets at once, so a long video is decrypted
+/// as it plays rather than all up front.
+const MAX_OPEN_RANGE: u64 = 4 * 1024 * 1024;
+
+/// The bytes `start..end` an HTTP `Range` header asks for, of `len`, or
+/// `None` if it asks for none of them. Only a single range is honored.
+fn parse_range(range: &str, len: u64) -> Option<(u64, u64)> {
+    let spec = range.trim().strip_prefix("bytes=")?.split(',').next()?.trim();
+    let (start, end) = spec.split_once('-')?;
+    let (start, end) = match (start.trim(), end.trim()) {
+        ("", suffix) => (len.saturating_sub(suffix.parse().ok()?), len),
+        (start, "") => {
+            let start: u64 = start.parse().ok()?;
+            (start, len.min(start.saturating_add(MAX_OPEN_RANGE)))
+        }
+        (start, end) => (start.parse().ok()?, len.min(end.parse::<u64>().ok()?.saturating_add(1))),
+    };
+    (start < end).then_some((start, end))
+}
+
+/// The attachment at `rel_path`, or the bytes `range` of it, with its whole
+/// length. Only what's asked for is read and decrypted, from a plaintext file
+/// or a chunked envelope; an envelope sealed whole is decrypted whole.
+fn load_range(
+    vault_root: &str,
+    rel_path: &str,
+    range: Option<&str>,
+    keys: &SessionKeys,
+) -> Result<(Zeroizing<Vec<u8>>, Option<(u64, u64)>, u64), String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let path = resolve_rel_path(vault_root, rel_path)?;
+    let file_len = fs::metadata(&path).map_err(|e| format!("Failed to read attachment: {e}"))?.len();
+    let read_at = |offset: u64, len: u64| -> Result<Zeroizing<Vec<u8>>, String> {
+        let mut file = fs::File::open(&path).map_err(|e| format!("Failed to read attachment: {e}"))?;
+        file.seek(SeekFrom::Start(offset)).map_err(|e| e.to_string())?;
+        let mut buf = Zeroizing::new(vec![0u8; len as usize]);
+        file.read_exact(&mut buf).map_err(|e| format!("Failed to read attachment: {e}"))?;
+        Ok(buf)
+    };
+
+    let head = rel_path.ends_with(EXT_SEALED).then(|| read_header_prefix(&path).ok()).flatten();
+    let chunked = head
+        .as_deref()
+        .and_then(|head| mntl_core::extract_encrypted_header(head).ok())
+        .is_some_and(|header| header.v == mntl_core::STREAM_VERSION);
+    if chunked {
+        let head = head.unwrap_or_default();
+        let (_, mk) = master_key_for(vault_root, &head, keys)?;
+        let stream = mntl_core::SealedStream::open(&mk, &head, file_len).map_err(|e| e.to_string())?;
+        let total = stream.len();
+        let Some((start, end)) = range.map_or(Some((0, total)), |range| parse_range(range, total)) else {
+            return Ok((Zeroizing::new(Vec::new()), None, total));
+        };
+        let span = stream.chunks_for(start, end);
+        let plain = stream
+            .decrypt_chunks(span.first, &read_at(span.file_offset, span.file_len)?)
+            .map_err(|e| e.to_string())?;
+        let from = (start - span.plaintext_offset) as usize;
+        let bytes = Zeroizing::new(plain[from..from + (end - start) as usize].to_vec());
+        return Ok((bytes, range.map(|_| (start, end)), total));
+    }
+    if head.is_none() {
+        let Some((start, end)) = range.map_or(Some((0, file_len)), |range| parse_range(range, file_len)) else {
+            return Ok((Zeroizing::new(Vec::new()), None, file_len));
+        };
+        return Ok((read_at(start, end - start)?, range.map(|_| (start, end)), file_len));
+    }
+    let whole = load(vault_root, rel_path, keys)?;
+    let total = whole.len() as u64;
+    let Some((start, end)) = range.map_or(Some((0, total)), |range| parse_range(range, total)) else {
+        return Ok((Zeroizing::new(Vec::new()), None, total));
+    };
+    Ok((Zeroizing::new(whole[start as usize..end as usize].to_vec()), range.map(|_| (start, end)), total))
+}
+
+/// Answer a `mantle://localhost/?vault=…&note=…&src=…` request with the
+/// image, video or PDF `src` refers to from that note, decrypting it if it is
+/// sealed. A `Range` request gets just those bytes, which is how a video
+/// streams.
 ///
-/// Responses are `no-store`, so a decrypted image is never written to the
+/// Responses are `no-store`, so decrypted media is never written to the
 /// webview's disk cache — and so locking a profile takes effect on the next
 /// render rather than whenever a cache entry expires.
 fn serve(keys: &SessionKeys, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
@@ -716,6 +814,9 @@ fn serve(keys: &SessionKeys, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
             .status(status)
             .header(header::CONTENT_TYPE, media)
             .header(header::CACHE_CONTROL, "no-store")
+            // pdf.js fetches from the app's own origin, which isn't this scheme's.
+            .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+            .header(header::ACCEPT_RANGES, "bytes")
             .body(body)
             .unwrap_or_default()
     };
@@ -730,8 +831,23 @@ fn serve(keys: &SessionKeys, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
     else {
         return respond(StatusCode::NOT_FOUND, "text/plain", Vec::new());
     };
-    match load(&vault, &rel, keys) {
-        Ok(bytes) => respond(StatusCode::OK, media, bytes.to_vec()),
+    let range = request.headers().get(header::RANGE).and_then(|value| value.to_str().ok());
+    match load_range(&vault, &rel, range, keys) {
+        Ok((bytes, Some((start, end)), total)) => {
+            let mut response = respond(StatusCode::PARTIAL_CONTENT, media, bytes.to_vec());
+            if let Ok(value) = format!("bytes {start}-{}/{total}", end - 1).parse() {
+                response.headers_mut().insert(header::CONTENT_RANGE, value);
+            }
+            response
+        }
+        Ok((_, None, total)) if range.is_some() => {
+            let mut response = respond(StatusCode::RANGE_NOT_SATISFIABLE, media, Vec::new());
+            if let Ok(value) = format!("bytes */{total}").parse() {
+                response.headers_mut().insert(header::CONTENT_RANGE, value);
+            }
+            response
+        }
+        Ok((bytes, None, _)) => respond(StatusCode::OK, media, bytes.to_vec()),
         Err(e) if e.starts_with(LOCKED_ERR_PREFIX) => respond(StatusCode::FORBIDDEN, "text/plain", Vec::new()),
         Err(_) => respond(StatusCode::NOT_FOUND, "text/plain", Vec::new()),
     }
@@ -819,6 +935,37 @@ mod tests {
         assert!(!store(&root_str, PNG, "", None).unwrap().contains('.'));
         assert!(store(&root_str, PNG, "md", None).is_err(), "a copy must never become a note");
         assert!(store(&root_str, PNG, "a/b", None).is_err());
+    }
+
+    #[test]
+    fn ranges_are_read_from_plaintext_and_chunked_files_alike() {
+        assert_eq!(parse_range("bytes=2-5", 10), Some((2, 6)));
+        assert_eq!(parse_range("bytes=7-", 10), Some((7, 10)));
+        assert_eq!(parse_range("bytes=-3", 10), Some((7, 10)));
+        assert_eq!(parse_range("bytes=4-100", 10), Some((4, 10)));
+        assert_eq!(parse_range("bytes=10-", 10), None);
+        assert_eq!(parse_range("bytes=0-", 10 * MAX_OPEN_RANGE), Some((0, MAX_OPEN_RANGE)));
+
+        let root = temp_dir("ranges");
+        let root_str = root.to_string_lossy().into_owned();
+        let mk = mntl_core::MasterKey::generate().unwrap();
+        let keys = SessionKeys::default();
+        keys.unlock_for_test(&root_str, "diary", mk.clone()).unwrap();
+        let video: Vec<u8> = (0..200_000u32).map(|i| (i % 251) as u8).collect();
+
+        let sealed = store(&root_str, &video, "mp4", Some(("diary", &mk))).unwrap();
+        let header = mntl_core::extract_encrypted_header(&fs::read(root.join(&sealed)).unwrap()).unwrap();
+        assert_eq!(header.v, mntl_core::STREAM_VERSION, "videos are sealed in chunks");
+        let plain = store(&root_str, &video, "mp4", None).unwrap();
+        for rel in [&sealed, &plain] {
+            let (bytes, range, total) = load_range(&root_str, rel, Some("bytes=65530-140000"), &keys).unwrap();
+            assert_eq!((range, total), (Some((65530, 140001)), video.len() as u64));
+            assert_eq!(&bytes[..], &video[65530..140001]);
+            assert_eq!(&load_range(&root_str, rel, None, &keys).unwrap().0[..], &video[..]);
+        }
+        assert!(load_range(&root_str, &sealed, Some("bytes=0-1"), &SessionKeys::default()).unwrap_err().starts_with(LOCKED_ERR_PREFIX));
+        let image = store(&root_str, PNG, "png", Some(("diary", &mk))).unwrap();
+        assert_eq!(mntl_core::extract_encrypted_header(&fs::read(root.join(&image)).unwrap()).unwrap().v, mntl_core::ENVELOPE_VERSION);
     }
 
     #[test]

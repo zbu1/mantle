@@ -89,9 +89,9 @@ export function relinkImages(view: EditorView, sources: Readonly<Record<string, 
   if (tr.docChanged) view.dispatch(tr.setMeta('addToHistory', false));
 }
 
-/** Stores and inserts the image files among `files`, if any; false if there are none to handle. */
+/** Stores and inserts the image and video files among `files`, if any; false if there are none to handle. */
 function insertFiles(view: EditorView, files: FileList | undefined, pos?: number): boolean {
-  const images = [...(files ?? [])].filter((file) => file.type.startsWith('image/'));
+  const images = [...(files ?? [])].filter((file) => /^(image|video)\//.test(file.type));
   const context = imageContext(view);
   if (images.length === 0 || !context) return false;
   void (async () => {

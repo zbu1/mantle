@@ -27,7 +27,7 @@ const hardBreak = schema.nodes['hard_break'];
 const rule = schema.nodes['horizontal_rule'];
 
 /** Marks whose delimiters reveal. */
-const INLINE_MARKS = ['strong', 'em', 'strike', 'code', 'link'].map((name) => schema.marks[name]);
+const INLINE_MARKS = ['strong', 'em', 'strike', 'code', 'link', 'wikilink'].map((name) => schema.marks[name]);
 /** Characters the serializer backslash-escapes in plain text. */
 const ESCAPABLE = /[`*\\~[\]_]/;
 /** The delimiters in raw text, shown muted. */
@@ -485,24 +485,34 @@ function syntaxDecorations(doc: PMNode): DecorationSet {
   return DecorationSet.create(doc, decorations);
 }
 
-/** The link `href` at `pos`: a link mark's, or one written in revealed Markdown. */
-function linkAt(doc: PMNode, pos: number): string | null {
+/** The link at `pos`: a link mark's `href` or a wikilink's target, or one written in revealed Markdown. */
+function linkAt(doc: PMNode, pos: number): { href: string; wiki: boolean } | null {
   const $pos = doc.resolve(pos);
   for (const { node, offset } of [$pos.parent.childAfter($pos.parentOffset), $pos.parent.childBefore($pos.parentOffset)]) {
     if (!node) continue;
     const link = schema.marks['link'].isInSet(node.marks);
-    if (link) return link.attrs['href'];
+    if (link) return { href: link.attrs['href'], wiki: false };
+    const wikilink = schema.marks['wikilink'].isInSet(node.marks);
+    if (wikilink) return { href: wikilink.attrs['target'], wiki: true };
     if (!node.isText || !isRaw(node)) continue;
     const at = $pos.parentOffset - offset;
-    for (const match of node.text!.matchAll(/\[[^\]]*\]\(\s*<?([^)\s>]+)[^)]*\)/g)) {
-      if (match.index <= at && at <= match.index + match[0].length) return match[1];
+    for (const match of node.text!.matchAll(/\[\[([^\]|]+)[^\]]*\]\]|\[[^\]]*\]\(\s*<?([^)\s>]+)[^)]*\)/g)) {
+      if (match.index <= at && at <= match.index + match[0].length) {
+        return match[1] ? { href: match[1], wiki: true } : { href: match[2], wiki: false };
+      }
     }
   }
   return null;
 }
 
-/** `openFile` opens a Ctrl/Cmd-clicked link to a file in the vault (anything but a web link). */
-export function syntaxRevealPlugin(openFile?: (href: string) => void): Plugin<DecorationSet> {
+/**
+ * `openFile` opens a Ctrl/Cmd-clicked link to a file in the vault (anything
+ * but a web link), and `openNote` a `[[link]]` to a note, by its target.
+ */
+export function syntaxRevealPlugin(
+  openFile?: (href: string) => void,
+  openNote?: (target: string) => void,
+): Plugin<DecorationSet> {
   return new Plugin<DecorationSet>({
     key: syntaxRevealKey,
     state: {
@@ -542,7 +552,13 @@ export function syntaxRevealPlugin(openFile?: (href: string) => void): Plugin<De
         mousedown: (view, event) => {
           if (event.button !== 0 || !(event.ctrlKey || event.metaKey)) return false;
           const hit = view.posAtCoords({ left: event.clientX, top: event.clientY });
-          const href = hit && linkAt(view.state.doc, hit.pos);
+          const link = hit && linkAt(view.state.doc, hit.pos);
+          if (link?.wiki && openNote) {
+            event.preventDefault();
+            openNote(link.href);
+            return true;
+          }
+          const href = link && !link.wiki ? link.href : null;
           const web = href && /^(https?:|mailto:)/i.test(href);
           if (!href || (!web && (!openFile || /^[a-z][a-z0-9+.-]*:/i.test(href)))) return false;
           event.preventDefault();
