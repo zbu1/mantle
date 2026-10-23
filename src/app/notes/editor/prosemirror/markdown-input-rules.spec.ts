@@ -201,6 +201,32 @@ describe('markdown input rules', () => {
       expect(view.state.doc.lastChild!.type).toBe(schema.nodes['paragraph']);
     });
 
+    it('saves a typed "***" rule as typed', async () => {
+      const { view } = await setup();
+      type(view, '***');
+      expect(serializeMarkdown(view.state.doc)).toBe('***');
+    });
+
+    it('saves typed lists with the marker typed, without blank lines', async () => {
+      const { view } = await setup();
+      type(view, '* one');
+      pressEnter(view);
+      type(view, 'two');
+      expect(serializeMarkdown(view.state.doc)).toBe('* one\n* two');
+    });
+
+    it('turns four spaces or a Tab at the start of a paragraph into indented code', async () => {
+      const { view } = await setup();
+      type(view, '    x = 1');
+      expect(view.state.doc.firstChild!.type).toBe(schema.nodes['code_block']);
+      expect(serializeMarkdown(view.state.doc)).toBe('    x = 1');
+
+      clear(view);
+      view.someProp('handleKeyDown', (f) => f(view, new KeyboardEvent('keydown', { key: 'Tab' })));
+      type(view, 'y');
+      expect(serializeMarkdown(view.state.doc)).toBe('    y');
+    });
+
     it.each([
       ['[ ] ', false],
       ['[x] ', true],

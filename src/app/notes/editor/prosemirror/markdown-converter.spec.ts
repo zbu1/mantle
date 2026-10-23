@@ -1,4 +1,5 @@
 import { parseMarkdown, serializeMarkdown } from './markdown-converter';
+import { schema } from './schema';
 
 describe('markdown images', () => {
   const roundTrip = (markdown: string) => serializeMarkdown(parseMarkdown(markdown));
@@ -29,6 +30,63 @@ describe('markdown line breaks', () => {
 
   it('reads a backslash break as a newline', () => {
     expect(serializeMarkdown(parseMarkdown('a\\\nb'))).toBe('a\nb');
+  });
+
+  it('escapes what would start a block on the line after a break', () => {
+    for (const line of ['- bar', '# h', '---', '===', '1. x', '1) x', '> q']) {
+      const doc = schema.node('doc', null, [
+        schema.nodes['paragraph'].create(null, [schema.text('foo'), schema.nodes['hard_break'].create(), schema.text(line)]),
+      ]);
+      expect(parseMarkdown(serializeMarkdown(doc)).eq(doc)).toBe(true);
+    }
+  });
+});
+
+describe('markdown escaping', () => {
+  const roundTrip = (markdown: string) => serializeMarkdown(parseMarkdown(markdown));
+
+  it('leaves syntax it does not read as written', () => {
+    for (const src of ['> [!note] Title\n> body', 'a[^1]\n\n[^1]: note', '- [-] cancelled', '1. [ ] task', '2 * 3 * 4', 'x ~y~ z', '_a_b']) {
+      expect(roundTrip(src)).toBe(src);
+    }
+  });
+
+  it('still escapes text that would otherwise read as Markdown', () => {
+    const doc = schema.node('doc', null, [schema.nodes['paragraph'].create(null, schema.text('*not em* and [[x]]'))]);
+    expect(serializeMarkdown(doc)).toBe('\\*not em\\* and \\[\\[x\\]\\]');
+  });
+});
+
+describe('markdown block styles', () => {
+  const roundTrip = (markdown: string) => serializeMarkdown(parseMarkdown(markdown));
+
+  it('keeps setext headings and closing #s', () => {
+    for (const src of ['Title\n=====', 'Sub\n---', '## Closed ##', '> Quoted\n> ===']) {
+      expect(roundTrip(src)).toBe(src);
+    }
+  });
+
+  it('keeps tilde fences and indented code', () => {
+    for (const src of ['~~~\ncode\n~~~', '~~~~py\nx\n~~~~', '    indented\n    code', '```\n```']) {
+      expect(roundTrip(src)).toBe(src);
+    }
+  });
+});
+
+describe('markdown lists', () => {
+  const roundTrip = (markdown: string) => serializeMarkdown(parseMarkdown(markdown));
+
+  it('saves lists as written: marker, numbering and spacing', () => {
+    for (const src of ['- a\n- b\n  - nested\n- c', '* a\n* b', '+ a', '1. a\n2. b', '0. a', '3) a\n4) b', '- a\n\n- loose']) {
+      expect(roundTrip(src)).toBe(src);
+    }
+    expect(roundTrip(Array.from({ length: 10 }, (_, i) => `${i + 1}. x`).join('\n'))).toContain('\n9. x\n10. x');
+  });
+
+  it('keeps plain items plain in a list with checkboxes', () => {
+    const src = '- [ ] task\n- plain\n- [x] done';
+    expect(parseMarkdown(src).content.content.map((node) => node.type.name)).toEqual(['task_list', 'bullet_list', 'task_list']);
+    expect(roundTrip(src)).toBe(src);
   });
 });
 

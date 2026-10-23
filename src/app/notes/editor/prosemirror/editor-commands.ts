@@ -1,6 +1,6 @@
 import { Command } from 'prosemirror-state';
 import { EditorView } from 'prosemirror-view';
-import { setBlockType, toggleMark, wrapIn } from 'prosemirror-commands';
+import { lift, setBlockType, toggleMark, wrapIn } from 'prosemirror-commands';
 import { wrapInList, liftListItem } from 'prosemirror-schema-list';
 import { schema } from './schema';
 
@@ -47,10 +47,8 @@ export function toggleTaskList(view: EditorView): boolean {
 
 export function toggleBlockquote(view: EditorView): boolean {
   const { $from } = view.state.selection;
-  if ($from.parent.type === schema.nodes['blockquote'] || $from.depth > 1 && $from.node($from.depth - 1).type === schema.nodes['blockquote']) {
-    return executeCommand(view, setBlockType(schema.nodes['paragraph']));
-  }
-  return executeCommand(view, wrapIn(schema.nodes['blockquote']));
+  const quoted = $from.depth > 1 && $from.node(-1).type === schema.nodes['blockquote'];
+  return executeCommand(view, quoted ? lift : wrapIn(schema.nodes['blockquote']));
 }
 
 export function toggleCodeBlock(view: EditorView): boolean {

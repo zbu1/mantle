@@ -60,6 +60,7 @@ import {
   codeBlockToParagraph,
   codeFenceOnEnter,
   indentCodeLines,
+  indentedCodeOnTab,
   setCodeBlockLanguage,
 } from './prosemirror/plugins/code-block-plugin';
 import { SlashMenu } from './slash-menu/slash-menu';
@@ -99,7 +100,8 @@ function buildEditorKeymap() {
     Tab: chainCommands(
       indentCodeLines(false),
       sinkListItem(schema.nodes['list_item']),
-      sinkListItem(schema.nodes['task_item'])
+      sinkListItem(schema.nodes['task_item']),
+      indentedCodeOnTab
     ),
     'Shift-Tab': chainCommands(
       indentCodeLines(true),

@@ -36,7 +36,8 @@ const baseNodes = OrderedMap.from<NodeSpec>({
     },
   },
   heading: {
-    attrs: { level: { default: 1 } },
+    // As the file wrote it: `underline` is a setext heading's `===` / `---`, `closing` an ATX heading's trailing ` ##`.
+    attrs: { level: { default: 1 }, underline: { default: null }, closing: { default: '' } },
     content: 'inline*',
     group: 'block',
     defining: true,
@@ -47,7 +48,8 @@ const baseNodes = OrderedMap.from<NodeSpec>({
   },
   code_block: {
     // `revealed`: the cursor is in it, so its fence lines are part of its text (see syntax-reveal-plugin).
-    attrs: { params: { default: '' }, revealed: { default: false } },
+    // `fence`: the ``` or ~~~ the file used, or '' for indented code.
+    attrs: { params: { default: '' }, revealed: { default: false }, fence: { default: '```' } },
     content: 'text*',
     marks: '',
     group: 'block',
@@ -131,7 +133,16 @@ const baseNodes = OrderedMap.from<NodeSpec>({
   },
 });
 
-const nodesWithLists = addListNodes(baseNodes, 'paragraph block*', 'block');
+// `tight` (no blank lines between items) and the marker the file used, so lists save as written.
+const listAttrs = { tight: { default: true }, bullet: { default: '-' } };
+const withListNodes = addListNodes(baseNodes, 'paragraph block*', 'block');
+const nodesWithLists = withListNodes
+  .update('bullet_list', { ...withListNodes.get('bullet_list')!, attrs: listAttrs })
+  .update('ordered_list', {
+    ...withListNodes.get('ordered_list')!,
+    attrs: { order: { default: 1 }, tight: { default: true }, delimiter: { default: '.' } },
+  })
+  .update('task_list', { ...withListNodes.get('task_list')!, attrs: listAttrs });
 
 export const marks: Record<string, MarkSpec> = {
   // `markup` is the delimiter the file used (`*` or `_`), so it saves as written.

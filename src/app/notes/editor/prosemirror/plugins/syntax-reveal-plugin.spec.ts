@@ -64,13 +64,13 @@ describe('revealing Markdown syntax', () => {
     state = type(state, '*'); // **it*
     state = cursorAt(state, 'a ', 0);
     expect(text(state)).toBe('a *it b');
-    expect(serializeMarkdown(state.doc)).toBe('a \\**it* b');
+    expect(serializeMarkdown(state.doc)).toBe('a **it* b');
 
     state = cursorAt(stateFor('a *it* b'), 'it');
     state = cursorAt(state, 'it*', 2);
     state = type(state, '*'); // *it**
     state = cursorAt(state, 'a ', 0);
-    expect(serializeMarkdown(state.doc)).toBe('a *it*\\* b');
+    expect(serializeMarkdown(state.doc)).toBe('a *it** b');
   });
 
   it('reveals a link in full', () => {
@@ -81,11 +81,17 @@ describe('revealing Markdown syntax', () => {
   });
 
   it('shows the backslash of an escaped character beside the cursor', () => {
-    let state = cursorAt(stateFor('a \\* b'), '*');
-    expect(text(state)).toBe('a \\* b');
-    expect(serializeMarkdown(state.doc)).toBe('a \\* b');
-    state = cursorAt(state, 'b');
+    let state = cursorAt(stateFor('a \\*b\\* c'), '*');
+    expect(text(state)).toBe('a \\*b* c');
+    state = cursorAt(state, 'c');
+    expect(text(state)).toBe('a *b* c');
+    expect(serializeMarkdown(state.doc)).toBe('a \\*b\\* c');
+  });
+
+  it('shows nothing for a character that needs no escape', () => {
+    const state = cursorAt(stateFor('a * b'), '*');
     expect(text(state)).toBe('a * b');
+    expect(serializeMarkdown(state.doc)).toBe('a * b');
   });
 
   it('reveals a heading’s level as an editable prefix', () => {
@@ -153,6 +159,16 @@ describe('revealing Markdown syntax', () => {
     state = cursorAt(state, 'after');
     expect(state.doc.firstChild!.textContent).toBe('let a;');
     expect(serializeMarkdown(state.doc)).toBe('```py\nlet a;\n```\n\nafter');
+  });
+
+  it('reveals a tilde fence as written, and shows no fences for indented code', () => {
+    let state = cursorAt(stateFor('~~~\nlet a;\n~~~\n\nafter'), 'let');
+    expect(state.doc.firstChild!.textContent).toBe('~~~\nlet a;\n~~~');
+    state = cursorAt(state, 'after');
+    expect(serializeMarkdown(state.doc)).toBe('~~~\nlet a;\n~~~\n\nafter');
+
+    state = cursorAt(stateFor('    let a;\n\nafter'), 'let');
+    expect(state.doc.firstChild!.textContent).toBe('let a;');
   });
 
   it('shows an image’s source just before it, and drops the source with the image', () => {

@@ -3,7 +3,7 @@ import { Command, EditorState, NodeSelection, Plugin, PluginKey, TextSelection, 
 import { Mapping, findWrapping, liftTarget } from 'prosemirror-transform';
 import { Decoration, DecorationSet } from 'prosemirror-view';
 import { openUrl } from '@tauri-apps/plugin-opener';
-import { codeBody, parseMarkdown, serializeMarkdown } from '../markdown-converter';
+import { codeBody, codeFence, parseMarkdown, serializeMarkdown } from '../markdown-converter';
 import { schema } from '../schema';
 
 /*
@@ -293,10 +293,10 @@ function unfoldCode(tr: Transaction, pos: number): void {
     if (offset && params !== node.attrs['params']) tr.setNodeMarkup(pos, null, { ...node.attrs, params });
     return;
   }
+  // Indented code has no fences to show.
+  if (!node.attrs['fence'] && !node.attrs['params']) return;
   const text = node.textContent;
-  // Like the serializer: longer than any backtick run inside.
-  const runs = text.match(/`{3,}/g);
-  const fence = runs ? runs.sort().at(-1) + '`' : '```';
+  const fence = codeFence(node.attrs['fence'], text);
   const open = fence + node.attrs['params'] + '\n';
   const start = pos + 1;
   const { anchor, head } = tr.selection;
@@ -350,13 +350,13 @@ function refoldTextblock(tr: Transaction, pos: number): void {
 
 function refoldCode(tr: Transaction, pos: number): void {
   const node = tr.doc.nodeAt(pos)!;
-  const { text, params, offset } = codeBody(node);
+  const { text, params, fence, offset } = codeBody(node);
   const start = pos + 1;
   if (offset) {
     tr.delete(start + offset + text.length, start + node.content.size);
     tr.delete(start, start + offset);
   }
-  tr.setNodeMarkup(pos, null, { params, revealed: false });
+  tr.setNodeMarkup(pos, null, { ...node.attrs, params, fence, revealed: false });
 }
 
 /** Whether the textblock at `pos` holds revealed syntax the selection (`from`–`to`) has left. */

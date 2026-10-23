@@ -91,7 +91,7 @@ export function setCodeBlockLanguage(view: EditorView, pos: number, params: stri
   const tr = view.state.tr.setNodeMarkup(pos, null, { ...node.attrs, params });
   // While its fences show, the opening one is where the language lives.
   const { offset } = codeBody(node);
-  if (offset) tr.insertText(/^`+/.exec(node.textContent)![0] + params, pos + 1, pos + offset);
+  if (offset) tr.insertText(/^(`+|~+)/.exec(node.textContent)![0] + params, pos + 1, pos + offset);
   view.dispatch(tr);
 }
 
@@ -150,6 +150,13 @@ export function indentCodeLines(outdent: boolean): Command {
     return true;
   };
 }
+
+/** Tab at the start of a paragraph makes it indented code, as a tab there would read on reload. */
+export const indentedCodeOnTab: Command = (state, dispatch) => {
+  const { $cursor } = state.selection as TextSelection;
+  if (!$cursor || $cursor.parentOffset !== 0 || $cursor.parent.type !== schema.nodes['paragraph']) return false;
+  return setBlockType(schema.nodes['code_block'], { fence: '' })(state, dispatch);
+};
 
 /**
  * Enter at the end of a paragraph that reads ```` ```lang ```` turns it into a

@@ -4,50 +4,17 @@ import {
   textblockTypeInputRule,
   wrappingInputRule,
 } from 'prosemirror-inputrules';
-import { Attrs, Fragment, MarkType, Node as PMNode } from 'prosemirror-model';
+import { Fragment, Node as PMNode } from 'prosemirror-model';
 import { Plugin } from 'prosemirror-state';
 import { schema } from '../schema';
 
-/**
- * Applies a mark to the text captured by the last group of `regexp`, stripping
- * the surrounding markdown delimiters.
- *
- * `{ inCodeMark: false }` is required: prosemirror-inputrules defaults
- * `inCodeMark` to true, so without it these rules would fire inside inline code
- * spans. (Code *blocks* are already excluded by the `inCode: false` default.)
+const { paragraph, code_block: codeBlock } = schema.nodes;
+
+/*
+ * Block rules only. Inline syntax (`**bold**`, `[text](url)`, …) needs no
+ * rules: its delimiters are typed as raw Markdown, which parses once the
+ * cursor leaves (see syntax-reveal-plugin).
  */
-function markInputRule(
-  regexp: RegExp,
-  markType: MarkType,
-  getAttrs?: (match: RegExpMatchArray) => Attrs | null
-): InputRule {
-  return new InputRule(
-    regexp,
-    (state, match, start, end) => {
-      const captureGroup = match[match.length - 1];
-      const fullMatch = match[0];
-      if (!captureGroup) return null;
-
-      // The `(?:^|\s)` prefix may have consumed a leading space; keep it.
-      const startSpaces = fullMatch.search(/\S/);
-      const textStart = start + fullMatch.indexOf(captureGroup);
-      const textEnd = textStart + captureGroup.length;
-      const markStart = start + startSpaces;
-
-      const tr = state.tr;
-      if (textEnd < end) tr.delete(textEnd, end);
-      if (textStart > markStart) tr.delete(markStart, textStart);
-      tr.addMark(
-        markStart,
-        markStart + captureGroup.length,
-        markType.create(getAttrs?.(match) ?? undefined)
-      );
-      tr.removeStoredMark(markType);
-      return tr;
-    },
-    { inCodeMark: false }
-  );
-}
 
 const headingRule = textblockTypeInputRule(/^(#{1,6})\s$/, schema.nodes['heading'], (match) => ({
   level: match[1].length,
@@ -66,25 +33,35 @@ const codeFenceRule = textblockTypeInputRule(/^```([^\s`]*)\s$/, schema.nodes['c
  */
 const horizontalRuleRule = new InputRule(
   /^(?:---|\*\*\*|___)$/,
-  (state, _match, start, end) => {
-    const tr = state.tr.insert(start - 1, schema.nodes['horizontal_rule'].create());
+  (state, match, start, end) => {
+    const tr = state.tr.insert(start - 1, schema.nodes['horizontal_rule'].create({ markup: match[0] }));
     tr.delete(tr.mapping.map(start), tr.mapping.map(end));
     return tr;
   }
 );
 
+/** Four spaces at the start of a paragraph make indented code, as they would on reload. Tab is `indentedCodeOnTab`. */
+const indentedCodeRule = new InputRule(/^ {4}$/, (state, _match, start, end) => {
+  const $start = state.doc.resolve(start);
+  const index = $start.index(-1);
+  if ($start.parent.type !== paragraph || !$start.node(-1).canReplaceWith(index, index + 1, codeBlock)) return null;
+  return state.tr.delete(start, end).setBlockType(start, start, codeBlock, { fence: '' });
+});
+
 const blockquoteRule = wrappingInputRule(/^\s*>\s$/, schema.nodes['blockquote']);
 
 const orderedListRule = wrappingInputRule(
-  /^(\d+)[.)]\s$/,
+  /^(\d+)([.)])\s$/,
   schema.nodes['ordered_list'],
-  (match) => ({ order: +match[1] }),
+  (match) => ({ order: +match[1], delimiter: match[2] }),
   // `node` is the preceding sibling list: typing "2. " after a "1. " item
   // continues that list instead of starting a new one.
-  (match, node) => node.childCount + node.attrs['order'] === +match[1]
+  (match, node) => node.childCount + node.attrs['order'] === +match[1] && node.attrs['delimiter'] === match[2]
 );
 
-const bulletListRule = wrappingInputRule(/^\s*([-+*])\s$/, schema.nodes['bullet_list']);
+const bulletListRule = wrappingInputRule(/^\s*([-+*])\s$/, schema.nodes['bullet_list'], (match) => ({
+  bullet: match[1],
+}));
 
 /**
  * Only promotes a list item that already has its `- ` marker (bare `[ ]` with
@@ -118,7 +95,7 @@ const taskItemRule = new InputRule(/^\[([ xX]?)\]\s$/, (state, match, start, end
   const after = items.slice(itemIndex + 1);
 
   const taskList = schema.nodes['task_list'].create(
-    null,
+    bulletList.attrs,
     schema.nodes['task_item'].create({ checked }, listItem.content)
   );
   const pieces = [
@@ -130,52 +107,6 @@ const taskItemRule = new InputRule(/^\[([ xX]?)\]\s$/, (state, match, start, end
   tr.replaceWith($start.before(-2), $start.after(-2), Fragment.from(pieces));
   return tr;
 });
-
-/**
- * Two capture groups (label and href) don't fit markInputRule's single-group
- * shape. Known limitation: a literal `)` inside the URL truncates the match.
- */
-const linkRule = new InputRule(
-  /(?:^|\s)\[([^\]]+)\]\(([^)]+)\)$/,
-  (state, match, start, end) => {
-    const [fullMatch, text, href] = match;
-    const linkType = schema.marks['link'];
-    const textStart = start + fullMatch.indexOf('[');
-
-    const tr = state.tr.delete(textStart, end).insertText(text, textStart);
-    tr.addMark(textStart, textStart + text.length, linkType.create({ href }));
-    tr.removeStoredMark(linkType);
-    return tr;
-  },
-  { inCodeMark: false }
-);
-
-// The `(?:^|\s)` prefix requires the opening delimiter to follow start-of-block
-// or whitespace, which is what keeps `my_variable_name` from italicizing.
-// Trade-off: emphasis directly after punctuation, as in `(_word_)`, won't fire.
-const boldStarRule = markInputRule(
-  /(?:^|\s)(\*\*(?!\s+\*\*)((?:[^*]+))\*\*(?!\s+\*\*))$/,
-  schema.marks['strong']
-);
-const boldUnderscoreRule = markInputRule(
-  /(?:^|\s)(__(?!\s+__)((?:[^_]+))__(?!\s+__))$/,
-  schema.marks['strong'],
-  () => ({ markup: '__' })
-);
-const strikeRule = markInputRule(
-  /(?:^|\s)(~~(?!\s+~~)([^~]+)~~(?!\s+~~))$/,
-  schema.marks['strike']
-);
-const codeRule = markInputRule(/(?:^|\s)(`([^`]+)`)$/, schema.marks['code']);
-const italicStarRule = markInputRule(
-  /(?:^|\s)(\*(?!\s+\*)((?:[^*]+))\*(?!\s+\*))$/,
-  schema.marks['em']
-);
-const italicUnderscoreRule = markInputRule(
-  /(?:^|\s)(_(?!\s+_)((?:[^_]+))_(?!\s+_))$/,
-  schema.marks['em'],
-  () => ({ markup: '_' })
-);
 
 // Not inside a revealed `# ` / `> ` prefix (`md_prefix` is a code mark): a space typed
 // after its `#` would otherwise make it a heading again, eating the `#` and leaving a
@@ -189,18 +120,12 @@ export function buildMarkdownInputRules(): Plugin {
     rules: [
       headingRule,
       codeFenceRule,
+      indentedCodeRule,
       horizontalRuleRule,
       blockquoteRule,
       orderedListRule,
       bulletListRule,
       taskItemRule,
-      boldStarRule,
-      boldUnderscoreRule,
-      strikeRule,
-      codeRule,
-      italicStarRule,
-      italicUnderscoreRule,
-      linkRule,
     ],
   });
 }
