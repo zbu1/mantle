@@ -4,9 +4,8 @@ import {
   textblockTypeInputRule,
   wrappingInputRule,
 } from 'prosemirror-inputrules';
-import { Attrs, MarkType } from 'prosemirror-model';
+import { Attrs, Fragment, MarkType, Node as PMNode } from 'prosemirror-model';
 import { Plugin } from 'prosemirror-state';
-import { findWrapping } from 'prosemirror-transform';
 import { schema } from '../schema';
 
 /**
@@ -88,26 +87,47 @@ const orderedListRule = wrappingInputRule(
 const bulletListRule = wrappingInputRule(/^\s*([-+*])\s$/, schema.nodes['bullet_list']);
 
 /**
- * `findWrapping`'s attrs argument only reaches the node type passed to it
- * (`task_list`); the `task_item` wrapper it derives always comes back with null
- * attrs. Since `tr.wrap` builds each wrapper from the array it is given, the
- * `checked` attr is injected by rewriting that array first.
+ * Only promotes a list item that already has its `- ` marker (bare `[ ]` with
+ * no marker stays plain text, per the roadmap). `task_list` is a distinct node
+ * type from `bullet_list` (not something a `list_item` can nest), so turning
+ * one item into a checkbox means splitting the surrounding `bullet_list` into
+ * up to three pieces around it, the same shape the Markdown parser produces
+ * for a list with both plain and checkbox items.
  */
-const taskItemRule = new InputRule(/^\s*\[([ xX]?)\]\s$/, (state, match, start, end) => {
+const taskItemRule = new InputRule(/^\[([ xX]?)\]\s$/, (state, match, start, end) => {
   const checked = /^[xX]$/.test(match[1] ?? '');
+  const $before = state.doc.resolve(start);
+  if (
+    $before.parent.type !== schema.nodes['paragraph'] ||
+    $before.node(-1)?.type !== schema.nodes['list_item'] ||
+    $before.node(-2)?.type !== schema.nodes['bullet_list'] ||
+    $before.index(-1) !== 0
+  ) {
+    return null;
+  }
+
   const tr = state.tr.delete(start, end);
-  const range = tr.doc.resolve(start).blockRange();
-  if (!range) return null;
+  const $start = tr.doc.resolve(tr.mapping.map(start));
+  const bulletList = $start.node(-2);
+  const listItem = $start.node(-1);
+  const itemIndex = $start.index(-2);
 
-  const wrapping = findWrapping(range, schema.nodes['task_list']);
-  if (!wrapping) return null;
+  const items: PMNode[] = [];
+  bulletList.forEach((child) => items.push(child));
+  const before = items.slice(0, itemIndex);
+  const after = items.slice(itemIndex + 1);
 
-  tr.wrap(
-    range,
-    wrapping.map((w) =>
-      w.type === schema.nodes['task_item'] ? { type: w.type, attrs: { checked } } : w
-    )
+  const taskList = schema.nodes['task_list'].create(
+    null,
+    schema.nodes['task_item'].create({ checked }, listItem.content)
   );
+  const pieces = [
+    ...(before.length ? [bulletList.copy(Fragment.from(before))] : []),
+    taskList,
+    ...(after.length ? [bulletList.copy(Fragment.from(after))] : []),
+  ];
+
+  tr.replaceWith($start.before(-2), $start.after(-2), Fragment.from(pieces));
   return tr;
 });
 
@@ -156,6 +176,13 @@ const italicUnderscoreRule = markInputRule(
   schema.marks['em'],
   () => ({ markup: '_' })
 );
+
+// Not inside a revealed `# ` / `> ` prefix (`md_prefix` is a code mark): a space typed
+// after its `#` would otherwise make it a heading again, eating the `#` and leaving a
+// prefix that no longer reads as one. Only these two: the other block rules start with
+// characters typed as `md_raw` (`*`, `[`, `` ` ``), also a code mark, so they'd never fire.
+headingRule.inCodeMark = false;
+blockquoteRule.inCodeMark = false;
 
 export function buildMarkdownInputRules(): Plugin {
   return inputRules({

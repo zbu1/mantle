@@ -168,6 +168,15 @@ describe('revealing Markdown syntax', () => {
     expect(text(state)).toBe('x  y');
   });
 
+  it('shows an image’s source once, when the image is selected again', () => {
+    let state = stateFor('x ![alt](a.png) y');
+    const select = () => (state = state.apply(state.tr.setSelection(NodeSelection.create(state.doc, find(state.doc, '￼')))));
+    select();
+    state = cursorAt(state, 'a.png');
+    select();
+    expect(text(state)).toBe('x ![alt](a.png)￼ y');
+  });
+
   it('takes an edited image source on leaving', () => {
     let state = stateFor('x ![alt](a.png) y');
     state = state.apply(state.tr.setSelection(NodeSelection.create(state.doc, find(state.doc, '￼'))));

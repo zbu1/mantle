@@ -843,6 +843,7 @@ pub(crate) fn write_note_inner(
                 }
             }
         }
+        crate::watcher::suppress(&path);
         fs::write(&path, updated).map_err(|e| format!("Failed to write note: {e}"))?;
         return Ok(relinked);
     }
@@ -857,6 +858,7 @@ pub(crate) fn write_note_inner(
     };
     let frontmatter = mntl_core::NoteFrontmatter { tags, properties, ..Default::default() };
     let encoded = mntl_core::encode_note(&frontmatter, content).map_err(|e| e.to_string())?;
+    crate::watcher::suppress(&path);
     fs::write(&path, encoded).map_err(|e| format!("Failed to write note: {e}"))?;
     Ok(relinked)
 }

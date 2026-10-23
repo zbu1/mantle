@@ -1,0 +1,5 @@
+# tauri-build drops a stub msvcrt.lib in its OUT_DIR (static VC runtime), and
+# workspace doctests search every package's native dirs, so they'd link the
+# stub and lose the CRT. Linking doctests against the static CRT avoids it.
+[target.x86_64-pc-windows-msvc]
+rustdocflags = ["-C", "target-feature=+crt-static"]

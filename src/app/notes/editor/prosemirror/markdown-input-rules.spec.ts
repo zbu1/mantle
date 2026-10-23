@@ -101,6 +101,17 @@ describe('markdown input rules', () => {
       expect(block.textContent).toBe('####### ');
     });
 
+    it('keeps the heading when a space is typed inside its revealed "# "', async () => {
+      const { view } = await setup();
+      type(view, '# ');
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 2)));
+      type(view, ' ');
+
+      const block = view.state.doc.firstChild!;
+      expect(block.type).toBe(schema.nodes['heading']);
+      expect(block.textContent).toBe('#  ');
+    });
+
     it('keeps heading styling for text typed after the conversion', async () => {
       const { view } = await setup();
       type(view, '# Title');
@@ -193,9 +204,9 @@ describe('markdown input rules', () => {
     it.each([
       ['[ ] ', false],
       ['[x] ', true],
-    ])('converts "%s" into a task item with checked=%s', async (input, checked) => {
+    ])('converts "- %s" into a task item with checked=%s', async (input, checked) => {
       const { view } = await setup();
-      type(view, input);
+      type(view, `- ${input}`);
 
       const list = view.state.doc.firstChild!;
       expect(list.type).toBe(schema.nodes['task_list']);
@@ -203,6 +214,42 @@ describe('markdown input rules', () => {
       const item = list.firstChild!;
       expect(item.type).toBe(schema.nodes['task_item']);
       expect(item.attrs['checked']).toBe(checked);
+    });
+
+    it('does not create a checkbox from "[ ] " without a list marker', async () => {
+      const { view } = await setup();
+      type(view, '[ ] ');
+
+      const block = view.state.doc.firstChild!;
+      expect(block.type).toBe(schema.nodes['paragraph']);
+      expect(block.textContent).toBe('[ ] ');
+    });
+
+    it('splits the surrounding list around a checkbox turned on in the middle', async () => {
+      const { view } = await setup();
+      type(view, '- one');
+      pressEnter(view);
+      type(view, 'two');
+      pressEnter(view);
+      type(view, 'three');
+
+      // Back to the start of "two" to turn just that item into a checkbox.
+      let found = -1;
+      view.state.doc.descendants((node, pos) => {
+        if (found < 0 && node.isText && node.text === 'two') found = pos;
+        return found < 0;
+      });
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, found)));
+      type(view, '[ ] ');
+
+      expect(view.state.doc.childCount).toBe(3);
+      const [first, second, third] = [view.state.doc.child(0), view.state.doc.child(1), view.state.doc.child(2)];
+      expect(first.type).toBe(schema.nodes['bullet_list']);
+      expect(first.textContent).toBe('one');
+      expect(second.type).toBe(schema.nodes['task_list']);
+      expect(second.firstChild!.textContent).toBe('two');
+      expect(third.type).toBe(schema.nodes['bullet_list']);
+      expect(third.textContent).toBe('three');
     });
   });
 
@@ -408,7 +455,7 @@ describe('markdown input rules', () => {
   describe('task item checkbox', () => {
     it('toggles the checked attribute when the checkbox is clicked', async () => {
       const { fixture, view } = await setup();
-      type(view, '[ ] task');
+      type(view, '- [ ] task');
 
       const checkbox: HTMLInputElement =
         fixture.nativeElement.querySelector('li[data-type="taskItem"] input[type="checkbox"]');
@@ -426,7 +473,7 @@ describe('markdown input rules', () => {
 
     it('persists the toggle to NotesState as markdown', async () => {
       const { fixture, view } = await setup();
-      type(view, '[ ] task');
+      type(view, '- [ ] task');
 
       const notesState = TestBed.inject(NotesState);
       fixture.nativeElement.querySelector('input[type="checkbox"]').click();

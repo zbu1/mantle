@@ -1,10 +1,12 @@
 //! Watches a vault directory for external filesystem changes (edits made
 //! outside the app, e.g. via the OS file explorer) and notifies the
-//! frontend so it can re-scan and reconcile open tabs.
+//! frontend so it can re-scan and reconcile open tabs, and reload open notes
+//! whose content changed.
 
 use crate::logging::logged;
 use notify::event::ModifyKind;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::sync::{Mutex, OnceLock};
@@ -86,9 +88,8 @@ fn is_hidden(path: &Path) -> bool {
         .any(|c| c.as_os_str().to_string_lossy().starts_with('.'))
 }
 
-/// Only tree-structural changes matter here; plain content writes
-/// (`Modify(Data)`) are ignored so the app's own autosave doesn't trigger a
-/// refresh loop.
+/// Only tree-structural changes need a rescan; a plain content write
+/// (`Modify(Data)`, or `Modify(Any)` on Windows) only reloads that note.
 fn is_structural(kind: &EventKind) -> bool {
     matches!(
         kind,
@@ -106,12 +107,15 @@ pub fn start_vault_watch(app: AppHandle, state: State<WatcherState>, vault_root:
             ));
         }
 
-        let (tx, rx) = mpsc::channel::<()>();
+        // Whether the event was structural, and the paths it names.
+        let (tx, rx) = mpsc::channel::<(bool, Vec<PathBuf>)>();
 
         let mut watcher: RecommendedWatcher =
             notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
                 let Ok(event) = res else { return };
-                if !is_structural(&event.kind) {
+                // Reads (and the atime updates they cause) aren't changes;
+                // reporting them would make every `read_note` trigger another.
+                if matches!(event.kind, EventKind::Access(_) | EventKind::Modify(ModifyKind::Metadata(_))) {
                     return;
                 }
                 if !event.paths.is_empty() && event.paths.iter().all(|p| is_hidden(p)) {
@@ -123,7 +127,7 @@ pub fn start_vault_watch(app: AppHandle, state: State<WatcherState>, vault_root:
                 if !event.paths.is_empty() && event.paths.iter().all(|p| is_suppressed(p)) {
                     return;
                 }
-                let _ = tx.send(());
+                let _ = tx.send((is_structural(&event.kind), event.paths));
             })
             .map_err(|e| format!("Failed to start watcher: {e}"))?;
 
@@ -136,16 +140,35 @@ pub fn start_vault_watch(app: AppHandle, state: State<WatcherState>, vault_root:
         *state.0.lock().map_err(|e| e.to_string())? = Some(watcher);
 
         std::thread::spawn(move || {
-            while rx.recv().is_ok() {
+            while let Ok(first) = rx.recv() {
                 // Coalesce a burst of events (e.g. a move touching many files)
                 // into a single refresh.
-                while rx.recv_timeout(DEBOUNCE).is_ok() {}
-                let _ = app.emit("vault-changed", ());
+                let mut structural = false;
+                let mut changed = BTreeSet::new();
+                let mut next = Some(first);
+                while let Some((is_structural, paths)) = next {
+                    structural |= is_structural;
+                    changed.extend(paths.iter().filter_map(|p| rel_path(&root, p)));
+                    next = rx.recv_timeout(DEBOUNCE).ok();
+                }
+                if structural {
+                    let _ = app.emit("vault-changed", ());
+                }
+                if !changed.is_empty() {
+                    let _ = app.emit("notes-changed", changed);
+                }
             }
         });
 
         Ok(())
     })
+}
+
+/// `path` relative to `root` with `/` separators, the way the frontend names notes.
+fn rel_path(root: &Path, path: &Path) -> Option<String> {
+    let rel = path.strip_prefix(root).ok()?;
+    let parts: Vec<_> = rel.components().map(|c| c.as_os_str().to_string_lossy()).collect();
+    Some(parts.join("/"))
 }
 
 #[tauri::command]
@@ -187,6 +210,13 @@ mod tests {
                 normalize(Path::new("/vault/note.mntl.enc"))
             );
         }
+    }
+
+    #[test]
+    fn rel_path_uses_forward_slashes() {
+        let root = Path::new("vault");
+        assert_eq!(rel_path(root, &root.join("Work").join("todo.md")).as_deref(), Some("Work/todo.md"));
+        assert_eq!(rel_path(root, Path::new("elsewhere/todo.md")), None);
     }
 
     #[test]

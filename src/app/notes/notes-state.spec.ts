@@ -45,6 +45,22 @@ describe('NotesState', () => {
     expect(state.getNote('daily-standup.mntl')?.content).toBe(FIXTURE_NOTES[0].content);
   });
 
+  it('takes a change made on disk by another app, unless it has unsaved edits', async () => {
+    const state = TestBed.inject(NotesState);
+    state.ensureLoaded('daily-standup.mntl');
+    state.ensureLoaded('todo.mntl');
+    await flushMicrotasks();
+    await invoke('write_note', { relPath: 'daily-standup.mntl', content: 'edited elsewhere' });
+    await invoke('write_note', { relPath: 'todo.mntl', content: 'edited elsewhere' });
+    state.updateContent('todo.mntl', 'typed here');
+
+    await state['refreshFromDisk']('daily-standup.mntl');
+    await state['refreshFromDisk']('todo.mntl');
+
+    expect(state.getNote('daily-standup.mntl')?.content).toBe('edited elsewhere');
+    expect(state.getNote('todo.mntl')?.content).toBe('typed here');
+  });
+
   it('returns an error entry for an id the vault cannot read', async () => {
     const state = TestBed.inject(NotesState);
     state.ensureLoaded('does-not-exist');

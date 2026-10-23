@@ -240,7 +240,11 @@ function inlineSpan(block: PMNode, from: number, to: number): { from: number; to
   }
 
   const inside = children.filter((child) => child.from < hi && child.to > lo);
-  const alreadyRaw = inside.every((child, i) => isRaw(child.node) || (child.node.type === image && isImageSource(inside[i - 1]?.node)));
+  // An image counts as revealed when its source sits just before it, inside the span or not.
+  const alreadyRaw = children.every(
+    (child, i) =>
+      !(child.from < hi && child.to > lo) || isRaw(child.node) || (child.node.type === image && isImageSource(children[i - 1]?.node)),
+  );
   if (alreadyRaw) return null;
   const imageOnly = inside.length === 1 && inside[0].node.type === image;
   return { from: lo, to: hi, image: imageOnly };
@@ -536,7 +540,15 @@ export function syntaxRevealPlugin(
       return tr.docChanged ? tr.setMeta('addToHistory', false).setMeta(syntaxRevealKey, true) : null;
     },
     props: {
-      decorations: (state) => syntaxRevealKey.getState(state),
+      decorations: (state) => {
+        const set = syntaxRevealKey.getState(state)!;
+        // A line of bare `#`s under the cursor already reads as the heading it's about to become.
+        const { $from, empty } = state.selection;
+        const block = $from.parent;
+        const hashes = empty && block.type === paragraph && /^#{1,6}$/.exec(block.textBetween(prefixEnd(block), block.content.size));
+        if (!hashes) return set;
+        return set.add(state.doc, [Decoration.node($from.before(), $from.after(), { class: `md-h${hashes[0].length}` })]);
+      },
       // A typed `*`, `_`, `` ` ``… is Markdown being written, not a literal to escape:
       // it goes in as raw text, and parses with the rest of the line once the cursor leaves.
       handleTextInput: (view, from, to, text) => {

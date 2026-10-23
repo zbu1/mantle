@@ -1,5 +1,6 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { logError } from '../core/logger';
 import { Note } from './note.model';
 import { NoteProperty, sameProperties } from './properties';
@@ -61,6 +62,13 @@ export class NotesState {
    * doesn't copy the attachment again.
    */
   readonly relinked = signal<Relinked | null>(null);
+
+  constructor() {
+    // Files the vault watcher saw change on disk, e.g. edited in another app.
+    void listen<string[]>('notes-changed', ({ payload }) => {
+      for (const id of payload) void this.refreshFromDisk(id);
+    });
+  }
 
   entry(id: string): NoteEntry | undefined {
     return this.entries()[id];
@@ -127,6 +135,29 @@ export class NotesState {
       return rest;
     });
     this.ensureLoaded(id);
+  }
+
+  /**
+   * Re-reads a loaded note changed outside the app and updates it in place, so
+   * open editors take the new text the way they take another pane's edits.
+   * ponytail: a note with unsaved edits keeps them and overwrites the external
+   * change on its next save; add a conflict prompt if that bites.
+   */
+  private async refreshFromDisk(id: string): Promise<void> {
+    const root = this.vaultState.rootPath();
+    if (!root || this.entries()[id]?.status !== 'loaded' || this.pendingWrites.has(id)) return;
+    let doc: NoteDocument;
+    try {
+      doc = await invoke<NoteDocument>('read_note', { vaultRoot: root, relPath: id });
+    } catch {
+      return; // gone or locked; the rescan deals with it
+    }
+    const entry = this.entries()[id];
+    if (entry?.status !== 'loaded' || this.pendingWrites.has(id)) return;
+    const { note } = entry;
+    const sameTags = note.tags.length === doc.tags.length && note.tags.every((tag, i) => tag === doc.tags[i]);
+    if (note.content === doc.content && sameTags && sameProperties(note.properties, doc.properties)) return;
+    this.entries.update((entries) => ({ ...entries, [id]: { status: 'loaded', note: { ...note, ...doc } } }));
   }
 
   /**
