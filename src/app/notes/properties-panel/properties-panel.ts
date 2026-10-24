@@ -96,8 +96,6 @@ export class PropertiesPanel {
   /** Asked for by "Show Backlinks", so the section shows even with none. */
   protected readonly backlinksWanted = signal(false);
   protected readonly showBacklinks = computed(() => this.backlinks().length > 0 || this.backlinksWanted());
-  /** Notes of locked profiles, whose links can't be read. */
-  protected readonly backlinksIncomplete = computed(() => this.links.unreadable() > 0 || this.links.lockedHiddenNotes());
 
   protected readonly visible = computed(
     () =>

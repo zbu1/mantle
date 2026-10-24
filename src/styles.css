@@ -290,6 +290,11 @@ button.focus-ring-inset:focus-visible,
   gap: 0.5em;
 }
 
+/* A task item is a flex box, so margins inside it don't collapse as a plain list item's do. */
+.ProseMirror .task-content> :is(ul, ol):last-child {
+  margin-bottom: 0;
+}
+
 .ProseMirror ul[data-type='taskList'] li>label {
   margin-top: 0.2em;
 }
@@ -367,7 +372,11 @@ button.focus-ring-inset:focus-visible,
   padding: 0;
 }
 
-/* A code block's language label and copy button sit in a strip above the code, on the same background. */
+/*
+ * A code block keeps a blank line above and below its code, which its fences
+ * fill while they show, so revealing them doesn't move anything. The language
+ * label and copy button sit on the top line.
+ */
 .ProseMirror .code-block {
   background: var(--muted);
   border-radius: 6px;
@@ -375,7 +384,15 @@ button.focus-ring-inset:focus-visible,
 
 .ProseMirror .code-block pre {
   background: none;
-  padding-top: 0.2em;
+  padding: 0.4em 0.8em;
+}
+
+.ProseMirror .code-block code {
+  display: block;
+}
+
+.ProseMirror .code-block:not(.revealed) code {
+  padding-block: 1lh;
 }
 
 /* highlight.js token classes; colors are the --code-* tokens in theme.css. */

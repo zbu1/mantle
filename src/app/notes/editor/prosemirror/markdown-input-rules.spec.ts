@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideZonelessChangeDetection } from '@angular/core';
 import { TextSelection } from 'prosemirror-state';
+import { closeHistory, undo } from 'prosemirror-history';
 import type { EditorView } from 'prosemirror-view';
 import { NoteEditor } from '../note-editor';
 import { NotesState } from '../../notes-state';
@@ -169,27 +170,55 @@ describe('markdown input rules', () => {
       expect(view.state.doc.firstChild!.type).toBe(schema.nodes['blockquote']);
     });
 
-    it('converts a triple backtick into a code block on Space', async () => {
+    it('makes a code block on the third backtick, the cursor after the opening fence', async () => {
       const { view } = await setup();
-      type(view, '```');
+      type(view, '``');
       expect(view.state.doc.firstChild!.type).toBe(schema.nodes['paragraph']);
-      type(view, ' ');
+      type(view, '`');
 
-      expect(view.state.doc.firstChild!.type).toBe(schema.nodes['code_block']);
+      const block = view.state.doc.firstChild!;
+      expect(block.type).toBe(schema.nodes['code_block']);
+      expect(block.textContent).toBe('```\n\n```');
+      expect(view.state.selection.from).toBe(4);
     });
 
-    it('keeps a language typed after the backticks, on Space or Enter', async () => {
+    it('takes a language typed after the backticks, Enter moving to the code line', async () => {
       const { view } = await setup();
-      type(view, '```ts ');
-      expect(view.state.doc.firstChild!.attrs['params']).toBe('ts');
+      type(view, '```ts');
+      pressEnter(view);
+      type(view, 'let a;');
+      const block = folded(view).firstChild!;
+      expect(block.attrs['params']).toBe('ts');
+      expect(block.textContent).toBe('let a;');
+      expect(serializeMarkdown(view.state.doc)).toBe('```ts\nlet a;\n```');
 
       const second = await setup();
-      type(second.view, '```python');
+      type(second.view, 'x');
+      second.view.dispatch(second.view.state.tr.insertText('```python', 1, 2));
       expect(pressEnter(second.view)).toBe(true);
-      const block = folded(second.view).firstChild!;
-      expect(block.type).toBe(schema.nodes['code_block']);
-      expect(block.attrs['params']).toBe('python');
-      expect(block.textContent).toBe('');
+      expect(folded(second.view).firstChild!.attrs['params']).toBe('python');
+    });
+
+    it('undoes a new code block back to the backticks as typed', async () => {
+      const { view } = await setup();
+      view.dispatch(closeHistory(view.state.tr));
+      type(view, '```');
+      undo(view.state, view.dispatch);
+
+      const block = view.state.doc.firstChild!;
+      expect(block.type).toBe(schema.nodes['paragraph']);
+      expect(block.textContent).toBe('```');
+      expect(schema.marks['md_raw'].isInSet(block.firstChild!.marks)).toBeTruthy();
+    });
+
+    it('turns a new code block back into backticks on Backspace', async () => {
+      const { view } = await setup();
+      type(view, '```');
+      pressBackspace(view);
+
+      const block = view.state.doc.firstChild!;
+      expect(block.type).toBe(schema.nodes['paragraph']);
+      expect(block.textContent).toBe('``');
     });
 
     it('converts "---" into a horizontal rule and leaves a cursor position after it', async () => {
@@ -240,6 +269,14 @@ describe('markdown input rules', () => {
       const item = list.firstChild!;
       expect(item.type).toBe(schema.nodes['task_item']);
       expect(item.attrs['checked']).toBe(checked);
+    });
+
+    it('continues a checked checkbox with an unchecked one on Enter', async () => {
+      const { view } = await setup();
+      type(view, '- [x] done');
+      pressEnter(view);
+      type(view, 'next');
+      expect(serializeMarkdown(view.state.doc)).toBe('- [x] done\n- [ ] next');
     });
 
     it('does not create a checkbox from "[ ] " without a list marker', async () => {
@@ -298,6 +335,16 @@ describe('markdown input rules', () => {
       expect(schema.marks[markName].isInSet(marked.marks)).toBeTruthy();
     });
 
+    it('reads a double-backtick code span holding a backtick', async () => {
+      const { view } = await setup();
+      type(view, '`` a`b `` x');
+
+      const paragraph = folded(view).firstChild!;
+      expect(paragraph.firstChild!.text).toBe('a`b');
+      expect(schema.marks['code'].isInSet(paragraph.firstChild!.marks)).toBeTruthy();
+      expect(serializeMarkdown(folded(view))).toBe('`` a`b `` x');
+    });
+
     it('does not carry the mark into text typed afterwards', async () => {
       const { view } = await setup();
       type(view, '**bold** plain');
@@ -333,7 +380,8 @@ describe('markdown input rules', () => {
 
     it('leaves markdown untouched inside a code block', async () => {
       const { view } = await setup();
-      type(view, '``` ');
+      type(view, '```');
+      pressEnter(view);
       type(view, '**bold** # heading');
 
       const block = folded(view).firstChild!;
@@ -343,7 +391,8 @@ describe('markdown input rules', () => {
 
     it('keeps an empty paragraph below a trailing code block to move the cursor into', async () => {
       const { view } = await setup();
-      type(view, '``` ');
+      type(view, '```');
+      pressEnter(view);
       type(view, 'const x = 1;');
 
       expect(view.state.doc.childCount).toBe(2);

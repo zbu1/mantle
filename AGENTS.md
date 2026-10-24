@@ -103,11 +103,13 @@ Angular 22 (frontend, signals-based, no NgModules).
   editor, saved verbatim. Like tags, each note's link targets come from
   `scan_vault` (`links`, null while locked); `NoteLinksState` /
   `LinkIndex` (`links.ts`) resolve them by name (full path, then path
-  suffix, then same folder, then shortest path) and derive backlinks.
+  suffix, then same folder, then shortest path) and derive backlinks. A link
+  only resolves within its note's `linkScope`, plaintext notes or one
+  profile's notes, so a locked profile's notes can't link outside it.
 - Renames and moves go through `VaultActions`, which hands the tree from
   before to `NoteLinksState.fixAfterMove`: every link that no longer leads
-  where it did is rewritten (`rewrite_links`), loaded notes reload, and notes
-  of locked profiles are reported. Undo is the reverse move, fixed the same way.
+  where it did is rewritten (`rewrite_links`), loaded notes reload, and
+  locked notes that could have linked to what moved are reported. Undo is the reverse move, fixed the same way.
 
 ## Properties
 

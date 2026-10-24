@@ -16,7 +16,7 @@ export class TaskItemView implements NodeView {
     private readonly getPos: () => number | undefined
   ) {
     this.dom = document.createElement('li');
-    this.dom.className = 'flex items-start gap-2 my-1';
+    this.dom.className = 'flex items-start gap-2';
     this.dom.setAttribute('data-type', 'taskItem');
 
     this.checkbox = document.createElement('input');

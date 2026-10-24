@@ -20,13 +20,6 @@ const headingRule = textblockTypeInputRule(/^(#{1,6})\s$/, schema.nodes['heading
   level: match[1].length,
 }));
 
-// ```lang then Space. Enter never reaches handleTextInput, so ```lang then
-// Enter is `codeFenceOnEnter` in the keymap instead. Waiting for one of the two
-// (rather than converting on the third backtick) is what lets a language be typed.
-const codeFenceRule = textblockTypeInputRule(/^```([^\s`]*)\s$/, schema.nodes['code_block'], (match) => ({
-  params: match[1],
-}));
-
 /**
  * Inserts the rule *before* the current textblock rather than replacing it, so
  * the (now emptied) block remains after it as a cursor landing spot.
@@ -119,7 +112,6 @@ export function buildMarkdownInputRules(): Plugin {
   return inputRules({
     rules: [
       headingRule,
-      codeFenceRule,
       indentedCodeRule,
       horizontalRuleRule,
       blockquoteRule,

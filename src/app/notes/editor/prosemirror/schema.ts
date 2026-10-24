@@ -125,7 +125,7 @@ const baseNodes = OrderedMap.from<NodeSpec>({
         {
           'data-type': 'taskItem',
           'data-checked': node.attrs['checked'] ? 'true' : 'false',
-          class: 'flex items-start gap-2 my-1',
+          class: 'flex items-start gap-2',
         },
         0,
       ];

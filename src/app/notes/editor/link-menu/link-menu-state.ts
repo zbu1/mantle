@@ -8,11 +8,6 @@ export interface LinkSuggestion {
   dir: string;
   /** What goes between the brackets. */
   link: string;
-  /**
-   * The target is encrypted (or hidden) while the note being edited isn't,
-   * so the link's text would sit in plaintext beside it.
-   */
-  exposes: boolean;
 }
 
 /** The `[[` link menu's items and highlighted row, shared by the editor's plugin and the `LinkMenu` panel. */

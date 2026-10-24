@@ -19,6 +19,15 @@ export function splitLink(inner: string): { target: string; heading: string | nu
   return { target: (hash < 0 ? ref : ref.slice(0, hash)).trim(), heading: hash < 0 ? null : ref.slice(hash + 1), alias };
 }
 
+/**
+ * The notes a note's links can lead to: plaintext notes link among
+ * themselves, and each profile's notes among theirs, so a locked profile's
+ * notes never hold a link to anything outside it.
+ */
+export function linkScope(note: Pick<VaultNoteNode, 'encrypted' | 'profile'>): string | null {
+  return note.encrypted ? `profile:${note.profile}` : null;
+}
+
 /** One link rewrite for the backend's `rewrite_links`. */
 export interface LinkRewrite {
   note: string;
@@ -53,16 +62,24 @@ export class LinkIndex {
     return this.byRelPath.get(relPath) ?? null;
   }
 
-  /** The note `target` leads to from the note at `from`, or null. */
+  /** The `linkScope` of the note at `relPath`, which may not be scanned yet. */
+  scopeOf(relPath: string): string | null {
+    const note = this.byRelPath.get(relPath);
+    return note ? linkScope(note) : relPath.endsWith('.mntl.enc') ? 'profile:?' : null;
+  }
+
+  /** The note `target` leads to from the note at `from`, or null. Only notes in `from`'s `linkScope` count. */
   resolve(target: string, from: string): VaultNoteNode | null {
     const path = linkPath(target.trim().replace(/\\/g, '/').replace(/^\/+/, '')).toLowerCase();
     if (!path) return null;
+    const scope = this.scopeOf(from);
     const exact = this.byPath.get(path);
-    if (exact) return exact;
+    if (exact && linkScope(exact) === scope) return exact;
     const name = path.slice(path.lastIndexOf('/') + 1);
-    const candidates = (this.byName.get(name) ?? []).filter(
-      (note) => !path.includes('/') || linkPath(note.relPath).toLowerCase().endsWith(`/${path}`),
-    );
+    const candidates = (this.byName.get(name) ?? []).filter((note) => {
+      const notePath = linkPath(note.relPath).toLowerCase();
+      return linkScope(note) === scope && (!path.includes('/') || notePath === path || notePath.endsWith(`/${path}`));
+    });
     if (candidates.length <= 1) return candidates[0] ?? null;
     const dir = dirOf(from);
     return (
@@ -71,11 +88,15 @@ export class LinkIndex {
     );
   }
 
-  /** The shortest link text that leads to `note` from anywhere: its name, or its path if another note shares the name. */
+  /**
+   * The shortest link text that leads to `note` from anywhere in its scope: its
+   * name, or its path if another note there shares the name.
+   */
   linkText(note: VaultNoteNode): string {
     const path = linkPath(note.relPath);
     const name = path.slice(path.lastIndexOf('/') + 1);
-    return (this.byName.get(name.toLowerCase())?.length ?? 0) > 1 ? path : name;
+    const namesakes = (this.byName.get(name.toLowerCase()) ?? []).filter((other) => linkScope(other) === linkScope(note));
+    return namesakes.length > 1 ? path : name;
   }
 
   /** The notes with a link that leads to `relPath`. */

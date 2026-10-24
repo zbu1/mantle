@@ -5,8 +5,8 @@ import { splitLink } from '../../../links';
 import { LinkMenuState, LinkSuggestion } from '../../link-menu/link-menu-state';
 import { schema } from '../schema';
 
-/** Where a `[[link]]` leads: a note, nowhere, or maybe into a locked profile's hidden notes. */
-export type LinkStatus = 'ok' | 'missing' | 'maybe-locked';
+/** Whether a `[[link]]` leads to a note (or file). */
+export type LinkStatus = 'ok' | 'missing';
 
 export interface WikilinkContext {
   status(target: string): LinkStatus;
@@ -19,19 +19,13 @@ export const wikilinkKey = new PluginKey<DecorationSet>('wikilink');
 
 const wikilinkMark = schema.marks['wikilink'];
 
-const TITLES: Record<Exclude<LinkStatus, 'ok'>, string> = {
-  missing: 'No note with this name',
-  'maybe-locked': 'No note with this name, unless it is hidden in a locked profile',
-};
-
 function brokenLinks(doc: PMNode, context: WikilinkContext): DecorationSet {
   const decorations: Decoration[] = [];
   doc.descendants((node, pos) => {
     const mark = node.isText && wikilinkMark.isInSet(node.marks);
     if (!mark) return;
-    const status = context.status(splitLink(mark.attrs['target']).target);
-    if (status !== 'ok') {
-      decorations.push(Decoration.inline(pos, pos + node.nodeSize, { class: 'wikilink-broken', title: TITLES[status] }));
+    if (context.status(splitLink(mark.attrs['target']).target) === 'missing') {
+      decorations.push(Decoration.inline(pos, pos + node.nodeSize, { class: 'wikilink-broken', title: 'No note with this name' }));
     }
   });
   return DecorationSet.create(doc, decorations);

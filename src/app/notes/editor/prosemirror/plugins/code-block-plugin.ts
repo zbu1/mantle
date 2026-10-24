@@ -1,10 +1,13 @@
 import { Node as PMNode } from 'prosemirror-model';
 import { Command, EditorState, Plugin, PluginKey, TextSelection } from 'prosemirror-state';
 import { setBlockType } from 'prosemirror-commands';
+import { closeHistory } from 'prosemirror-history';
 import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 import { highlightCode } from '../code-languages';
 import { codeBody } from '../markdown-converter';
 import { schema } from '../schema';
+
+const codeBlock = schema.nodes['code_block'];
 
 /** What code blocks need from the app: the Angular-side language picker and context menu. */
 export interface CodeBlockContext {
@@ -159,12 +162,73 @@ export const indentedCodeOnTab: Command = (state, dispatch) => {
 };
 
 /**
+ * The third backtick typed into an empty paragraph makes it a code block at
+ * once, its fences showing and the cursor after the opening one, where a
+ * language goes. The conversion is its own undo step, so undo leaves the
+ * backticks as typed.
+ */
+export const codeFenceInput = new Plugin({
+  props: {
+    handleTextInput(view, from, to, text) {
+      const $from = view.state.doc.resolve(from);
+      const block = $from.parent;
+      const index = $from.index(-1);
+      if (
+        text !== '`' ||
+        from !== to ||
+        block.type !== schema.nodes['paragraph'] ||
+        $from.parentOffset !== block.content.size ||
+        !$from.node(-1).canReplaceWith(index, index + 1, codeBlock)
+      ) return false;
+      // A quote line's revealed `> ` isn't part of what was typed.
+      let typed = '';
+      block.forEach((child) => {
+        if (!schema.marks['md_prefix'].isInSet(child.marks)) typed += child.isText ? child.text : '\0';
+      });
+      if (typed !== '``') return false;
+
+      view.dispatch(view.state.tr.insertText(text, from).addMark(from, from + 1, schema.marks['md_raw'].create()));
+      const pos = view.state.selection.$from.before();
+      const tr = view.state.tr.replaceWith(
+        pos,
+        pos + view.state.doc.nodeAt(pos)!.nodeSize,
+        codeBlock.create({ revealed: true }, schema.text('```\n\n```')),
+      );
+      view.dispatch(closeHistory(tr.setSelection(TextSelection.create(tr.doc, pos + 4))).scrollIntoView());
+      return true;
+    },
+  },
+});
+
+/** Backspace right after a bare opening fence, with no code yet: back to the paragraph of backticks it came from. */
+export const codeFenceBackspace: Command = (state, dispatch) => {
+  const { $cursor } = state.selection as TextSelection;
+  if (!$cursor || $cursor.parent.type !== codeBlock) return false;
+  const { text, offset } = codeBody($cursor.parent);
+  const open = $cursor.parent.textContent.slice(0, offset - 1);
+  if (!offset || text || $cursor.parentOffset !== offset - 1 || !/^(`{3,}|~{3,})$/.test(open)) return false;
+  if (dispatch) {
+    const pos = $cursor.before();
+    const raw = schema.text(open.slice(1), [schema.marks['md_raw'].create()]);
+    const tr = state.tr.replaceWith(pos, $cursor.after(), schema.nodes['paragraph'].create(null, raw));
+    dispatch(tr.setSelection(TextSelection.create(tr.doc, pos + open.length)).scrollIntoView());
+  }
+  return true;
+};
+
+/**
  * Enter at the end of a paragraph that reads ```` ```lang ```` turns it into a
- * code block in that language. (An input rule can't do this: Enter never
- * reaches `handleTextInput`. Space is covered by an input rule.)
+ * code block in that language (Enter never reaches `handleTextInput`). At the
+ * end of a revealed opening fence with no code yet, it moves to the code line.
  */
 export const codeFenceOnEnter: Command = (state, dispatch) => {
   const { $from, empty } = state.selection;
+  if (empty && $from.parent.type === codeBlock) {
+    const { text, offset } = codeBody($from.parent);
+    if (!offset || text || $from.parentOffset !== offset - 1) return false;
+    dispatch?.(state.tr.setSelection(TextSelection.create(state.doc, $from.start() + offset)).scrollIntoView());
+    return true;
+  }
   if (!empty || $from.parent.type !== schema.nodes['paragraph'] || $from.parentOffset !== $from.parent.content.size) return false;
   const match = /^```([^\s`]*)$/.exec($from.parent.textContent);
   if (!match) return false;

@@ -58,6 +58,8 @@ import { CodeBlockView } from './prosemirror/nodeviews/code-block-view';
 import {
   codeBlockPlugin,
   codeBlockToParagraph,
+  codeFenceBackspace,
+  codeFenceInput,
   codeFenceOnEnter,
   indentCodeLines,
   indentedCodeOnTab,
@@ -74,7 +76,7 @@ import { LinkMenuState, LinkSuggestion } from './link-menu/link-menu-state';
 import { WikilinkContext, wikilinkKey, wikilinkPlugin, wikilinkTargets } from './prosemirror/plugins/wikilink-plugin';
 import { NoteLinksState } from '../note-links-state';
 import { TabsState } from '../tabs-state';
-import { isFileLink, linkPath, splitLink } from '../links';
+import { isFileLink, linkPath, linkScope, splitLink } from '../links';
 import { dirOf } from '../vault-tree.model';
 
 /** Meta on a transaction that brings in an edit made in another pane, so it isn't saved again. */
@@ -94,7 +96,8 @@ function buildEditorKeymap() {
       codeFenceOnEnter,
       exitEmptyQuoteLine,
       splitListItem(schema.nodes['list_item']),
-      splitListItem(schema.nodes['task_item']),
+      // The new checkbox starts unchecked, whatever the one it came from.
+      splitListItem(schema.nodes['task_item'], { checked: false }),
       baseKeymap['Enter']
     ),
     Tab: chainCommands(
@@ -121,6 +124,7 @@ function buildEditorKeymap() {
     // leaves the marker gone but the content still indented.
     Backspace: chainCommands(
       undoInputRule,
+      codeFenceBackspace,
       demoteEmptyLeadingBlock,
       liftListItemAtStart(schema.nodes['list_item']),
       liftListItemAtStart(schema.nodes['task_item']),
@@ -195,6 +199,8 @@ export class NoteEditor {
         plugins: [
           history(),
           buildMarkdownInputRules(),
+          // Before syntax reveal, which takes typed backticks as raw Markdown.
+          codeFenceInput,
           // Must precede buildEditorKeymap(): ProseMirror runs handleKeyDown
           // handlers in plugin order and stops at the first one that returns
           // true, so this needs first refusal on Enter/Tab/Arrows/Escape
@@ -297,7 +303,6 @@ export class NoteEditor {
     // The vault changed, so a link may lead somewhere (or nowhere) now.
     effect(() => {
       this.links.index();
-      this.links.lockedHiddenNotes();
       untracked(() => this.editorView?.dispatch(this.editorView.state.tr.setMeta(wikilinkKey, true)));
     });
 
@@ -383,18 +388,18 @@ export class NoteEditor {
   private wikilinkContext(): WikilinkContext {
     return {
       status: (target) => {
-        if (this.links.index().resolve(target, this.noteId()) || isFileLink(target)) return 'ok';
-        return this.links.lockedHiddenNotes() ? 'maybe-locked' : 'missing';
+        return this.links.index().resolve(target, this.noteId()) || isFileLink(target) ? 'ok' : 'missing';
       },
       suggest: (query) => {
         const index = this.links.index();
         const self = this.noteId();
+        const scope = index.scopeOf(self);
         const q = query.trim().toLowerCase();
         const matches = (relPath: string, name: string) =>
           q.includes('/') ? linkPath(relPath).toLowerCase().includes(q) : name.toLowerCase().includes(q);
         const rank = (name: string) => (name.toLowerCase().startsWith(q) ? 0 : 1);
         return index.notes
-          .filter((note) => note.relPath !== self && matches(note.relPath, note.name))
+          .filter((note) => note.relPath !== self && linkScope(note) === scope && matches(note.relPath, note.name))
           .sort((a, b) => rank(a.name) - rank(b.name) || a.name.length - b.name.length || a.name.localeCompare(b.name))
           .slice(0, 20)
           .map<LinkSuggestion>((note) => ({
@@ -402,7 +407,6 @@ export class NoteEditor {
             name: note.name,
             dir: dirOf(note.relPath),
             link: index.linkText(note),
-            exposes: note.encrypted && !self.endsWith('.mntl.enc'),
           }));
       },
     };
@@ -414,8 +418,7 @@ export class NoteEditor {
     const note = this.links.index().resolve(target, this.noteId());
     if (note) return this.tabsState.openNote({ id: note.relPath, title: note.name });
     if (isFileLink(target)) return this.attachments.openLinked(this.noteId(), target);
-    const locked = this.links.lockedHiddenNotes() ? ' It may be a hidden note in a locked profile.' : '';
-    await this.dialogState.alert(`No note is called "${target}".${locked}`, { title: "Couldn't Open Link" });
+    await this.dialogState.alert(`No note is called "${target}".`, { title: "Couldn't Open Link" });
   }
 
   protected onLanguagePicked(id: string): void {

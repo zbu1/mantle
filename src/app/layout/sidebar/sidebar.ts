@@ -727,6 +727,17 @@ export class Sidebar {
     }
   }
 
+  /** Deletes the selection, if the focused tree row is part of one, or else that row's item. */
+  private deleteFocused(target: HTMLElement): void {
+    const path = target.closest<HTMLElement>('[data-tree-path]')?.dataset['treePath'];
+    const selected = this.selectionState.selected();
+    if (selected.size > 1 && (path === undefined || selected.has(path))) return void this.deleteSelection();
+    const node = this.nodesByPath().get(path ?? [...selected][0] ?? '');
+    if (node?.type === 'note') void this.deleteNote(node);
+    else if (node?.type === 'folder') void this.deleteFolder(node);
+    else if (node?.type === 'file') void this.deleteFile(node);
+  }
+
   /** Deletes every selected item: notes, folders (with their contents) and files. */
   private async deleteSelection(): Promise<void> {
     const nodes = this.nodesByPath();
@@ -753,11 +764,22 @@ export class Sidebar {
     }
   }
 
-  /** Ctrl/Cmd+A, C, X and V in the tree: the Edit menu's commands, for its items. */
+  /**
+   * Ctrl/Cmd+A, C, X and V in the tree: the Edit menu's commands, for its
+   * items. Delete (or Cmd+Backspace, a Mac keyboard having no Delete key) is
+   * the right-click menu's Delete.
+   */
   protected onTreeKeydown(event: KeyboardEvent): void {
-    if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.altKey) return;
+    const target = event.target as HTMLElement;
+    if (target.closest('input, textarea') || event.shiftKey || event.altKey) return;
+    if (event.key === 'Delete' ? !event.ctrlKey && !event.metaKey : event.key === 'Backspace' && event.metaKey) {
+      event.preventDefault();
+      this.deleteFocused(target);
+      return;
+    }
+    if (!(event.ctrlKey || event.metaKey)) return;
     const command = ({ a: 'selectAll', c: 'copy', x: 'cut', v: 'paste' } as const)[event.key.toLowerCase()];
-    if (!command || (event.target as HTMLElement).closest('input, textarea')) return;
+    if (!command) return;
     event.preventDefault();
     this.onTreeFocusIn(event);
     if (this.canRunTreeCommand(command)) this.runTreeCommand(command);

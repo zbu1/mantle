@@ -32,7 +32,8 @@ export class CodeBlockView implements NodeView {
 
     this.toolbar = document.createElement('div');
     this.toolbar.contentEditable = 'false';
-    this.toolbar.className = 'flex items-center justify-end gap-0.5 px-1.5 pt-1.5';
+    // Over the code's top line (see `.code-block` in styles.css).
+    this.toolbar.className = 'absolute right-1.5 top-[0.4em] z-10 flex h-6 items-center gap-0.5';
 
     const copy = document.createElement('button');
     copy.type = 'button';
@@ -66,6 +67,7 @@ export class CodeBlockView implements NodeView {
 
   private render(): void {
     const params: string = this.node.attrs['params'];
+    this.dom.classList.toggle('revealed', !!this.node.attrs['revealed']);
     // An unknown language still shows what the fence says, so it doesn't read as lost.
     this.label.textContent = languageName(params) ?? (fenceLanguage(params) || 'Plain text');
   }

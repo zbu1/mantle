@@ -1,12 +1,12 @@
 import { LinkIndex, linkFixes, splitLink } from './links';
 import { VaultFolderNode, VaultNoteNode } from './vault-tree.model';
 
-const note = (relPath: string, links: string[] | null = []): VaultNoteNode => ({
+const note = (relPath: string, links: string[] | null = [], profile = 'work'): VaultNoteNode => ({
   type: 'note',
   name: relPath.replace(/^.*\//, '').replace(/\.(mntl(\.enc)?|md)$/, ''),
   relPath,
   encrypted: relPath.endsWith('.enc'),
-  profile: null,
+  profile: relPath.endsWith('.enc') ? profile : null,
   tags: [],
   links,
 });
@@ -23,10 +23,21 @@ describe('LinkIndex', () => {
     expect(index.resolve('Ideas', 'Work/x.mntl')?.relPath).toBe('Work/Ideas.md');
     expect(index.resolve('Ideas', 'Other/x.mntl')?.relPath).toBe('Work/Ideas.md');
     expect(index.resolve('Archive/Ideas', 'Work/x.mntl')?.relPath).toBe('Archive/Ideas.mntl');
-    expect(index.resolve('Deep/Plan', 'x.mntl')?.relPath).toBe('Work/Deep/Plan.mntl.enc');
+    expect(index.resolve('Deep/Plan', 'Work/Deep/Plan.mntl.enc')?.relPath).toBe('Work/Deep/Plan.mntl.enc');
     expect(index.resolve('Work/Ideas', 'x.mntl')?.relPath).toBe('Work/Ideas.md');
     expect(index.resolve('ideas.md', 'Archive/x.mntl')?.relPath).toBe('Archive/Ideas.mntl');
     expect(index.resolve('Missing', 'x.mntl')).toBeNull();
+  });
+
+  it('resolves only within the linking note’s scope: plaintext, or one profile', () => {
+    const scoped = new LinkIndex(tree(note('Plan.mntl'), note('Plan.mntl.enc'), note('Other.mntl.enc', [], 'home'), note('Work/Plan.mntl')));
+    expect(scoped.resolve('Plan', 'x.mntl')?.relPath).toBe('Plan.mntl');
+    expect(scoped.resolve('Work/Plan', 'x.mntl')?.relPath).toBe('Work/Plan.mntl');
+    expect(scoped.resolve('Plan', 'x.mntl.enc')).toBeNull();
+    expect(scoped.resolve('Plan', 'Plan.mntl.enc')?.relPath).toBe('Plan.mntl.enc');
+    expect(scoped.resolve('Other', 'Plan.mntl.enc')).toBeNull();
+    expect(scoped.resolve('Other', 'Plan.mntl')).toBeNull();
+    expect(scoped.linkText(scoped.note('Plan.mntl.enc')!)).toBe('Plan');
   });
 
   it('links by name unless the name is shared', () => {

@@ -512,6 +512,24 @@ describe('Sidebar', () => {
       pressCtrlA(fixture.nativeElement.querySelector('[data-tree-path="Work/standup.mntl"] button'));
       expect([...selection.selected()]).toEqual(['Work/Roadmap.mntl', 'Work/standup.mntl']);
     });
+
+    it('Delete deletes the focused item, or the selection it is part of', async () => {
+      const fixture = await setup();
+      const sidebar = fixture.componentInstance as unknown as Record<'deleteNote' | 'deleteSelection', () => Promise<void>>;
+      const deleteNote = jest.spyOn(sidebar, 'deleteNote').mockResolvedValue();
+      const deleteSelection = jest.spyOn(sidebar, 'deleteSelection').mockResolvedValue();
+      const pressDelete = (path: string) =>
+        fixture.nativeElement
+          .querySelector(`[data-tree-path="${path}"] button`)
+          .dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
+
+      pressDelete('todo.mntl');
+      expect(deleteNote).toHaveBeenCalledWith(expect.objectContaining({ relPath: 'todo.mntl' }));
+
+      TestBed.inject(VaultSelectionState).selectAll(['Work/Roadmap.mntl', 'Work/standup.mntl']);
+      pressDelete('Work/standup.mntl');
+      expect(deleteSelection).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('Tags section', () => {

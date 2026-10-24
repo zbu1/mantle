@@ -2,7 +2,7 @@ import { Injectable, computed, inject } from '@angular/core';
 import { invoke } from '@tauri-apps/api/core';
 import { formatError, logError, logInfo } from '../core/logger';
 import { DialogState } from '../shared/dialog/dialog-state';
-import { LinkIndex, linkFixes } from './links';
+import { LinkIndex, linkFixes, linkScope } from './links';
 import { NotesState } from './notes-state';
 import { VaultState } from './vault-state';
 import { VaultFolderNode, withNoteFields } from './vault-tree.model';
@@ -28,12 +28,6 @@ export class NoteLinksState {
 
   readonly index = computed(() => new LinkIndex(this.vaultState.tree()));
 
-  /** Whether hidden notes of a locked profile exist, which a link leading nowhere might be meant for. */
-  readonly lockedHiddenNotes = computed(() => Object.values(this.vaultState.lockedHidden()).some((n) => n > 0));
-
-  /** Notes whose links can't be read right now: those of locked profiles. */
-  readonly unreadable = computed(() => this.index().notes.filter((note) => note.links === null).length);
-
   /** The editor saw `noteId`'s links change; keep the index current until the next scan. */
   setLinks(noteId: string, links: string[]): void {
     const tree = this.vaultState.tree();
@@ -45,14 +39,15 @@ export class NoteLinksState {
   /**
    * After notes moved (`moved` maps old paths to new), rewrite every link
    * that no longer leads where it did, given the vault as it was `before`.
-   * `renamed` says a note's name changed, so locked notes' links (unknown)
-   * may now lead nowhere, which is worth saying.
+   * `renamed` says a note's name changed, so the links of locked notes that
+   * could lead there (unknown) may now lead nowhere, which is worth saying.
    */
   async fixAfterMove(before: VaultFolderNode | null, moved: (relPath: string) => string, renamed: boolean): Promise<void> {
     const vaultRoot = this.vaultState.rootPath();
     if (!vaultRoot || !before) return;
     const old = new LinkIndex(before);
-    let locked = renamed ? old.notes.filter((note) => note.links === null).length : 0;
+    const scopes = new Set(old.notes.filter((note) => moved(note.relPath) !== note.relPath).map(linkScope));
+    let locked = renamed ? old.notes.filter((note) => note.links === null && scopes.has(linkScope(note))).length : 0;
     // Without a single link there's nothing to fix, nor a rescan to wait for.
     const linked = old.notes.some((note) => note.links?.length);
     if (linked) await this.vaultState.refresh();
