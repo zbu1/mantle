@@ -298,7 +298,25 @@ button.focus-ring-inset:focus-visible,
 .ProseMirror ul[data-type='taskList'] li {
   display: flex;
   align-items: flex-start;
-  gap: 0.5em;
+}
+
+/* The gap between checkbox and text: a click shows the item's `- [ ] `. */
+.task-marker {
+  flex: none;
+  width: 0.5em;
+  height: 1lh;
+  cursor: text;
+  background: linear-gradient(var(--ring), var(--ring)) center / 2px 70% no-repeat;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.task-marker:hover {
+  opacity: 1;
+}
+
+.ProseMirror li[data-revealed]> :is(.task-checkbox, .task-marker) {
+  display: none;
 }
 
 /* A task item is a flex box, so margins inside it don't collapse as a plain list item's do. */
@@ -463,10 +481,27 @@ button.focus-ring-inset:focus-visible,
   font-weight: 600;
 }
 
+/* A divider's hit zone, highlighted on hover; a click shows its `---`. */
+.ProseMirror .md-rule {
+  margin: 0.5em 0;
+  padding: 0.5em 0;
+  border-radius: 4px;
+  cursor: text;
+  transition: background-color 0.12s ease;
+}
+
+.ProseMirror .md-rule:hover {
+  background-color: var(--accent);
+}
+
 .ProseMirror hr {
   border: none;
   border-top: 1px solid var(--border);
-  margin: 1em 0;
+  margin: 0;
+}
+
+.ProseMirror .md-rule:hover hr {
+  border-top-color: var(--ring);
 }
 
 .ProseMirror a {

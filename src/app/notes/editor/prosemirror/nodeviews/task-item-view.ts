@@ -1,14 +1,18 @@
 import { Node as PMNode } from 'prosemirror-model';
 import { EditorView, NodeView } from 'prosemirror-view';
+import { revealTaskMarker } from '../plugins/syntax-reveal-plugin';
 
 /**
  * Renders a task item with a clickable checkbox. The checkbox lives outside
- * `contentDOM` so ProseMirror only manages the item's block content.
+ * `contentDOM` so ProseMirror only manages the item's block content. The thin
+ * zone between checkbox and text highlights on hover, and a click on it shows
+ * the item's `- [ ] ` in place of the checkbox.
  */
 export class TaskItemView implements NodeView {
   readonly dom: HTMLElement;
   readonly contentDOM: HTMLElement;
   private readonly checkbox: HTMLInputElement;
+  private readonly marker: HTMLElement;
 
   constructor(
     private node: PMNode,
@@ -16,7 +20,7 @@ export class TaskItemView implements NodeView {
     private readonly getPos: () => number | undefined
   ) {
     this.dom = document.createElement('li');
-    this.dom.className = 'flex items-start gap-2';
+    this.dom.className = 'flex items-start';
     this.dom.setAttribute('data-type', 'taskItem');
 
     this.checkbox = document.createElement('input');
@@ -25,9 +29,21 @@ export class TaskItemView implements NodeView {
     this.checkbox.checked = !!node.attrs['checked'];
     this.checkbox.addEventListener('change', () => this.toggle());
 
+    this.marker = document.createElement('span');
+    this.marker.contentEditable = 'false';
+    this.marker.className = 'task-marker';
+    this.marker.title = 'Show Markdown';
+    this.marker.addEventListener('mousedown', (event) => {
+      event.preventDefault();
+      const pos = this.getPos();
+      const tr = pos === undefined ? null : revealTaskMarker(this.view.state, pos);
+      if (tr) this.view.dispatch(tr);
+      this.view.focus();
+    });
+
     this.contentDOM = document.createElement('div');
     this.contentDOM.className = 'task-content';
-    this.dom.append(this.checkbox, this.contentDOM);
+    this.dom.append(this.checkbox, this.marker, this.contentDOM);
     this.syncChecked();
   }
 
@@ -46,6 +62,9 @@ export class TaskItemView implements NodeView {
 
   private syncChecked() {
     this.dom.setAttribute('data-checked', this.node.attrs['checked'] ? 'true' : 'false');
+    // Its `- [ ] ` shows as text instead.
+    const first = this.node.firstChild?.firstChild;
+    this.dom.toggleAttribute('data-revealed', !!first && first.marks.some((mark) => mark.type.name === 'md_prefix'));
   }
 
   update(node: PMNode): boolean {
@@ -57,6 +76,6 @@ export class TaskItemView implements NodeView {
   }
 
   stopEvent(event: Event): boolean {
-    return event.target === this.checkbox;
+    return event.target === this.checkbox || event.target === this.marker;
   }
 }

@@ -36,7 +36,7 @@ import { EditContextState } from '../../shared/edit-context-state';
 import { EditorFocusState } from './editor-focus-state';
 import { schema } from './prosemirror/schema';
 import { codeBody, parseMarkdown, serializeMarkdown } from './prosemirror/markdown-converter';
-import { exitEmptyQuoteLine, revealImageSource, syntaxRevealPlugin } from './prosemirror/plugins/syntax-reveal-plugin';
+import { exitEmptyQuoteLine, revealImageSource, syntaxRevealPlugin, taskMarkerPlugin } from './prosemirror/plugins/syntax-reveal-plugin';
 import { createSlashMenuPlugin } from './prosemirror/plugins/slash-menu-plugin';
 import { buildMarkdownInputRules } from './prosemirror/plugins/markdown-input-rules';
 import { trailingParagraphPlugin } from './prosemirror/plugins/trailing-paragraph-plugin';
@@ -211,6 +211,7 @@ export class NoteEditor {
           buildEditorKeymap(),
           gapCursor(),
           trailingParagraphPlugin(),
+          taskMarkerPlugin(),
           syntaxRevealPlugin(
             (href) => void this.attachments.openLinked(this.noteId(), href),
             (target) => void this.openLink(target),

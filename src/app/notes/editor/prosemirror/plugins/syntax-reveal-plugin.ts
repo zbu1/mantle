@@ -13,6 +13,8 @@ import { schema } from '../schema';
  * heading's `## ` or a quote line's `> ` becomes `md_prefix` text (never
  * saved; the block's type says the same), and a code block's fences become
  * part of its text (`revealed`). Either way the saved Markdown doesn't change.
+ * A checkbox's `- [ ] ` is an `md_prefix` too, but shows only on request
+ * (`revealTaskMarker`), until the cursor leaves its line.
  *
  * Unfolding and refolding stay out of undo history, and edit the document
  * character by character rather than replacing the construct, so undo steps
@@ -25,6 +27,9 @@ const { paragraph, heading, blockquote, image } = schema.nodes;
 const codeBlock = schema.nodes['code_block'];
 const hardBreak = schema.nodes['hard_break'];
 const rule = schema.nodes['horizontal_rule'];
+const taskItem = schema.nodes['task_item'];
+const bulletList = schema.nodes['bullet_list'];
+const listItem = schema.nodes['list_item'];
 
 /** Marks whose delimiters reveal. */
 const INLINE_MARKS = ['strong', 'em', 'strike', 'highlight', 'comment', 'code', 'link', 'wikilink'].map((name) => schema.marks[name]);
@@ -62,6 +67,13 @@ function quoteDepth(doc: PMNode, pos: number): number {
 function expectedPrefix(doc: PMNode, pos: number): string {
   const block = doc.nodeAt(pos)!;
   return '> '.repeat(quoteDepth(doc, pos)) + (block.type === heading ? '#'.repeat(block.attrs['level']) + ' ' : '');
+}
+
+/** The `- [ ] ` the textblock at `pos` would show, if it's the first line of a task item. */
+function taskPrefix(doc: PMNode, pos: number): string {
+  const $pos = doc.resolve(pos);
+  if ($pos.parent.type !== taskItem || $pos.index() !== 0) return '';
+  return `${$pos.node(-1).attrs['bullet']} [${$pos.parent.attrs['checked'] ? 'x' : ' '}] `;
 }
 
 // --- Character-level edits --------------------------------------------------
@@ -305,7 +317,7 @@ function unfoldCode(tr: Transaction, pos: number): void {
 function unfoldRule(tr: Transaction, pos: number): void {
   const markup: string = tr.doc.nodeAt(pos)!.attrs['markup'];
   tr.replaceWith(pos, pos + 1, paragraph.create(null, schema.text(markup, [rawMark.create()])));
-  tr.setSelection(TextSelection.create(tr.doc, pos + 1 + markup.length));
+  tr.setSelection(TextSelection.create(tr.doc, pos + 1, pos + 1 + markup.length));
 }
 
 function unfold(tr: Transaction): void {
@@ -374,7 +386,7 @@ function isStale(doc: PMNode, block: PMNode, pos: number, from: number, to: numb
   });
   endRun();
   const inBlock = from >= start && to <= pos + block.nodeSize - 1;
-  return stale || (hasPrefix && (!inBlock || !expectedPrefix(doc, pos)));
+  return stale || (hasPrefix && (!inBlock || !(expectedPrefix(doc, pos) || taskPrefix(doc, pos))));
 }
 
 function refold(tr: Transaction): void {
@@ -414,12 +426,14 @@ function syncPrefix(tr: Transaction, oldState: EditorState, mapping: Mapping): v
   const end = prefixEnd(block);
   const text = block.textBetween(0, end);
   if (text === $old.parent.textBetween(0, oldEnd)) {
-    const expected = expectedPrefix(tr.doc, pos);
-    if (expected !== expectedPrefix(oldState.doc, oldPos)) {
+    const expected = expectedPrefix(tr.doc, pos) || taskPrefix(tr.doc, pos);
+    if (expected !== (expectedPrefix(oldState.doc, oldPos) || taskPrefix(oldState.doc, oldPos))) {
       tr.replaceWith(start, start + end, expected ? schema.text(expected, [prefixMark.create()]) : []);
     }
     return;
   }
+  // `taskMarkerPlugin`'s to follow.
+  if (taskPrefix(tr.doc, pos)) return;
 
   const [, quotePart, rest] = /^((?:>[ \t]?)*)(.*)$/s.exec(text)!;
   const $pos = tr.doc.resolve(pos);
@@ -465,6 +479,88 @@ function dropOrphanedSources(tr: Transaction, oldState: EditorState, mapping: Ma
     return false;
   });
   for (const [from, to] of orphans.reverse()) tr.delete(from, to);
+}
+
+// --- Checkboxes ---------------------------------------------------------------
+
+const sameList = (node: PMNode | null | undefined, list: PMNode): boolean =>
+  node?.type === bulletList && node.attrs['bullet'] === list.attrs['bullet'];
+
+/** Turns the task item at `pos` into a plain list item, splitting its list around it and joining a plain list beside it. */
+function untask(tr: Transaction, pos: number): void {
+  const $pos = tr.doc.resolve(pos);
+  const list = $pos.parent;
+  const listPos = $pos.before();
+  const index = $pos.index();
+  const items: PMNode[] = [];
+  list.forEach((item) => items.push(item));
+  const before = items.slice(0, index);
+  const after = items.slice(index + 1);
+  const plain = bulletList.create(list.attrs, listItem.create(null, items[index].content));
+  const parts = [...(before.length ? [list.copy(Fragment.from(before))] : []), plain, ...(after.length ? [list.copy(Fragment.from(after))] : [])];
+
+  const { anchor, head } = tr.selection;
+  const inside = (p: number) => p > pos && p < pos + items[index].nodeSize;
+  tr.replaceWith(listPos, listPos + list.nodeSize, parts);
+  // The item's content moves past the list it split from, if any.
+  const shift = before.length ? 2 : 0;
+  if (inside(anchor) && inside(head)) tr.setSelection(TextSelection.create(tr.doc, anchor + shift, head + shift));
+  const plainPos = listPos + (before.length ? parts[0].nodeSize : 0);
+  const next = plainPos + plain.nodeSize;
+  if (!after.length && sameList(tr.doc.resolve(next).nodeAfter, plain)) tr.join(next);
+  if (!before.length && sameList(tr.doc.resolve(plainPos).nodeBefore, plain)) tr.join(plainPos);
+}
+
+/**
+ * Edits to a revealed `- [ ] `: `[x]` / `[ ]` check and uncheck it, and
+ * anything that no longer reads as a checkbox makes it a plain list item,
+ * starting with what's left. Its own plugin, before syntax reveal, so the
+ * change joins the edit's undo step.
+ */
+export function taskMarkerPlugin(): Plugin {
+  return new Plugin({
+    appendTransaction(transactions, oldState, state) {
+      if (!transactions.some((tr) => tr.docChanged) || transactions.every((tr) => tr.getMeta(syntaxRevealKey))) return null;
+      const $old = oldState.selection.$from;
+      const oldEnd = $old.depth ? prefixEnd($old.parent) : 0;
+      if (!oldEnd || !taskPrefix(oldState.doc, $old.before())) return null;
+      const mapping = new Mapping();
+      transactions.forEach((tr) => mapping.appendMapping(tr.mapping));
+      const mapped = mapping.mapResult($old.before(), 1);
+      const block = state.doc.nodeAt(mapped.pos);
+      if (mapped.deleted || block?.type !== paragraph || !taskPrefix(state.doc, mapped.pos)) return null;
+
+      const pos = mapped.pos;
+      const start = pos + 1;
+      const end = prefixEnd(block);
+      const text = block.textBetween(0, end);
+      if (text === $old.parent.textBetween(0, oldEnd)) return null;
+      const tr = state.tr;
+      const checkbox = /^[-*+][ \t]+\[([ xX]?)\][ \t]*$/.exec(text);
+      if (checkbox) {
+        const checked = !!checkbox[1].trim();
+        const item = state.doc.nodeAt(pos - 1)!;
+        if (item.attrs['checked'] !== checked) tr.setNodeMarkup(pos - 1, null, { ...item.attrs, checked });
+      } else {
+        tr.removeMark(start, start + end, prefixMark);
+        const marker = /^[-*+]?[ \t]*/.exec(text)![0].length;
+        if (marker) tr.delete(start, start + marker);
+        untask(tr, pos - 1);
+      }
+      return tr.docChanged ? tr : null;
+    },
+  });
+}
+
+/** Shows the `- [ ] ` of the task item at `pos` in place of its checkbox, selected. */
+export function revealTaskMarker(state: EditorState, pos: number): Transaction | null {
+  const prefix = taskPrefix(state.doc, pos + 1);
+  if (!prefix) return null;
+  const start = pos + 2;
+  const tr = state.tr;
+  if (!prefixEnd(state.doc.nodeAt(pos + 1)!)) tr.insert(start, schema.text(prefix, [prefixMark.create()]));
+  const end = start + prefixEnd(tr.doc.nodeAt(pos + 1)!);
+  return tr.setSelection(TextSelection.create(tr.doc, start, end)).setMeta('addToHistory', false);
 }
 
 // --- Plugin -------------------------------------------------------------------

@@ -32,7 +32,8 @@ const baseNodes = OrderedMap.from<NodeSpec>({
     group: 'block',
     parseDOM: [{ tag: 'hr' }],
     toDOM() {
-      return ['hr'];
+      // Wrapped, for a hit zone taller than the line.
+      return ['div', { class: 'md-rule' }, ['hr']];
     },
   },
   heading: {

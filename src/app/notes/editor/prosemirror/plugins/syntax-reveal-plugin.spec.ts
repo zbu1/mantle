@@ -4,7 +4,7 @@ import { Node as PMNode } from 'prosemirror-model';
 import { parseMarkdown, serializeMarkdown } from '../markdown-converter';
 import { schema } from '../schema';
 import { EditorView } from 'prosemirror-view';
-import { exitEmptyQuoteLine, revealImageSource, syntaxRevealPlugin } from './syntax-reveal-plugin';
+import { exitEmptyQuoteLine, revealImageSource, revealTaskMarker, syntaxRevealPlugin, taskMarkerPlugin } from './syntax-reveal-plugin';
 
 function stateFor(markdown: string): EditorState {
   return EditorState.create({ doc: parseMarkdown(markdown), plugins: [history(), syntaxRevealPlugin()] });
@@ -151,10 +151,65 @@ describe('revealing Markdown syntax', () => {
     let state = stateFor('a\n\n***\n\nb');
     state = state.apply(state.tr.setSelection(NodeSelection.create(state.doc, find(state.doc, 'a') + 2)));
     expect(text(state)).toBe('a\n***\nb');
+    expect(state.doc.textBetween(state.selection.from, state.selection.to)).toBe('***');
     expect(serializeMarkdown(state.doc)).toBe('a\n\n***\n\nb');
     state = cursorAt(state, 'b');
     expect(state.doc.child(1).type.name).toBe('horizontal_rule');
     expect(serializeMarkdown(state.doc)).toBe('a\n\n***\n\nb');
+  });
+
+  describe('a checkbox’s Markdown', () => {
+    const taskState = (markdown: string) =>
+      EditorState.create({ doc: parseMarkdown(markdown), plugins: [history(), taskMarkerPlugin(), syntaxRevealPlugin()] });
+    /** Reveals the `- [ ] ` of the item holding `needle`. */
+    const reveal = (state: EditorState, needle: string) => state.apply(revealTaskMarker(state, find(state.doc, needle) - 2)!);
+    const types = (state: EditorState) => state.doc.content.content.map((node) => node.type.name);
+
+    it('shows on request, selected, until the cursor leaves the line', () => {
+      const markdown = '- [ ] a\n- [x] b';
+      let state = reveal(taskState(markdown), 'b');
+      expect(text(state)).toBe('a\n- [x] b');
+      expect(state.doc.textBetween(state.selection.from, state.selection.to)).toBe('- [x] ');
+      expect(serializeMarkdown(state.doc)).toBe(markdown);
+      state = cursorAt(state, 'b', 1);
+      expect(text(state)).toBe('a\n- [x] b');
+      state = cursorAt(state, 'a');
+      expect(text(state)).toBe('a\nb');
+      expect(serializeMarkdown(state.doc)).toBe(markdown);
+    });
+
+    it('checks and unchecks it as `[x]` / `[ ]`', () => {
+      let state = reveal(taskState('- [ ] a'), 'a');
+      state = state.apply(state.tr.insertText('x', 6, 7));
+      expect(state.doc.firstChild!.firstChild!.attrs['checked']).toBe(true);
+      state = cursorAt(state, 'a', 1);
+      expect(serializeMarkdown(state.doc)).toBe('- [x] a');
+    });
+
+    it('makes it a plain list item once it no longer reads as a checkbox, in one undo step', () => {
+      const markdown = '- p\n- [ ] a\n- [ ] b';
+      let state = reveal(taskState(markdown), 'a');
+      state = state.apply(state.tr.delete(state.selection.from + 2, state.selection.to)); // `- `
+      expect(types(state)).toEqual(['bullet_list', 'task_list']);
+      expect(state.doc.firstChild!.childCount).toBe(2);
+      expect(text(state)).toBe('p\na\nb');
+      expect(state.selection.from).toBe(find(state.doc, 'a'));
+      expect(serializeMarkdown(state.doc)).toBe('- p\n- a\n- [ ] b');
+
+      undo(state, (tr) => (state = state.apply(tr)));
+      expect(types(state)).toEqual(['bullet_list', 'task_list']);
+      state = cursorAt(state, 'b');
+      expect(serializeMarkdown(state.doc)).toBe(markdown);
+    });
+
+    it('keeps what’s left of a broken checkbox as text', () => {
+      let state = reveal(taskState('- [ ] a\n- [ ] b\n- [ ] c'), 'b');
+      const from = state.selection.from;
+      state = state.apply(state.tr.delete(from + 4, from + 5)); // `]`
+      expect(types(state)).toEqual(['task_list', 'bullet_list', 'task_list']);
+      state = cursorAt(state, 'c');
+      expect(serializeMarkdown(state.doc)).toBe('- [ ] a\n- [  b\n- [ ] c');
+    });
   });
 
   it('shows a code block’s fences, and its opening fence sets the language', () => {
