@@ -181,6 +181,15 @@ export const marks: Record<string, MarkSpec> = {
       return ['span', { class: 'md-comment' }, 0];
     },
   },
+  // `$tex$`, or `$$tex$$` (`display`): its source, hidden behind the rendered math (see math-plugin) until the cursor reveals it.
+  math: {
+    attrs: { display: { default: false } },
+    excludes: '_',
+    code: true,
+    toDOM() {
+      return ['span', { class: 'md-math' }, 0];
+    },
+  },
   code: {
     // prosemirror-inputrules keys its code guard off `spec.code`, not the mark
     // name, so this flag is what stops input rules firing inside code spans.

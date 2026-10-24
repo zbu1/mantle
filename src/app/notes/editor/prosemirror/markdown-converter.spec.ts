@@ -41,6 +41,27 @@ describe('highlights and comments', () => {
   });
 });
 
+describe('math', () => {
+  const roundTrip = (markdown: string) => serializeMarkdown(parseMarkdown(markdown));
+
+  it('parses $inline$ and multi-line $$display$$ math as written', () => {
+    const [, inline] = parseMarkdown('a $x_1 * y$ b').firstChild!.children;
+    expect(inline.text).toBe('x_1 * y');
+    expect(inline.marks[0].attrs).toEqual({ display: false });
+    const block = parseMarkdown('$$\n\\frac{a}{b}\n$$').firstChild!.firstChild!;
+    expect(block.text).toBe('\n\\frac{a}{b}\n');
+    expect(block.marks[0].attrs).toEqual({ display: true });
+  });
+
+  it('round-trips it, and leaves dollars that aren’t math as text', () => {
+    for (const markdown of ['a $x_1 * y$ b', '$$\n\\frac{a}{b}\n$$', '> $$a\n> b$$', 'costs $5 and $10', 'a \\$x\\$ b', '`$a$`']) {
+      expect(roundTrip(markdown)).toBe(markdown);
+    }
+    expect(parseMarkdown('costs $5 and $10').firstChild!.firstChild!.marks).toEqual([]);
+    expect(parseMarkdown('$1$2').firstChild!.firstChild!.marks).toEqual([]);
+  });
+});
+
 describe('markdown line breaks', () => {
   it('keeps single newlines as line breaks', () => {
     const src = 'Oil\nPaprika\n\nSalt\nPepper';

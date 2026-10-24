@@ -85,6 +85,23 @@ describe('revealing Markdown syntax', () => {
     expect(state.doc.firstChild!.child(3).marks[0].type.name).toBe('comment');
   });
 
+  it('reveals math’s source, across lines, and renders typed math once the cursor leaves', () => {
+    const markdown = 'a $x^2$ b\n\n$$\n\\sum_i\n$$';
+    let state = cursorAt(stateFor(markdown), 'x^2');
+    expect(text(state)).toBe('a $x^2$ b\n\n\\sum_i\n');
+    state = cursorAt(state, '\\sum');
+    expect(text(state)).toBe('a x^2 b\n$$￼\\sum_i￼$$');
+    expect(serializeMarkdown(state.doc)).toBe(markdown);
+
+    // As `handleTextInput` takes a typed `$`: raw Markdown.
+    state = cursorAt(state, 'b', 1);
+    const from = state.selection.from;
+    state = state.apply(state.tr.insertText(' $y$').addMark(from, from + 4, schema.marks['md_raw'].create()));
+    state = cursorAt(state, 'a ');
+    expect(state.doc.firstChild!.lastChild!.marks[0].type.name).toBe('math');
+    expect(serializeMarkdown(state.doc)).toBe('a $x^2$ b $y$\n\n$$\n\\sum_i\n$$');
+  });
+
   it('reveals a link in full', () => {
     let state = cursorAt(stateFor('see [docs](https://x.dev "Title") now'), 'docs');
     expect(text(state)).toBe('see [docs](https://x.dev "Title") now');

@@ -37,6 +37,7 @@ import { EditorFocusState } from './editor-focus-state';
 import { schema } from './prosemirror/schema';
 import { codeBody, parseMarkdown, serializeMarkdown } from './prosemirror/markdown-converter';
 import { exitEmptyQuoteLine, revealImageSource, syntaxRevealPlugin, taskMarkerPlugin } from './prosemirror/plugins/syntax-reveal-plugin';
+import { mathPlugin, newlineInMathBlock } from './prosemirror/plugins/math-plugin';
 import { createSlashMenuPlugin } from './prosemirror/plugins/slash-menu-plugin';
 import { buildMarkdownInputRules } from './prosemirror/plugins/markdown-input-rules';
 import { trailingParagraphPlugin } from './prosemirror/plugins/trailing-paragraph-plugin';
@@ -93,6 +94,7 @@ function buildEditorKeymap() {
     'Shift-Mod-v': (_state, _dispatch, view) => !!view && (pastePlainText(view), true),
     Enter: chainCommands(
       codeFenceOnEnter,
+      newlineInMathBlock,
       exitEmptyQuoteLine,
       splitListItem(schema.nodes['list_item']),
       // The new checkbox starts unchecked, whatever the one it came from.
@@ -216,6 +218,7 @@ export class NoteEditor {
             (href) => void this.attachments.openLinked(this.noteId(), href),
             (target) => void this.openLink(target),
           ),
+          mathPlugin(),
           // Last, so images and code blocks get their own menus first.
           new Plugin({
             props: { handleDOMEvents: { contextmenu: (view, event) => (this.openTextMenu(event, view), true) } },

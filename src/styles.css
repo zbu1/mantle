@@ -207,9 +207,14 @@ button.focus-ring-inset:focus-visible,
   border-radius: 2px;
 }
 
-/* `%%comment%%`, until the cursor reveals it. */
-.ProseMirror .md-comment {
+/* `%%comment%%`, and the source behind rendered math, until the cursor reveals it. */
+.ProseMirror .md-comment,
+.ProseMirror .md-math {
   display: none;
+}
+
+.ProseMirror .md-math-rendered {
+  cursor: text;
 }
 
 /* An image's source, on its own line above the image. */

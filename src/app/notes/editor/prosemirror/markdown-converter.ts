@@ -84,6 +84,26 @@ md.inline.ruler.before('emphasis', 'comment', (state, silent) => {
   return true;
 });
 
+/**
+ * `$inline$` and `$$display$$` math, kept as written. `$$` may span lines of
+ * one paragraph; `$` needs no space inside its delimiters and no digit after,
+ * so `$5 and $10` stays text.
+ * ponytail: the first closing delimiter wins, so `\$` can't appear inside; blank lines end a `$$` block.
+ */
+const MATH = /^\$\$([^$]+?)\$\$|^\$(?=[^\s$])([^\n$]*?[^\s$\\])\$(?!\d)/;
+md.inline.ruler.before('emphasis', 'math', (state, silent) => {
+  const match = MATH.exec(state.src.slice(state.pos));
+  if (!match) return false;
+  if (!silent) {
+    // One text node, newlines and all: hidden, it needs no line breaks, and revealed it's raw text with its own.
+    state.push('math_open', 'span', 1).meta = { display: match[1] !== undefined };
+    state.push('text', '', 0).content = match[1] ?? match[2];
+    state.push('math_close', 'span', -1);
+  }
+  state.pos += match[0].length;
+  return true;
+});
+
 /** `[^1]: …` is a footnote, not a link reference definition, which would swallow it on save. */
 type BlockRule = Parameters<typeof md.block.ruler.at>[1];
 const reference = (md.block.ruler as unknown as { __rules__: { name: string; fn: BlockRule }[] }).__rules__.find(
@@ -160,6 +180,7 @@ export const markdownParser = new MarkdownParser(schema, md, {
   s: { mark: 'strike' },
   highlight: { mark: 'highlight' },
   comment: { mark: 'comment' },
+  math: { mark: 'math', getAttrs: (tok) => ({ display: tok.meta.display }) },
   link: {
     mark: 'link',
     getAttrs: (tok) => ({
@@ -309,7 +330,7 @@ export const markdownSerializer = new MarkdownSerializer(
       state.renderList(node, space, (i) => `${start + i}${node.attrs['delimiter']} `);
     },
     text(state, node, parent, index) {
-      if (escaping === 'none') return state.text(node.text!, false);
+      if (escaping === 'none' || schema.marks['math'].isInSet(node.marks)) return state.text(node.text!, false);
       // A line after a hard break starts a line of the file, where `- `, `# `, … would start a block.
       if (index === 0 || parent.child(index - 1).type !== schema.nodes['hard_break']) {
         return defaultMarkdownSerializer.nodes['text'](state, node, parent, index);
@@ -356,7 +377,14 @@ export const markdownSerializer = new MarkdownSerializer(
     strike: { open: '~~', close: '~~', mixable: true, expelEnclosingWhitespace: true },
     highlight: { open: '==', close: '==', mixable: true, expelEnclosingWhitespace: true },
     comment: { open: '%%', close: '%%', escape: false },
-  }
+    // Left unescaped by the `text` serializer, which also keeps a quote's or list's `> ` / indent on each line.
+    math: {
+      open: (_state: unknown, mark: PMMark) => (mark.attrs['display'] ? '$$' : '$'),
+      close: (_state: unknown, mark: PMMark) => (mark.attrs['display'] ? '$$' : '$'),
+    },
+  },
+  // A `$` that would start math reads as text again.
+  { escapeExtraCharacters: /\$/g },
 );
 
 /** Whether the list at `index` continues the one before it: a checkbox run after a plain one, or the reverse. */
