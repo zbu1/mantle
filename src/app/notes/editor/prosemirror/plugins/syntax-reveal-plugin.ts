@@ -27,11 +27,11 @@ const hardBreak = schema.nodes['hard_break'];
 const rule = schema.nodes['horizontal_rule'];
 
 /** Marks whose delimiters reveal. */
-const INLINE_MARKS = ['strong', 'em', 'strike', 'code', 'link', 'wikilink'].map((name) => schema.marks[name]);
+const INLINE_MARKS = ['strong', 'em', 'strike', 'highlight', 'comment', 'code', 'link', 'wikilink'].map((name) => schema.marks[name]);
 /** Characters the serializer backslash-escapes in plain text. */
 const ESCAPABLE = /[`*\\~[\]_]/;
 /** The delimiters in raw text, shown muted. */
-const SYNTAX = /\\(?=\S)|[*_~`]+|!?\[|\]\(.*?\)|\]|^-{3,}$/g;
+const SYNTAX = /\\(?=\S)|[*_~`]+|={2}|%{2}|!?\[|\]\(.*?\)|\]|^-{3,}$/g;
 
 export const syntaxRevealKey = new PluginKey<DecorationSet>('syntax-reveal');
 

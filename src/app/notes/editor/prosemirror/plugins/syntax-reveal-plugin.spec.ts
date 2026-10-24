@@ -74,6 +74,17 @@ describe('revealing Markdown syntax', () => {
     expect(serializeMarkdown(state.doc)).toBe('a *it** b');
   });
 
+  it('reveals a highlight’s and a comment’s delimiters', () => {
+    const markdown = 'a ==hi== b %%note%% c';
+    let state = cursorAt(stateFor(markdown), 'hi');
+    expect(text(state)).toBe('a ==hi== b note c');
+    state = cursorAt(state, 'note', 1);
+    expect(text(state)).toBe('a hi b %%note%% c');
+    expect(serializeMarkdown(state.doc)).toBe(markdown);
+    state = cursorAt(state, 'c');
+    expect(state.doc.firstChild!.child(3).marks[0].type.name).toBe('comment');
+  });
+
   it('reveals a link in full', () => {
     let state = cursorAt(stateFor('see [docs](https://x.dev "Title") now'), 'docs');
     expect(text(state)).toBe('see [docs](https://x.dev "Title") now');

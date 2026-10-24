@@ -166,6 +166,20 @@ export const marks: Record<string, MarkSpec> = {
       return ['s', 0];
     },
   },
+  highlight: {
+    parseDOM: [{ tag: 'mark' }],
+    toDOM() {
+      return ['mark', { class: 'md-highlight' }, 0];
+    },
+  },
+  // `%%comment%%`: hidden until the cursor reveals it.
+  comment: {
+    excludes: '_',
+    code: true,
+    toDOM() {
+      return ['span', { class: 'md-comment' }, 0];
+    },
+  },
   code: {
     // prosemirror-inputrules keys its code guard off `spec.code`, not the mark
     // name, so this flag is what stops input rules firing inside code spans.

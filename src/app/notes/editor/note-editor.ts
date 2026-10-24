@@ -475,6 +475,7 @@ export class NoteEditor {
           format('Bold', 'strong', '**', 'Ctrl+B'),
           format('Italic', 'em', '*', 'Ctrl+I'),
           format('Strikethrough', 'strike', '~~'),
+          format('Highlight', 'highlight', '=='),
           format('Code', 'code', '`', 'Ctrl+`'),
           { kind: 'separator' },
           { kind: 'item', label: 'Link…', action: () => void this.promptLink(view) },

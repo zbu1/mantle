@@ -22,6 +22,25 @@ describe('markdown images', () => {
   });
 });
 
+describe('highlights and comments', () => {
+  const roundTrip = (markdown: string) => serializeMarkdown(parseMarkdown(markdown));
+
+  it('parses ==highlights==, with Markdown inside, and %%comments%% as written', () => {
+    const [a, b, , c] = parseMarkdown('==a **b**== x %% *c* %%').firstChild!.children;
+    expect(a.marks.map((m) => m.type.name)).toEqual(['highlight']);
+    expect(b.marks.map((m) => m.type.name).sort()).toEqual(['highlight', 'strong']);
+    expect(c.text).toBe(' *c* ');
+    expect(c.marks.map((m) => m.type.name)).toEqual(['comment']);
+  });
+
+  it('round-trips them, and leaves what isn’t one as text', () => {
+    for (const markdown of ['==a **b**== x %% *c* %%', 'a == b == c', 'x = y', '100%', '`==a==`']) {
+      expect(roundTrip(markdown)).toBe(markdown);
+    }
+    expect(parseMarkdown('a == b == c').firstChild!.firstChild!.marks).toEqual([]);
+  });
+});
+
 describe('markdown line breaks', () => {
   it('keeps single newlines as line breaks', () => {
     const src = 'Oil\nPaprika\n\nSalt\nPepper';

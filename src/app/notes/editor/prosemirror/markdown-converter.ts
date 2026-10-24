@@ -49,6 +49,41 @@ md.inline.ruler.before('link', 'wikilink', (state, silent) => {
   return true;
 });
 
+/**
+ * `==highlight==`, whose inside is Markdown, and `%%comment%%`, whose inside is
+ * kept as written.
+ * ponytail: one line each, and the first closing delimiter wins even inside a code span; block comments stay text.
+ */
+const HIGHLIGHT = /^==(?=[^\s=])([^\n]*?[^\s=])==/;
+const COMMENT = /^%%([^\n]+?)%%/;
+md.inline.ruler.before('emphasis', 'highlight', (state, silent) => {
+  const match = HIGHLIGHT.exec(state.src.slice(state.pos));
+  if (!match) return false;
+  const end = state.pos + match[0].length;
+  if (!silent) {
+    const max = state.posMax;
+    state.push('highlight_open', 'mark', 1);
+    state.pos += 2;
+    state.posMax = end - 2;
+    state.md.inline.tokenize(state);
+    state.posMax = max;
+    state.push('highlight_close', 'mark', -1);
+  }
+  state.pos = end;
+  return true;
+});
+md.inline.ruler.before('emphasis', 'comment', (state, silent) => {
+  const match = COMMENT.exec(state.src.slice(state.pos));
+  if (!match) return false;
+  if (!silent) {
+    state.push('comment_open', 'span', 1);
+    state.push('text', '', 0).content = match[1];
+    state.push('comment_close', 'span', -1);
+  }
+  state.pos += match[0].length;
+  return true;
+});
+
 /** `[^1]: …` is a footnote, not a link reference definition, which would swallow it on save. */
 type BlockRule = Parameters<typeof md.block.ruler.at>[1];
 const reference = (md.block.ruler as unknown as { __rules__: { name: string; fn: BlockRule }[] }).__rules__.find(
@@ -123,6 +158,8 @@ export const markdownParser = new MarkdownParser(schema, md, {
   em: { mark: 'em', getAttrs: (tok) => ({ markup: tok.markup }) },
   strong: { mark: 'strong', getAttrs: (tok) => ({ markup: tok.markup }) },
   s: { mark: 'strike' },
+  highlight: { mark: 'highlight' },
+  comment: { mark: 'comment' },
   link: {
     mark: 'link',
     getAttrs: (tok) => ({
@@ -317,6 +354,8 @@ export const markdownSerializer = new MarkdownSerializer(
     md_raw: { open: '', close: '', escape: false },
     md_prefix: { open: '', close: '', escape: false },
     strike: { open: '~~', close: '~~', mixable: true, expelEnclosingWhitespace: true },
+    highlight: { open: '==', close: '==', mixable: true, expelEnclosingWhitespace: true },
+    comment: { open: '%%', close: '%%', escape: false },
   }
 );
 

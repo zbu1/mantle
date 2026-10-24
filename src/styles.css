@@ -201,6 +201,17 @@ button.focus-ring-inset:focus-visible,
   color: var(--muted-foreground);
 }
 
+.ProseMirror .md-highlight {
+  background: color-mix(in oklab, var(--primary) 22%, transparent);
+  color: inherit;
+  border-radius: 2px;
+}
+
+/* `%%comment%%`, until the cursor reveals it. */
+.ProseMirror .md-comment {
+  display: none;
+}
+
 /* An image's source, on its own line above the image. */
 .ProseMirror .md-raw-image {
   display: block;
