@@ -2,7 +2,6 @@ import { Node as PMNode } from 'prosemirror-model';
 import { Plugin, PluginKey } from 'prosemirror-state';
 import { EditorView } from 'prosemirror-view';
 import { logError, formatError } from '../../../../core/logger';
-import { parseMarkdown, serializeMarkdown } from '../markdown-converter';
 import { schema } from '../schema';
 
 /** Where an image's `src` leads, for the bar shown under a selected image. */
@@ -27,8 +26,6 @@ export interface ImageContext {
   describe(src: string): Promise<ImageDescription | null>;
   /** Opens the context menu for the image `node` at `pos`. */
   contextMenu(event: MouseEvent, view: EditorView, pos: number, node: PMNode): void;
-  /** Lets the user edit an image's Markdown source; resolves the new text, or null if cancelled. */
-  editSource(markdown: string): Promise<string | null>;
 }
 
 export const imagePluginKey = new PluginKey<ImageContext>('images');
@@ -47,27 +44,6 @@ export function insertImage(view: EditorView, src: string, pos?: number): void {
 export function removeImage(view: EditorView, pos: number): void {
   const node = view.state.doc.nodeAt(pos);
   if (node?.type === schema.nodes['image']) view.dispatch(view.state.tr.delete(pos, pos + node.nodeSize));
-}
-
-/**
- * Lets the user rewrite the image at `pos` as Markdown — `![alt](src)` or
- * `![[src|size]]` — and puts back whatever that parses to. Clearing it
- * removes the image.
- */
-export async function editImageSource(view: EditorView, pos: number | undefined): Promise<void> {
-  const node = pos === undefined ? null : view.state.doc.nodeAt(pos);
-  const context = imageContext(view);
-  if (pos === undefined || node?.type !== schema.nodes['image'] || !context) return;
-
-  const markdown = serializeMarkdown(schema.node('doc', null, [schema.node('paragraph', null, [node])])).trim();
-  const edited = await context.editSource(markdown);
-  // The note may have changed while the dialog was open.
-  if (edited === null || edited.trim() === markdown || view.state.doc.nodeAt(pos) !== node) return;
-
-  const inline = parseMarkdown(edited.trim()).firstChild;
-  const content = inline?.isTextblock ? inline.content : [];
-  view.dispatch(view.state.tr.replaceWith(pos, pos + node.nodeSize, content));
-  view.focus();
 }
 
 /**

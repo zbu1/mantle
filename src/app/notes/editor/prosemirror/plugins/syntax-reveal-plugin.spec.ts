@@ -3,7 +3,8 @@ import { history, undo } from 'prosemirror-history';
 import { Node as PMNode } from 'prosemirror-model';
 import { parseMarkdown, serializeMarkdown } from '../markdown-converter';
 import { schema } from '../schema';
-import { exitEmptyQuoteLine, syntaxRevealPlugin } from './syntax-reveal-plugin';
+import { EditorView } from 'prosemirror-view';
+import { exitEmptyQuoteLine, revealImageSource, syntaxRevealPlugin } from './syntax-reveal-plugin';
 
 function stateFor(markdown: string): EditorState {
   return EditorState.create({ doc: parseMarkdown(markdown), plugins: [history(), syntaxRevealPlugin()] });
@@ -171,11 +172,15 @@ describe('revealing Markdown syntax', () => {
     expect(state.doc.firstChild!.textContent).toBe('let a;');
   });
 
-  it('shows an image’s source just before it, and drops the source with the image', () => {
+  it('shows only a focus ring for a selected image', () => {
+    let state = stateFor('x ![alt](a.png) y');
+    state = state.apply(state.tr.setSelection(NodeSelection.create(state.doc, find(state.doc, '￼'))));
+    expect(text(state)).toBe('x ￼ y');
+  });
+
+  it('shows an image’s source beside the cursor, and drops the source with the image', () => {
     const markdown = 'x ![alt](a.png) y';
-    let state = stateFor(markdown);
-    const imagePos = find(state.doc, '￼');
-    state = state.apply(state.tr.setSelection(NodeSelection.create(state.doc, imagePos)));
+    let state = cursorAt(stateFor(markdown), '￼');
     expect(text(state)).toBe('x ![alt](a.png)￼ y');
     expect(serializeMarkdown(state.doc)).toBe(markdown);
 
@@ -184,18 +189,25 @@ describe('revealing Markdown syntax', () => {
     expect(text(state)).toBe('x  y');
   });
 
-  it('shows an image’s source once, when the image is selected again', () => {
+  it('shows an image’s source once, when the cursor comes back to it', () => {
     let state = stateFor('x ![alt](a.png) y');
-    const select = () => (state = state.apply(state.tr.setSelection(NodeSelection.create(state.doc, find(state.doc, '￼')))));
+    const select = () => (state = cursorAt(state, '￼', 1));
     select();
     state = cursorAt(state, 'a.png');
     select();
     expect(text(state)).toBe('x ![alt](a.png)￼ y');
   });
 
+  it('reveals and selects an image’s source on request', () => {
+    const view = new EditorView(document.createElement('div'), { state: stateFor('**b** ![one](1.png) and ![two](2.png)') });
+    revealImageSource(view, find(view.state.doc, 'and ') + 4);
+    const { from, to } = view.state.selection;
+    expect(view.state.doc.textBetween(from, to)).toBe('![two](2.png)');
+    view.destroy();
+  });
+
   it('takes an edited image source on leaving', () => {
-    let state = stateFor('x ![alt](a.png) y');
-    state = state.apply(state.tr.setSelection(NodeSelection.create(state.doc, find(state.doc, '￼'))));
+    let state = cursorAt(stateFor('x ![alt](a.png) y'), '￼');
     state = cursorAt(state, 'a.png');
     state = state.apply(state.tr.insertText('b', state.selection.from, state.selection.from + 1));
     state = cursorAt(state, 'y');

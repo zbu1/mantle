@@ -1,7 +1,7 @@
 import { Fragment, Mark, Node as PMNode } from 'prosemirror-model';
 import { Command, EditorState, NodeSelection, Plugin, PluginKey, TextSelection, Transaction } from 'prosemirror-state';
 import { Mapping, findWrapping, liftTarget } from 'prosemirror-transform';
-import { Decoration, DecorationSet } from 'prosemirror-view';
+import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { codeBody, codeFence, parseMarkdown, serializeMarkdown } from '../markdown-converter';
 import { schema } from '../schema';
@@ -273,11 +273,7 @@ function unfoldInline(tr: Transaction, pos: number): void {
   const mapping = tr.mapping.slice(steps);
   // A cursor at the start stays outside the opening delimiter.
   const map = (p: number) => mapping.map(p, p === start + span.from ? -1 : 1);
-  tr.setSelection(
-    selection instanceof NodeSelection
-      ? NodeSelection.create(tr.doc, mapping.map(selection.from))
-      : TextSelection.create(tr.doc, map(selection.anchor), map(selection.head)),
-  );
+  tr.setSelection(TextSelection.create(tr.doc, map(selection.anchor), map(selection.head)));
 }
 
 function unfoldPrefix(tr: Transaction, pos: number): void {
@@ -314,9 +310,9 @@ function unfoldRule(tr: Transaction, pos: number): void {
 
 function unfold(tr: Transaction): void {
   const selection = tr.selection;
+  // A selected image shows only a focus ring; its source shows beside the cursor, or through `revealImageSource`.
   if (selection instanceof NodeSelection) {
     if (selection.node.type === rule) unfoldRule(tr, selection.from);
-    else if (selection.node.type === image && selection.$from.parent.isTextblock) unfoldInline(tr, selection.$from.before());
     return;
   }
   const { $from, $to } = selection;
@@ -581,6 +577,24 @@ export function syntaxRevealPlugin(
       },
     },
   });
+}
+
+/** Shows the Markdown source of the image at `pos`, selected. */
+export function revealImageSource(view: EditorView, pos: number): void {
+  const $pos = view.state.doc.resolve(pos);
+  // Which of its block's images it is, to find it again once its source is in front of it.
+  let nth = 0;
+  $pos.parent.forEach((child, offset) => void (child.type === image && offset < $pos.parentOffset && nth++));
+  view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, pos)));
+  const { $from } = view.state.selection;
+  let seen = 0;
+  $from.parent.forEach((child, offset, index) => {
+    const source = $from.parent.maybeChild(index - 1);
+    if (child.type !== image || seen++ !== nth || !isImageSource(source)) return;
+    const end = $from.start() + offset;
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, end - source!.nodeSize, end)));
+  });
+  view.focus();
 }
 
 /**

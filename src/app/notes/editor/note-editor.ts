@@ -36,7 +36,7 @@ import { EditContextState } from '../../shared/edit-context-state';
 import { EditorFocusState } from './editor-focus-state';
 import { schema } from './prosemirror/schema';
 import { codeBody, parseMarkdown, serializeMarkdown } from './prosemirror/markdown-converter';
-import { exitEmptyQuoteLine, syntaxRevealPlugin } from './prosemirror/plugins/syntax-reveal-plugin';
+import { exitEmptyQuoteLine, revealImageSource, syntaxRevealPlugin } from './prosemirror/plugins/syntax-reveal-plugin';
 import { createSlashMenuPlugin } from './prosemirror/plugins/slash-menu-plugin';
 import { buildMarkdownInputRules } from './prosemirror/plugins/markdown-input-rules';
 import { trailingParagraphPlugin } from './prosemirror/plugins/trailing-paragraph-plugin';
@@ -46,7 +46,6 @@ import { TaskItemView } from './prosemirror/nodeviews/task-item-view';
 import { ImageView } from './prosemirror/nodeviews/image-view';
 import {
   ImageContext,
-  editImageSource,
   imagePlugin,
   relinkImages,
   removeImage,
@@ -376,12 +375,6 @@ export class NoteEditor {
         return info && { ...info, profile: info.profile && this.credentialsState.displayNameOf(info.profile) };
       },
       contextMenu: (event, view, pos, node) => void this.openImageMenu(event, view, pos, node.attrs['src']),
-      editSource: (markdown) =>
-        this.dialogState.prompt("Edit the image's Markdown. Clear it to remove the image.", {
-          title: 'Edit Image Source',
-          confirmLabel: 'Save',
-          initialValue: markdown,
-        }),
     };
   }
 
@@ -554,8 +547,7 @@ export class NoteEditor {
         disabled: !info || info.profile !== null,
         action: () => info && void this.attachments.openInDefaultApp(info.relPath),
       },
-      { kind: 'separator' },
-      { kind: 'item', label: 'Edit Source…', icon: 'rename', action: () => void editImageSource(view, pos) },
+      { kind: 'item', label: 'Show Markdown', action: () => revealImageSource(view, pos) },
       { kind: 'separator' },
       {
         kind: 'item',
