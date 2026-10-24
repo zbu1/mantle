@@ -165,17 +165,20 @@ describe('revealing Markdown syntax', () => {
     const reveal = (state: EditorState, needle: string) => state.apply(revealTaskMarker(state, find(state.doc, needle) - 2)!);
     const types = (state: EditorState) => state.doc.content.content.map((node) => node.type.name);
 
-    it('shows on request, selected, until the cursor leaves the line', () => {
-      const markdown = '- [ ] a\n- [x] b';
-      let state = reveal(taskState(markdown), 'b');
-      expect(text(state)).toBe('a\n- [x] b');
+    it('shows on request, selected, until the cursor leaves it, even along its line', () => {
+      const markdown = '- [ ] a\n- [x] bc';
+      let state = reveal(taskState(markdown), 'bc');
+      expect(text(state)).toBe('a\n- [x] bc');
       expect(state.doc.textBetween(state.selection.from, state.selection.to)).toBe('- [x] ');
       expect(serializeMarkdown(state.doc)).toBe(markdown);
-      state = cursorAt(state, 'b', 1);
-      expect(text(state)).toBe('a\n- [x] b');
-      state = cursorAt(state, 'a');
-      expect(text(state)).toBe('a\nb');
+      state = cursorAt(state, '[x]', 1);
+      expect(text(state)).toBe('a\n- [x] bc');
+      state = cursorAt(state, 'bc', 1);
+      expect(text(state)).toBe('a\nbc');
       expect(serializeMarkdown(state.doc)).toBe(markdown);
+
+      state = cursorAt(reveal(state, 'bc'), 'a');
+      expect(text(state)).toBe('a\nbc');
     });
 
     it('checks and unchecks it as `[x]` / `[ ]`', () => {

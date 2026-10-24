@@ -14,7 +14,7 @@ import { schema } from '../schema';
  * saved; the block's type says the same), and a code block's fences become
  * part of its text (`revealed`). Either way the saved Markdown doesn't change.
  * A checkbox's `- [ ] ` is an `md_prefix` too, but shows only on request
- * (`revealTaskMarker`), until the cursor leaves its line.
+ * (`revealTaskMarker`), until the cursor leaves it.
  *
  * Unfolding and refolding stay out of undo history, and edit the document
  * character by character rather than replacing the construct, so undo steps
@@ -385,8 +385,10 @@ function isStale(doc: PMNode, block: PMNode, pos: number, from: number, to: numb
     } else endRun();
   });
   endRun();
+  // A checkbox's `- [ ] ` folds as soon as the selection leaves it, even along its line.
+  if (hasPrefix && taskPrefix(doc, pos)) return stale || !(from >= start && to <= start + prefixEnd(block));
   const inBlock = from >= start && to <= pos + block.nodeSize - 1;
-  return stale || (hasPrefix && (!inBlock || !(expectedPrefix(doc, pos) || taskPrefix(doc, pos))));
+  return stale || (hasPrefix && (!inBlock || !expectedPrefix(doc, pos)));
 }
 
 function refold(tr: Transaction): void {
