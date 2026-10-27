@@ -1,4 +1,6 @@
 import { Component, computed, effect, inject, signal } from '@angular/core';
+import { appLogDir, join } from '@tauri-apps/api/path';
+import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import {
   LucideFolderOpen,
   LucideInfo,
@@ -221,6 +223,11 @@ export class SettingsModal {
 
   protected async revealVault(): Promise<void> {
     await this.vaultState.revealInFileExplorer('');
+  }
+
+  /** Shows the log file (`mantle.log`, named in `lib.rs`) in the file manager. */
+  protected async openLogFolder(): Promise<void> {
+    await revealItemInDir(await join(await appLogDir(), 'mantle.log'));
   }
 
   protected async revealMantleFolder(): Promise<void> {

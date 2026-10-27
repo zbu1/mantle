@@ -352,10 +352,10 @@
         </app-settings-row>
 
         <h3 class="mb-1 mt-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Data</h3>
-        <app-settings-row label="Debug Log" description="Errors from encryption and vault operations are recorded on disk.">
-          <button type="button"
+        <app-settings-row label="Log" description="Errors are recorded on disk, without passwords, keys or note content. It's capped at 5 MB, keeping one older file.">
+          <button type="button" (click)="openLogFolder()"
             class="rounded-md border border-border px-2.5 py-1 text-xs text-foreground hover:bg-background">
-            Open Debug Log
+            Open Log Folder
           </button>
         </app-settings-row>
         <app-settings-row label="Reset All Settings" description="Restore every setting on this page to its default.">
