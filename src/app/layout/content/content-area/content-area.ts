@@ -5,6 +5,7 @@ import {
   LucideArrowRight,
   LucideChevronDown,
   LucideChevronRight,
+  LucideCodeXml,
   LucideEllipsis,
   LucideExpand,
   LucideFileInput,
@@ -67,6 +68,7 @@ const RENAME_DEBOUNCE_MS = 1000;
     LucideX,
     LucideChevronDown,
     LucideChevronRight,
+    LucideCodeXml,
     LucideTriangleAlert,
     LucideRefreshCw,
     LucideFolderOpen,
@@ -125,6 +127,20 @@ export class ContentArea {
   });
 
   protected readonly vaultName = computed(() => vaultNameFromPath(this.vaultState.rootPath() ?? ''));
+
+  /** The shown tab displays its note's Markdown source. */
+  protected readonly sourceMode = computed(() => {
+    const tab = this.activeTab();
+    return !!tab && this.tabsState.sourceTabs().has(tab.id);
+  });
+  protected readonly sourceText = computed(() => {
+    const tab = this.activeTab();
+    return (tab && this.notesState.getNote(tab.noteId)?.content) ?? '';
+  });
+
+  protected onSourceInput(tab: NoteShowingTab, value: string): void {
+    this.notesState.updateContent(tab.noteId, value);
+  }
 
   /** Vault failed to open (bad/missing path, permissions, etc.) — show a fallback screen instead of the editor. */
   protected readonly vaultError = computed(() => (this.vaultState.tree() ? null : this.vaultState.error()));
@@ -191,7 +207,7 @@ export class ContentArea {
     // Ctrl+F / Ctrl+H: the note's own find bar, never the WebView's.
     if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && (key === 'f' || key === 'h')) {
       event.preventDefault();
-      if (!this.isActivePane() || !this.noteEditor()) return;
+      if (!this.isActivePane() || !this.noteEditor() || this.sourceMode()) return;
       this.find.set({ replace: key === 'h' });
       this.findBar()?.focus();
       return;

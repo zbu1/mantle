@@ -43,6 +43,13 @@
     </button>
     }
     <span class="flex-1"></span>
+    @if (!activeIsFile() && !lockedProfileId()) {
+    <button type="button" [title]="sourceMode() ? 'Show formatted note' : 'Show Markdown source'" [attr.aria-pressed]="sourceMode()"
+      (click)="tabsState.toggleSource(tab.id)" [class.text-primary]="sourceMode()" [class.text-muted-foreground]="!sourceMode()"
+      class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded hover:bg-surface hover:text-foreground">
+      <svg lucideCodeXml [size]="15"></svg>
+    </button>
+    }
     @if (noteEditor(); as editor) {
     <span class="shrink-0 text-xs text-muted-foreground">{{ editor.textStats().words }} {{ editor.textStats().words === 1 ? 'word' : 'words' }}
       · {{ editor.textStats().characters }} {{ editor.textStats().characters === 1 ? 'character' : 'characters' }}</span>
@@ -158,7 +165,13 @@
       </button>
     </div>
     }
-    <app-note-editor [noteId]="tab.noteId" [tabId]="tab.id" [scroller]="contentRoot" class="block h-full" />
+    @if (sourceMode()) {
+    <!-- The editor stays, hidden, so it keeps its undo history and follows these edits. -->
+    <textarea data-note-source spellcheck="false" [value]="sourceText()" (input)="onSourceInput(tab, $any($event.target).value)"
+      aria-label="Markdown source"
+      class="block min-h-64 w-full resize-none border-0 bg-transparent p-0 font-mono text-sm leading-relaxed text-foreground outline-none! [field-sizing:content] focus-visible:shadow-none"></textarea>
+    }
+    <app-note-editor [noteId]="tab.noteId" [tabId]="tab.id" [scroller]="contentRoot" class="block h-full" [class.hidden]="sourceMode()" />
     }
   </div>
   }

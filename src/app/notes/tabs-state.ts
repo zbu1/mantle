@@ -183,6 +183,15 @@ export class TabsState {
   /** Where forward leads, nearest first. */
   readonly forwardEntries = computed(() => this.history().forward);
 
+  /** Tabs showing their note's Markdown source rather than the editor. Not persisted. */
+  readonly sourceTabs = signal<ReadonlySet<string>>(new Set());
+
+  toggleSource(tabId: string): void {
+    const next = new Set(this.sourceTabs());
+    if (!next.delete(tabId)) next.add(tabId);
+    this.sourceTabs.set(next);
+  }
+
   /** Hidden notes' relPaths, whose tabs are left out of what's persisted: their path is sealed. */
   private readonly hiddenNoteIds = signal<ReadonlySet<string>>(new Set());
 
