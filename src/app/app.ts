@@ -21,7 +21,7 @@ export class App {
     const root = this.vaultState.rootPath();
     const activeId = this.tabsState.activeId();
     const tab = this.tabsState.tabs().find((t) => t.id === activeId);
-    const locked = tab && this.notesState.entry(tab.noteId)?.status === 'locked';
+    const locked = tab?.noteId && this.notesState.entry(tab.noteId)?.status === 'locked';
     return [tab && (locked ? `${tab.title} (locked)` : tab.title), root && vaultNameFromPath(root), 'Mantle']
       .filter(Boolean)
       .join(' — ');

@@ -64,6 +64,7 @@ const SHORTCUTS: ShortcutEntry[] = [
   { action: 'Go to note', keys: 'Ctrl+P' },
   { action: 'Command palette', keys: 'Ctrl+Shift+P' },
   { action: 'New note', keys: 'Ctrl+N' },
+  { action: 'New tab', keys: 'Ctrl+T' },
   { action: 'Save note', keys: 'Ctrl+S' },
   { action: 'Save all', keys: 'Ctrl+Shift+S' },
   { action: 'Close tab', keys: 'Ctrl+W' },

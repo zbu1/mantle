@@ -5,7 +5,7 @@ import { SidebarState } from '../layout/sidebar/sidebar-state';
 import { FavoritesState } from './favorites-state';
 import { NotePropertiesState } from './note-properties-state';
 import { NotesState } from './notes-state';
-import { NoteTab, TabsState } from './tabs-state';
+import { NoteShowingTab, NoteTab, TabsState } from './tabs-state';
 import { VaultMetaState } from './vault-meta-state';
 import { VaultSelectionState } from './vault-selection-state';
 import { VaultState } from './vault-state';
@@ -27,23 +27,31 @@ export class TabMenu {
   private readonly contextMenuState = inject(ContextMenuState);
   private readonly noteProperties = inject(NotePropertiesState);
 
-  open(event: MouseEvent, tab: NoteTab): void {
+  open(event: MouseEvent, shown: NoteTab): void {
     // The tab's own pane's tabs.
-    const pane = this.tabsState.paneOf(tab.id);
-    const tabs = pane ? this.tabsState.tabsOf(pane.id) : [tab];
-    const index = tabs.findIndex((t) => t.id === tab.id);
+    const pane = this.tabsState.paneOf(shown.id);
+    const tabs = pane ? this.tabsState.tabsOf(pane.id) : [shown];
+    const index = tabs.findIndex((t) => t.id === shown.id);
+    const closeAll = (keep: (t: NoteTab, i: number) => boolean) => () =>
+      tabs.forEach((t, i) => !keep(t, i) && this.tabsState.closeTab(t.id));
+    const closeItems: ContextMenuItem[] = [
+      { kind: 'item', label: 'Close', icon: 'close', shortcut: 'Ctrl+W', action: () => this.tabsState.closeTab(shown.id) },
+      { kind: 'item', label: 'Close Others', disabled: tabs.length < 2, action: closeAll((t) => t.id === shown.id) },
+      { kind: 'item', label: 'Close to the Right', disabled: index === tabs.length - 1, action: closeAll((_t, i) => i <= index) },
+      { kind: 'item', label: 'Close All', action: closeAll(() => false) },
+    ];
+    if (shown.noteId === null) {
+      this.contextMenuState.open(event, closeItems);
+      return;
+    }
+    const tab = shown as NoteShowingTab;
     const isNote = isNotePath(tab.noteId);
     const tree = this.vaultState.tree();
     const exists = !!tree && flattenTreeNodes(tree).has(tab.noteId);
     const content = this.notesState.getNote(tab.noteId)?.content;
-    const closeAll = (keep: (t: NoteTab, i: number) => boolean) => () =>
-      tabs.forEach((t, i) => !keep(t, i) && this.tabsState.closeTab(t.id));
 
     const items: ContextMenuItem[] = [
-      { kind: 'item', label: 'Close', icon: 'close', shortcut: 'Ctrl+W', action: () => this.tabsState.closeTab(tab.id) },
-      { kind: 'item', label: 'Close Others', disabled: tabs.length < 2, action: closeAll((t) => t.id === tab.id) },
-      { kind: 'item', label: 'Close to the Right', disabled: index === tabs.length - 1, action: closeAll((_t, i) => i <= index) },
-      { kind: 'item', label: 'Close All', action: closeAll(() => false) },
+      ...closeItems,
       { kind: 'separator' },
       {
         kind: 'item',

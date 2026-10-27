@@ -24,6 +24,10 @@
           (hovered)="hoveredItem.set('newNote')" (selected)="newNote()">
           <svg menuItemIcon lucideFilePlus [size]="14"></svg>
         </app-menu-item>
+        <app-menu-item label="New Tab" shortcut="Ctrl+T" [disabled]="!hasVault()" [active]="hoveredItem() === 'newTab'"
+          (hovered)="hoveredItem.set('newTab')" (selected)="newTab()">
+          <svg menuItemIcon lucidePlus [size]="14"></svg>
+        </app-menu-item>
         <app-menu-item label="New Folder" [disabled]="!hasVault()" [active]="hoveredItem() === 'newFolder'"
           (hovered)="hoveredItem.set('newFolder')" (selected)="newFolder()">
           <svg menuItemIcon lucideFolderPlus [size]="14"></svg>

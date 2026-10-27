@@ -217,7 +217,7 @@ export class VaultActions {
       if (item.type === 'folder') {
         await this.vaultState.deleteFolder(item.relPath);
         // Files in it too, not just notes: their preview tabs would show nothing.
-        for (const tab of this.tabsState.tabs().filter((t) => t.noteId.startsWith(`${item.relPath}/`))) {
+        for (const tab of this.tabsState.tabs().filter((t) => t.noteId?.startsWith(`${item.relPath}/`))) {
           this.tabsState.closeTab(tab.id);
         }
         for (const relPath of flattenVaultNotes(item).keys()) this.vaultMeta.forgetNote(relPath);
@@ -247,8 +247,8 @@ export class VaultActions {
     const moved = (path: string) => to + path.slice(from.length);
     this.vaultMeta.renameFolder(from, to);
     for (const id of this.notesState.ids().filter(inside)) this.notesState.renameNoteId(id, moved(id));
-    for (const tab of this.tabsState.tabs().filter((t) => inside(t.noteId))) {
-      this.tabsState.renameNoteId(tab.noteId, moved(tab.noteId), tab.title);
+    for (const { noteId, title } of this.tabsState.tabs()) {
+      if (noteId && inside(noteId)) this.tabsState.renameNoteId(noteId, moved(noteId), title);
     }
   }
 

@@ -149,6 +149,8 @@
     }
   </div>
   }
+  } @else if (emptyTab(); as tab) {
+  <app-empty-tab [tabId]="tab.id" />
   } @else {
   <div class="flex flex-1 flex-col items-center justify-center gap-4 px-6 pb-16 text-center">
     <!-- Strata: layered waves that warm from border-gray to ember. -->

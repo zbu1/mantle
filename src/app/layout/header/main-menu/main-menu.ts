@@ -17,6 +17,7 @@ import {
   LucideFilePlus,
   LucideFileSearch,
   LucideFolderPlus,
+  LucidePlus,
   LucideFolderX,
   LucideFolders,
   LucideInfo,
@@ -82,6 +83,7 @@ type MenuCategory = 'file' | 'edit' | 'view' | 'help';
     LucideCheck,
     LucideFilePlus,
     LucideFolderPlus,
+    LucidePlus,
     LucideSave,
     LucideSaveAll,
     LucideSettings,
@@ -203,7 +205,7 @@ export class MainMenu {
     this.closeMenu();
   }
 
-  /** The File menu's shortcuts: Ctrl+N, Ctrl+S, Ctrl+Shift+S, Ctrl+W. */
+  /** The File menu's shortcuts: Ctrl+N, Ctrl+T, Ctrl+S, Ctrl+Shift+S, Ctrl+W. */
   @HostListener('document:keydown', ['$event'])
   protected onKeydown(event: KeyboardEvent): void {
     if (!(event.ctrlKey || event.metaKey) || event.altKey || event.repeat) return;
@@ -211,6 +213,8 @@ export class MainMenu {
     const action =
       key === 'n' && !event.shiftKey && this.hasVault()
         ? () => this.newNote()
+        : key === 't' && !event.shiftKey && this.hasVault()
+          ? () => this.newTab()
         : key === 's'
           ? () => (event.shiftKey ? this.saveAll() : this.saveActiveNote())
           : key === 'w' && !event.shiftKey && this.hasActiveTab()
@@ -228,6 +232,11 @@ export class MainMenu {
     await this.vaultActions.createAndOpenNote();
   }
 
+  protected newTab(): void {
+    this.closeMenu();
+    this.tabsState.openEmptyTab();
+  }
+
   protected async newFolder(): Promise<void> {
     this.closeMenu();
     if (!this.hasVault()) return;
@@ -238,7 +247,7 @@ export class MainMenu {
   protected async saveActiveNote(): Promise<void> {
     this.closeMenu();
     const tab = this.activeTab();
-    if (!tab) return;
+    if (!tab?.noteId) return;
     await this.notesState.flushPending([tab.noteId]);
   }
 

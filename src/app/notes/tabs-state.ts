@@ -4,11 +4,15 @@ import { VaultRootState } from './vault-root-state';
 
 export interface NoteTab {
   id: string;
-  noteId: string;
+  /** Null for an empty tab, which shows search and recent notes until something opens in it. */
+  noteId: string | null;
   title: string;
   /** True when the underlying file was removed outside the app (not persisted; recomputed on scan). */
   missing?: boolean;
 }
+
+/** A tab showing a note (or file), not an empty one. */
+export type NoteShowingTab = NoteTab & { noteId: string };
 
 /** A pane of the editor area: its own strip of tabs, one of them shown. */
 export interface TabPane {
@@ -53,6 +57,8 @@ interface PersistedTabsState {
 }
 
 const STORAGE_KEY = 'mantle.tabs.v2';
+
+export const EMPTY_TAB_TITLE = 'New Tab';
 
 function createId(): string {
   return typeof crypto !== 'undefined' && crypto.randomUUID
@@ -112,7 +118,7 @@ function readFromStorage(): { tabs: NoteTab[]; layout: TabLayout; activePaneId: 
     const parsed = JSON.parse(raw) as PersistedTabsState;
     const tabs: NoteTab[] = Array.isArray(parsed.tabs)
       ? parsed.tabs
-          .filter((tab: NoteTab) => !!tab?.id && !!tab?.noteId && typeof tab?.title === 'string')
+          .filter((tab: NoteTab) => !!tab?.id && (tab.noteId === null || !!tab.noteId) && typeof tab.title === 'string')
           .map((tab: NoteTab) => ({ id: tab.id, noteId: tab.noteId, title: tab.title }))
       : [];
     const ids = new Set(tabs.map((tab) => tab.id));
@@ -183,7 +189,7 @@ export class TabsState {
   constructor() {
     effect(() => {
       const hidden = this.hiddenNoteIds();
-      const tabs = this.tabs().filter((tab) => !hidden.has(tab.noteId));
+      const tabs = this.tabs().filter((tab) => tab.noteId === null || !hidden.has(tab.noteId));
       const kept = new Set(tabs.map((tab) => tab.id));
       const layout =
         mapPanes(this.layout(), (pane) => {
@@ -228,6 +234,7 @@ export class TabsState {
 
   openNote(note: NoteRef): void {
     if (!this.vaultRoot.isOpen()) return;
+    if (this.fillEmptyTab(note)) return;
     const pane = this.activePane();
     const tabs = this.tabsOf(pane.id);
     const existing = tabs.find((tab) => tab.noteId === note.id) ?? this.tabs().find((tab) => tab.noteId === note.id);
@@ -253,13 +260,27 @@ export class TabsState {
 
   /** Always opens `note` in a brand-new tab (rather than reusing/replacing the active tab). */
   openInNewTab(note: NoteRef): void {
-    if (!this.vaultRoot.isOpen()) return;
+    if (!this.vaultRoot.isOpen() || this.fillEmptyTab(note)) return;
     const existing = this.tabs().find((tab) => tab.noteId === note.id);
     if (existing) {
       this.setActive(existing.id);
       return;
     }
     this.addTab(this.activePane().id, note, true);
+  }
+
+  /** Opens an empty tab in the active pane. */
+  openEmptyTab(): void {
+    if (!this.vaultRoot.isOpen()) return;
+    this.addTab(this.activePane().id, null, true);
+  }
+
+  /** Shows `note` in the active tab if that tab is empty; false if it isn't. */
+  private fillEmptyTab(note: NoteRef): boolean {
+    const tabId = this.activeId();
+    if (!tabId || this.tabs().find((tab) => tab.id === tabId)?.noteId !== null) return false;
+    this.tabs.update((all) => all.map((tab) => (tab.id === tabId ? { id: tab.id, noteId: note.id, title: note.title } : tab)));
+    return true;
   }
 
   /**
@@ -382,8 +403,9 @@ export class TabsState {
     this.restore(forward[steps - 1]);
   }
 
-  private addTab(paneId: string, note: NoteRef, activate: boolean): void {
-    const tab: NoteTab = { id: createId(), noteId: note.id, title: note.title };
+  /** Adds a tab showing `note`, or an empty one for null. */
+  private addTab(paneId: string, note: NoteRef | null, activate: boolean): void {
+    const tab: NoteTab = { id: createId(), noteId: note?.id ?? null, title: note?.title ?? EMPTY_TAB_TITLE };
     if (activate) this.recordCurrent();
     this.tabs.update((tabs) => [...tabs, tab]);
     this.layout.update(
@@ -403,9 +425,10 @@ export class TabsState {
     this.activePaneId.set(paneId);
   }
 
+  /** Where we are now, or null in an empty tab, which history skips. */
   private currentEntry(): NavEntry | null {
     const tab = this.tabs().find((tab) => tab.id === this.activeId());
-    return tab ? { tabId: tab.id, noteId: tab.noteId, title: tab.title } : null;
+    return tab?.noteId ? { tabId: tab.id, noteId: tab.noteId, title: tab.title } : null;
   }
 
   /** Pushes where we are now onto the back stack, ahead of a navigation. */

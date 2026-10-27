@@ -1,5 +1,4 @@
 import { Component, computed, inject } from '@angular/core';
-import { VaultActions } from '../../notes/vault-actions';
 import { LucidePanelLeft, LucidePlus } from '@lucide/angular';
 import { ICON_RAIL_WIDTH } from '../icon-rail/icon-rail';
 import { SidebarState } from '../sidebar/sidebar-state';
@@ -21,7 +20,6 @@ const TOGGLE_BUTTON_GAP = 8;
 export class Header {
   protected readonly sidebarState = inject(SidebarState);
   protected readonly tabsState = inject(TabsState);
-  private readonly vaultActions = inject(VaultActions);
   protected readonly gridTemplateColumns = computed(
     () => `${ICON_RAIL_WIDTH + this.sidebarState.effectiveWidth()}px 1fr auto`,
   );
@@ -51,9 +49,5 @@ export class Header {
 
   toggleSidebar(): void {
     this.sidebarState.toggleCollapsed();
-  }
-
-  protected async onNewNote(): Promise<void> {
-    await this.vaultActions.createAndOpenNote();
   }
 }

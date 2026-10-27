@@ -279,6 +279,42 @@ describe('TabsState', () => {
     expect(state.canGoForward()).toBe(false);
   });
 
+  describe('empty tabs', () => {
+    it('fills an empty tab with the next note opened, skipping it in history', () => {
+      const state = TestBed.inject(TabsState);
+      state.openNote(noteA);
+      state.openEmptyTab();
+      const empty = state.activeId()!;
+      expect(state.tabs().find((t) => t.id === empty)?.noteId).toBeNull();
+      // Opening a note that's already in another tab still lands in the empty one.
+      state.openNote(noteA);
+      expect(state.activeId()).toBe(empty);
+      expect(state.tabs().map((t) => t.noteId)).toEqual([noteA.id, noteA.id]);
+      state.goBack();
+      expect(state.tabs().find((t) => t.id === state.activeId())?.noteId).toBe(noteA.id);
+    });
+
+    it('does not record an empty tab as a place to go back to', () => {
+      const state = TestBed.inject(TabsState);
+      state.openEmptyTab();
+      state.openInNewTab(noteB);
+      expect(state.tabs()).toHaveLength(1);
+      expect(state.canGoBack()).toBe(false);
+    });
+
+    it('is persisted and restored', () => {
+      const state = TestBed.inject(TabsState);
+      state.openEmptyTab();
+      TestBed.tick();
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({ providers: [provideZonelessChangeDetection()] });
+      TestBed.inject(VaultRootState).path.set('/vault');
+      const restored = TestBed.inject(TabsState);
+      expect(restored.tabs().map((t) => t.noteId)).toEqual([null]);
+      expect(restored.activeId()).toBe(restored.tabs()[0].id);
+    });
+  });
+
   it('persists state changes back to localStorage', () => {
     const setItemSpy = jest.spyOn(Storage.prototype, 'setItem');
     const state = TestBed.inject(TabsState);

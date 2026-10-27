@@ -17,7 +17,7 @@ import {
   LucideTriangleAlert,
   LucideX,
 } from '@lucide/angular';
-import { TabsState, NoteTab } from '../../../notes/tabs-state';
+import { TabsState, NoteTab, NoteShowingTab } from '../../../notes/tabs-state';
 import { NotesState, titleFromRelPath } from '../../../notes/notes-state';
 import { CredentialsState } from '../../../notes/credentials-state';
 import { EncryptionPanelState } from '../../../notes/encryption-panel/encryption-panel-state';
@@ -43,6 +43,7 @@ import { MarkdownNoticeState } from '../../../notes/markdown-notice-state';
 import { SidebarState } from '../../sidebar/sidebar-state';
 import { CONVERT_HELP, NoteEncryptionActions } from '../../../notes/note-encryption-actions';
 import { TabMenu } from '../../../notes/tab-menu';
+import { EmptyTab } from '../../../notes/empty-tab/empty-tab';
 
 const RENAME_DEBOUNCE_MS = 1000;
 
@@ -50,6 +51,7 @@ const RENAME_DEBOUNCE_MS = 1000;
   selector: 'app-content-area',
   imports: [
     NoteEditor,
+    EmptyTab,
     FindBar,
     FilePreview,
     HelpPopover,
@@ -101,10 +103,19 @@ export class ContentArea {
   );
   private readonly isActivePane = computed(() => this.pane()?.id === this.tabsState.activePaneId());
 
-  /** The tab this pane shows. */
-  protected readonly activeTab = computed<NoteTab | undefined>(() => {
+  private readonly shownTab = computed<NoteTab | undefined>(() => {
     const activeId = this.pane()?.activeTabId;
     return activeId ? this.tabsState.tabs().find((t) => t.id === activeId) : undefined;
+  });
+  /** The tab this pane shows, unless it's empty. */
+  protected readonly activeTab = computed(() => {
+    const tab = this.shownTab();
+    return tab?.noteId ? (tab as NoteShowingTab) : undefined;
+  });
+  /** The tab this pane shows while it's empty. */
+  protected readonly emptyTab = computed(() => {
+    const tab = this.shownTab();
+    return tab && tab.noteId === null ? tab : undefined;
   });
 
   /** The active tab shows a file that isn't a note — an image, a PDF — in a read-only preview. */
@@ -281,19 +292,19 @@ export class ContentArea {
   }
 
   /** The folders above the note, outermost first, each with its vault-relative path. */
-  protected folderCrumbs(tab: NoteTab): { name: string; relPath: string }[] {
+  protected folderCrumbs(tab: NoteShowingTab): { name: string; relPath: string }[] {
     const segments = tab.noteId.split('/').slice(0, -1);
     return segments.map((name, i) => ({ name, relPath: segments.slice(0, i + 1).join('/') }));
   }
 
   /** Reflects each keystroke into the tab title and sidebar entry right away; the on-disk rename is debounced. */
-  protected onTitleInput(tab: NoteTab, value: string): void {
+  protected onTitleInput(tab: NoteShowingTab, value: string): void {
     this.tabsState.updateTabTitle(tab.id, value);
     this.vaultState.renameNoteInTree(tab.noteId, tab.noteId, value);
     this.scheduleRename(tab.id);
   }
 
-  protected onTitleKeydown(event: KeyboardEvent, tab: NoteTab, input: HTMLInputElement): void {
+  protected onTitleKeydown(event: KeyboardEvent, tab: NoteShowingTab, input: HTMLInputElement): void {
     if (event.key === 'Enter') {
       event.preventDefault();
       input.blur();
@@ -308,7 +319,7 @@ export class ContentArea {
     }
   }
 
-  protected onTitleBlur(tab: NoteTab): void {
+  protected onTitleBlur(tab: NoteShowingTab): void {
     this.cancelPendingRename(tab.id);
     void this.commitRename(tab.id);
   }
@@ -334,7 +345,7 @@ export class ContentArea {
 
   private async commitRename(tabId: string): Promise<void> {
     const tab = this.tabsState.tabs().find((t) => t.id === tabId);
-    if (!tab) return;
+    if (!tab?.noteId) return;
 
     const onDiskTitle = titleFromRelPath(tab.noteId);
     const newTitle = tab.title.trim();

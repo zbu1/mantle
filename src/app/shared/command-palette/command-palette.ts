@@ -200,7 +200,7 @@ export class CommandPalette {
         label: 'Save Note',
         icon: 'save',
         keywords: ['save', 'write'],
-        run: () => void this.notesState.flushPending([activeTab.noteId]),
+        run: () => void this.notesState.flushPending(activeTab.noteId ? [activeTab.noteId] : []),
       });
       items.push({
         id: 'close-tab',
@@ -210,14 +210,15 @@ export class CommandPalette {
         run: () => this.tabsState.closeTab(activeTab.id),
       });
       const tree = this.vaultState.tree();
-      if (this.vaultMeta.loaded() && tree && flattenVaultNotes(tree).has(activeTab.noteId)) {
-        const favorite = this.favorites.isFavorite(activeTab.noteId);
+      const noteId = activeTab.noteId;
+      if (noteId && this.vaultMeta.loaded() && tree && flattenVaultNotes(tree).has(noteId)) {
+        const favorite = this.favorites.isFavorite(noteId);
         items.push({
           id: 'toggle-favorite',
           label: favorite ? 'Remove Note from Favorites' : 'Add Note to Favorites',
           icon: 'star',
           keywords: ['favorite', 'favourite', 'star', 'bookmark', 'pin'],
-          run: () => this.favorites.toggle(activeTab.noteId),
+          run: () => this.favorites.toggle(noteId),
         });
       }
     }

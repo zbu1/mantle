@@ -16,7 +16,7 @@
     } @else {
     <div class="flex items-center pl-2 text-sm font-semibold tracking-tight text-foreground">Mantle<span class="text-primary">.</span></div>
     }
-    <button type="button" title="New note" (click)="onNewNote()"
+    <button type="button" title="New tab (Ctrl+T)" (click)="tabsState.openEmptyTab()"
       class="my-1 inline-flex h-7 w-7 shrink-0 items-center justify-center self-center rounded-md text-muted-foreground hover:bg-background/60 hover:text-foreground">
       <svg lucidePlus [size]="14"></svg>
     </button>
