@@ -44,6 +44,7 @@ import { buildMarkdownInputRules } from './prosemirror/plugins/markdown-input-ru
 import { trailingParagraphPlugin } from './prosemirror/plugins/trailing-paragraph-plugin';
 import { listMarkerPlugin } from './prosemirror/plugins/list-marker-plugin';
 import { foldedHeadings, headingFoldKey, headingFoldPlugin, setFoldedHeadings } from './prosemirror/plugins/heading-fold-plugin';
+import { calloutPlugin } from './prosemirror/plugins/callout-plugin';
 import { HeadingFoldState, NoteFolds } from './heading-fold-state';
 import { findPlugin, findStatus } from './prosemirror/plugins/find-plugin';
 import { demoteEmptyLeadingBlock } from './prosemirror/commands/demote-empty-leading-block';
@@ -233,6 +234,7 @@ export class NoteEditor {
           buildEditorKeymap(),
           gapCursor(),
           headingFoldPlugin(),
+          calloutPlugin(),
           findPlugin(),
           dropCursor({ color: 'var(--primary)', width: 2 }),
           trailingParagraphPlugin(),
