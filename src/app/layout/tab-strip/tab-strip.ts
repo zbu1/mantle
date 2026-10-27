@@ -1,5 +1,5 @@
-import { Component, computed, inject, input, signal } from '@angular/core';
-import { LucideX } from '@lucide/angular';
+import { Component, DestroyRef, ElementRef, afterNextRender, afterRenderEffect, computed, inject, input, signal, viewChild } from '@angular/core';
+import { LucideChevronLeft, LucideChevronRight, LucideX } from '@lucide/angular';
 import { TabMenu } from '../../notes/tab-menu';
 import { NoteTab, TabsState } from '../../notes/tabs-state';
 
@@ -9,11 +9,12 @@ export const TAB_DRAG_MIME = 'application/x-mantle-tab';
 /**
  * One pane's tabs: click to show, drag to reorder or into another pane's
  * strip, right-click for the tab menu. The header shows the only pane's;
- * once the editor area is split, each pane shows its own.
+ * once the editor area is split, each pane shows its own. Tabs that don't
+ * fit scroll sideways (the wheel scrolls them too), with a button at each end.
  */
 @Component({
   selector: 'app-tab-strip',
-  imports: [LucideX],
+  imports: [LucideChevronLeft, LucideChevronRight, LucideX],
   host: {
     class: 'flex min-w-0 items-stretch gap-1',
     '(dragover)': 'onDragOver($event, tabs().length)',
@@ -21,6 +22,15 @@ export const TAB_DRAG_MIME = 'application/x-mantle-tab';
     '(drop)': 'onDrop($event)',
   },
   template: `
+    @if (overflowing()) {
+      <button type="button" title="Scroll tabs left" [disabled]="!canScrollLeft()" (click)="scrollBy(-1)"
+        class="my-1 flex w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-background/60 hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent [app-region:no-drag]">
+        <svg lucideChevronLeft [size]="14"></svg>
+      </button>
+    }
+    <div #scroller (scroll)="measure()" (wheel)="onWheel($event)"
+      class="flex min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div #content class="flex w-max items-stretch gap-1">
     @for (tab of tabs(); track tab.id; let i = $index) {
       @let active = tab.id === activeTabId();
       <button type="button" draggable="true" (dragstart)="onDragStart($event, tab)" (dragend)="dropIndex.set(null)"
@@ -39,6 +49,14 @@ export const TAB_DRAG_MIME = 'application/x-mantle-tab';
       </button>
     }
     <span class="w-1 shrink-0 self-stretch rounded" [class.bg-primary]="dropIndex() === tabs().length"></span>
+    </div>
+    </div>
+    @if (overflowing()) {
+      <button type="button" title="Scroll tabs right" [disabled]="!canScrollRight()" (click)="scrollBy(1)"
+        class="my-1 flex w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-background/60 hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent [app-region:no-drag]">
+        <svg lucideChevronRight [size]="14"></svg>
+      </button>
+    }
   `,
 })
 export class TabStrip {
@@ -52,6 +70,46 @@ export class TabStrip {
   protected readonly paneActive = computed(() => this.tabsState.activePaneId() === this.paneId() || !this.tabsState.split());
   /** Where a dragged tab would land. */
   protected readonly dropIndex = signal<number | null>(null);
+
+  private readonly scroller = viewChild.required<ElementRef<HTMLElement>>('scroller');
+  private readonly content = viewChild.required<ElementRef<HTMLElement>>('content');
+  protected readonly canScrollLeft = signal(false);
+  protected readonly canScrollRight = signal(false);
+  protected readonly overflowing = computed(() => this.canScrollLeft() || this.canScrollRight());
+
+  constructor() {
+    const destroyRef = inject(DestroyRef);
+    afterNextRender(() => {
+      const observer = new ResizeObserver(() => this.measure());
+      observer.observe(this.scroller().nativeElement);
+      observer.observe(this.content().nativeElement);
+      destroyRef.onDestroy(() => observer.disconnect());
+    });
+    // Keep the active tab in view, e.g. one just opened past the right edge.
+    afterRenderEffect(() => {
+      const id = this.activeTabId();
+      const index = this.tabs().findIndex((t) => t.id === id);
+      this.content().nativeElement.children[index]?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    });
+  }
+
+  protected measure(): void {
+    const el = this.scroller().nativeElement;
+    this.canScrollLeft.set(el.scrollLeft > 0);
+    this.canScrollRight.set(Math.ceil(el.scrollLeft + el.clientWidth) < el.scrollWidth);
+  }
+
+  protected scrollBy(direction: number): void {
+    const el = this.scroller().nativeElement;
+    el.scrollBy({ left: direction * el.clientWidth * 0.75, behavior: 'smooth' });
+  }
+
+  /** A vertical wheel scrolls the strip sideways. */
+  protected onWheel(event: WheelEvent): void {
+    if (event.deltaY === 0 || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+    event.preventDefault();
+    this.scroller().nativeElement.scrollLeft += event.deltaY;
+  }
 
   protected close(event: Event, id: string): void {
     event.stopPropagation();

@@ -11,15 +11,16 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
-import { EditorState, Command, Plugin } from 'prosemirror-state';
+import { EditorState, Command, Plugin, Selection, TextSelection } from 'prosemirror-state';
 import { EditorView } from 'prosemirror-view';
 import { Node as ProseMirrorNode, Slice } from 'prosemirror-model';
 import { history, undo, redo } from 'prosemirror-history';
 import { keymap } from 'prosemirror-keymap';
-import { baseKeymap, chainCommands, joinTextblockBackward, setBlockType } from 'prosemirror-commands';
-import { splitListItem, sinkListItem, liftListItem } from 'prosemirror-schema-list';
+import { baseKeymap, chainCommands, joinTextblockBackward } from 'prosemirror-commands';
+import { splitListItem } from 'prosemirror-schema-list';
 import { undoInputRule } from 'prosemirror-inputrules';
 import { gapCursor } from 'prosemirror-gapcursor';
+import { dropCursor } from 'prosemirror-dropcursor';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 
@@ -41,8 +42,13 @@ import { mathPlugin, newlineInMathBlock } from './prosemirror/plugins/math-plugi
 import { createSlashMenuPlugin } from './prosemirror/plugins/slash-menu-plugin';
 import { buildMarkdownInputRules } from './prosemirror/plugins/markdown-input-rules';
 import { trailingParagraphPlugin } from './prosemirror/plugins/trailing-paragraph-plugin';
+import { listMarkerPlugin } from './prosemirror/plugins/list-marker-plugin';
+import { foldedHeadings, headingFoldKey, headingFoldPlugin, setFoldedHeadings } from './prosemirror/plugins/heading-fold-plugin';
+import { HeadingFoldState, NoteFolds } from './heading-fold-state';
+import { findPlugin, findStatus } from './prosemirror/plugins/find-plugin';
 import { demoteEmptyLeadingBlock } from './prosemirror/commands/demote-empty-leading-block';
 import { liftListItemAtStart } from './prosemirror/commands/lift-list-item-at-start';
+import { indentListItems } from './prosemirror/commands/indent-list-items';
 import { TaskItemView } from './prosemirror/nodeviews/task-item-view';
 import { ImageView } from './prosemirror/nodeviews/image-view';
 import {
@@ -66,8 +72,8 @@ import {
   setCodeBlockLanguage,
 } from './prosemirror/plugins/code-block-plugin';
 import { SlashMenu } from './slash-menu/slash-menu';
-import { ADD_PROPERTY_EVENT, SLASH_COMMAND_ITEMS } from './slash-menu/slash-menu.model';
-import { formatSelection, insertHorizontalRule, linkSelection, pastePlainText } from './prosemirror/editor-commands';
+import { ADD_PROPERTY_EVENT } from './slash-menu/slash-menu.model';
+import { BlockKind, formatSelection, insertHorizontalRule, linkSelection, pastePlainText, turnInto } from './prosemirror/editor-commands';
 import { pickImage } from './prosemirror/plugins/image-plugin';
 import { ContextMenuAction } from '../../shared/context-menu/context-menu.model';
 import { SlashMenuState } from './slash-menu/slash-menu-state';
@@ -82,6 +88,13 @@ import { dirOf } from '../vault-tree.model';
 /** Meta on a transaction that brings in an edit made in another pane, so it isn't saved again. */
 const OTHER_PANE = 'mantle:other-pane';
 
+/**
+ * Where each tab left each note: scroll offset and selection, restored when
+ * the tab shows it again. In memory only.
+ * ponytail: never pruned; entries are tiny, drop them on tab close if it ever matters.
+ */
+const viewStates = new Map<string, { scrollTop: number; anchor: number; head: number }>();
+
 function buildEditorKeymap() {
   const keys: Record<string, Command> = {
     ...baseKeymap,
@@ -91,6 +104,8 @@ function buildEditorKeymap() {
     'Mod-b': (_state, _dispatch, view) => !!view && (formatSelection(view, 'strong', '**'), true),
     'Mod-i': (_state, _dispatch, view) => !!view && (formatSelection(view, 'em', '*'), true),
     'Mod-`': (_state, _dispatch, view) => !!view && (formatSelection(view, 'code', '`'), true),
+    'Shift-Mod-x': (_state, _dispatch, view) => !!view && (formatSelection(view, 'strike', '~~'), true),
+    'Shift-Mod-h': (_state, _dispatch, view) => !!view && (formatSelection(view, 'highlight', '=='), true),
     'Shift-Mod-v': (_state, _dispatch, view) => !!view && (pastePlainText(view), true),
     Enter: chainCommands(
       codeFenceOnEnter,
@@ -101,17 +116,8 @@ function buildEditorKeymap() {
       splitListItem(schema.nodes['task_item'], { checked: false }),
       baseKeymap['Enter']
     ),
-    Tab: chainCommands(
-      indentCodeLines(false),
-      sinkListItem(schema.nodes['list_item']),
-      sinkListItem(schema.nodes['task_item']),
-      indentedCodeOnTab
-    ),
-    'Shift-Tab': chainCommands(
-      indentCodeLines(true),
-      liftListItem(schema.nodes['list_item']),
-      liftListItem(schema.nodes['task_item'])
-    ),
+    Tab: chainCommands(indentCodeLines(false), indentListItems(false), indentedCodeOnTab),
+    'Shift-Tab': chainCommands(indentCodeLines(true), indentListItems(true)),
     // undoInputRule first, so Backspace right after an auto-conversion restores
     // the literal markdown that triggered it. liftListItemAtStart comes next so
     // Backspace at the very start of a list item just drops its marker in
@@ -170,8 +176,13 @@ export class NoteEditor {
   private readonly links = inject(NoteLinksState);
   private readonly linkMenuState = inject(LinkMenuState);
   private readonly tabsState = inject(TabsState);
+  private readonly headingFolds = inject(HeadingFoldState);
 
   readonly noteId = input.required<string>();
+  /** The tab showing the note, which keys its saved scroll position and selection. */
+  readonly tabId = input('');
+  /** The element that scrolls the editor. */
+  readonly scroller = input<HTMLElement>();
 
   private readonly mount = viewChild.required<ElementRef<HTMLElement>>('mount');
   private readonly slashMenuCmp = viewChild.required<SlashMenu>('slashMenu');
@@ -179,11 +190,20 @@ export class NoteEditor {
 
   private editorView: EditorView | undefined;
   private lastAppliedNoteId: string | undefined;
+  /** `viewStates` key of what the editor shows. */
+  private appliedKey: string | undefined;
   /** The Markdown this editor last saved or loaded; anything else in `NotesState` came from another pane. */
   private lastMarkdown: string | undefined;
 
   /** Words and non-whitespace characters of the rendered text, for the content area's toolbar. */
   readonly textStats = signal({ words: 0, characters: 0 });
+  /** The find bar's "n of m". */
+  readonly findStatus = signal({ current: 0, total: 0 });
+
+  /** The ProseMirror view, once rendered. */
+  get view(): EditorView | undefined {
+    return this.editorView;
+  }
 
   /** The code block whose language picker is open, and the label it drops down from. */
   protected readonly languagePicker = signal<{ view: EditorView; pos: number; anchor: HTMLElement; current: string } | null>(null);
@@ -212,8 +232,12 @@ export class NoteEditor {
           wikilinkPlugin(this.wikilinkContext(), this.linkMenuState, () => this.linkMenuCmp().panelElement()),
           buildEditorKeymap(),
           gapCursor(),
+          headingFoldPlugin(),
+          findPlugin(),
+          dropCursor({ color: 'var(--primary)', width: 2 }),
           trailingParagraphPlugin(),
           taskMarkerPlugin(),
+          listMarkerPlugin(),
           syntaxRevealPlugin(
             (href) => void this.attachments.openLinked(this.noteId(), href),
             (target) => void this.openLink(target),
@@ -256,8 +280,12 @@ export class NoteEditor {
         },
         dispatchTransaction: (tr) => {
           const before = view.state.doc.attrs;
+          const foldsBefore = headingFoldKey.getState(view.state);
           const newState = view.state.apply(tr);
           view.updateState(newState);
+
+          const status = findStatus(newState);
+          if (status.current !== this.findStatus().current || status.total !== this.findStatus().total) this.findStatus.set(status);
 
           const { tags, properties } = newState.doc.attrs;
           if (tags !== before['tags'] || properties !== before['properties']) {
@@ -274,6 +302,11 @@ export class NoteEditor {
             this.notesState.updateContent(this.noteId(), markdown);
             this.links.setLinks(this.noteId(), wikilinkTargets(saved));
           }
+          // Other panes showing the note fold the same headings.
+          const foldsChanged = headingFoldKey.getState(newState) !== foldsBefore;
+          if ((tr.docChanged || foldsChanged) && this.lastAppliedNoteId === this.noteId() && this.lastMarkdown !== undefined) {
+            this.headingFolds.set(this.noteId(), { headings: foldedHeadings(newState), markdown: this.lastMarkdown });
+          }
         },
       });
 
@@ -283,6 +316,7 @@ export class NoteEditor {
 
     effect(() => {
       const id = this.noteId();
+      this.tabId(); // another tab showing the same note has its own view state
       this.notesState.ensureLoaded(id);
       this.notesState.entry(id); // signal read so this effect reruns once loading completes
       this.applyIfReady(id);
@@ -328,7 +362,16 @@ export class NoteEditor {
           endB += overlap;
         }
         view.dispatch(view.state.tr.replace(start, endA, next.slice(start, endB)).setMeta('addToHistory', false).setMeta(OTHER_PANE, true));
+        const folds = this.headingFolds.folds().get(note.id);
+        if (folds) this.applyFolds(view, folds);
       });
+    });
+
+    // Headings folded or unfolded in another pane showing the note.
+    effect(() => {
+      const folds = this.headingFolds.folds().get(this.noteId());
+      const view = this.editorView;
+      if (folds && view && this.lastAppliedNoteId === this.noteId()) untracked(() => this.applyFolds(view, folds));
     });
 
     // A save copied an attachment over to this note's profile; follow it.
@@ -339,6 +382,7 @@ export class NoteEditor {
     });
 
     this.destroyRef.onDestroy(() => {
+      this.saveViewState();
       if (this.editorView) this.editContext.forgetEditor(this.editorView);
       if (this.editorView) this.noteProperties.detach(this.editorView);
       this.editorView?.destroy();
@@ -452,7 +496,7 @@ export class NoteEditor {
   private openTextMenu(event: MouseEvent, view: EditorView): void {
     const hasSelection = !view.state.selection.empty;
     const run = (command: 'cut' | 'copy' | 'paste' | 'selectAll') => () => this.editContext.run(command);
-    const turnInto = (id: string) => () => SLASH_COMMAND_ITEMS.find((item) => item.id === id)?.run(view);
+    const turn = (kind: BlockKind) => () => turnInto(view, kind);
     const format = (label: string, mark: string, delimiter: string, shortcut?: string): ContextMenuAction => ({
       kind: 'item',
       label,
@@ -478,8 +522,8 @@ export class NoteEditor {
         items: [
           format('Bold', 'strong', '**', 'Ctrl+B'),
           format('Italic', 'em', '*', 'Ctrl+I'),
-          format('Strikethrough', 'strike', '~~'),
-          format('Highlight', 'highlight', '=='),
+          format('Strikethrough', 'strike', '~~', 'Ctrl+Shift+X'),
+          format('Highlight', 'highlight', '==', 'Ctrl+Shift+H'),
           format('Code', 'code', '`', 'Ctrl+`'),
           { kind: 'separator' },
           { kind: 'item', label: 'Link…', action: () => void this.promptLink(view) },
@@ -489,17 +533,17 @@ export class NoteEditor {
         kind: 'submenu',
         label: 'Turn into',
         items: [
-          { kind: 'item', label: 'Paragraph', icon: 'paragraph', action: () => setBlockType(schema.nodes['paragraph'])(view.state, view.dispatch) },
-          { kind: 'item', label: 'Heading 1', action: turnInto('h1') },
-          { kind: 'item', label: 'Heading 2', action: turnInto('h2') },
-          { kind: 'item', label: 'Heading 3', action: turnInto('h3') },
+          { kind: 'item', label: 'Paragraph', icon: 'paragraph', action: turn('paragraph') },
+          { kind: 'item', label: 'Heading 1', action: turn('h1') },
+          { kind: 'item', label: 'Heading 2', action: turn('h2') },
+          { kind: 'item', label: 'Heading 3', action: turn('h3') },
           { kind: 'separator' },
-          { kind: 'item', label: 'Bullet List', action: turnInto('bullet-list') },
-          { kind: 'item', label: 'Numbered List', action: turnInto('ordered-list') },
-          { kind: 'item', label: 'To-do List', action: turnInto('task-list') },
+          { kind: 'item', label: 'Bullet List', action: turn('bullet_list') },
+          { kind: 'item', label: 'Numbered List', action: turn('ordered_list') },
+          { kind: 'item', label: 'To-do List', action: turn('task_list') },
           { kind: 'separator' },
-          { kind: 'item', label: 'Quote', action: turnInto('blockquote') },
-          { kind: 'item', label: 'Code Block', icon: 'code', action: turnInto('code-block') },
+          { kind: 'item', label: 'Quote', action: turn('blockquote') },
+          { kind: 'item', label: 'Code Block', icon: 'code', action: turn('code_block') },
         ],
       },
       {
@@ -579,7 +623,11 @@ export class NoteEditor {
       if (id === this.lastAppliedNoteId) this.lastAppliedNoteId = undefined;
       return;
     }
-    if (id === this.lastAppliedNoteId) return;
+    const key = `${this.tabId()}\n${id}`;
+    if (id === this.lastAppliedNoteId && key === this.appliedKey) return;
+    // A reload of what's already shown keeps its place.
+    const switching = key !== this.appliedKey;
+    if (switching) this.saveViewState();
 
     const newDoc = parseMarkdown(entry.note.content);
     // Attached first, so the doc attributes this sets are stored for `id`.
@@ -590,9 +638,36 @@ export class NoteEditor {
       .setDocAttribute('properties', entry.note.properties)
       // Loading the note isn't an edit to undo.
       .setMeta('addToHistory', false);
+    if (switching) {
+      const saved = viewStates.get(key);
+      const size = tr.doc.content.size;
+      const clamp = (pos: number) => Math.min(Math.max(pos, 0), size);
+      tr.setSelection(
+        saved ? TextSelection.between(tr.doc.resolve(clamp(saved.anchor)), tr.doc.resolve(clamp(saved.head))) : Selection.atStart(tr.doc),
+      );
+    }
     this.lastMarkdown = entry.note.content;
     view.dispatch(tr);
     this.lastAppliedNoteId = id;
+    this.appliedKey = key;
+    const folds = untracked(() => this.headingFolds.folds().get(id));
+    if (folds) this.applyFolds(view, folds);
+    const scroller = this.scroller();
+    if (switching && scroller) scroller.scrollTop = viewStates.get(key)?.scrollTop ?? 0;
+    // Focus keeps the scroll offset; the selection was put back where the note was left.
     if (this.editorFocus.consume(id)) view.focus();
+  }
+
+  /** Folds the headings `folds` names, if it was counted in the Markdown this editor shows. */
+  private applyFolds(view: EditorView, folds: NoteFolds): void {
+    if (folds.markdown !== this.lastMarkdown || foldedHeadings(view.state).join() === folds.headings.join()) return;
+    view.dispatch(setFoldedHeadings(view.state.tr, folds.headings));
+  }
+
+  private saveViewState(): void {
+    const view = this.editorView;
+    if (!view || !this.appliedKey) return;
+    const { anchor, head } = view.state.selection;
+    viewStates.set(this.appliedKey, { scrollTop: this.scroller()?.scrollTop ?? 0, anchor, head });
   }
 }

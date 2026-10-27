@@ -1,6 +1,6 @@
 import { ContextMenuState } from '../../shared/context-menu/context-menu-state';
 import { TagActions } from '../tag-actions';
-import { Component, ElementRef, computed, inject, input, output, signal, viewChild } from '@angular/core';
+import { Component, ElementRef, afterRenderEffect, computed, inject, input, output, signal, viewChild } from '@angular/core';
 import { LucideHash, LucidePlus, LucideX } from '@lucide/angular';
 import { MenuItem } from '../../shared/menu/menu-item';
 import { MenuSurface } from '../../shared/menu/menu-surface';
@@ -73,12 +73,17 @@ export class TagBar {
     return [{ tag: normalized, create: true, count: 0 }, ...available];
   });
 
+  constructor() {
+    // Focus the input as soon as it renders, so Esc works without a click.
+    afterRenderEffect(() => this.input()?.nativeElement.focus());
+  }
+
   startAdding(): void {
     this.adding.set(true);
     this.draft.set('');
     this.error.set(null);
     this.activeIndex.set(-1);
-    queueMicrotask(() => this.input()?.nativeElement.focus());
+    this.input()?.nativeElement.focus();
   }
 
   protected onInput(field: HTMLInputElement): void {

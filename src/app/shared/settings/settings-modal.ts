@@ -73,6 +73,8 @@ const SHORTCUTS: ShortcutEntry[] = [
   { action: 'Select all (in the vault tree: a folder\'s items)', keys: 'Ctrl+A' },
   { action: 'Bold', keys: 'Ctrl+B' },
   { action: 'Italic', keys: 'Ctrl+I' },
+  { action: 'Strikethrough', keys: 'Ctrl+Shift+X' },
+  { action: 'Highlight', keys: 'Ctrl+Shift+H' },
   { action: 'Inline code', keys: 'Ctrl+`' },
   { action: 'Open link', keys: 'Ctrl+Click' },
   { action: 'Zoom in', keys: 'Ctrl+=' },

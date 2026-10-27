@@ -2,10 +2,12 @@
   (contextmenu)="onContentContextMenu($event)">
   <div class="sticky top-0 z-10 flex shrink-0 items-center gap-1 bg-background px-4 py-2">
     <button type="button" title="Back" [disabled]="!tabsState.canGoBack()" (click)="goBack()"
+      (contextmenu)="openHistoryMenu($event, false)"
       class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-surface hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent">
       <svg lucideArrowLeft [size]="16"></svg>
     </button>
     <button type="button" title="Forward" [disabled]="!tabsState.canGoForward()" (click)="goForward()"
+      (contextmenu)="openHistoryMenu($event, true)"
       class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-surface hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent">
       <svg lucideArrowRight [size]="16"></svg>
     </button>
@@ -59,6 +61,14 @@
     </button>
     }
   </div>
+  @if (find(); as findOptions) {
+  @if (noteEditor(); as editor) {
+  <!-- No height of its own, so it floats over the note under the toolbar. -->
+  <div class="sticky top-11 z-10 flex h-0 justify-end px-4">
+    <app-find-bar class="w-[28rem] max-w-full" [editor]="editor" [replace]="findOptions.replace" (closed)="find.set(null)" />
+  </div>
+  }
+  }
   @if (vaultError(); as err) {
   <div class="flex flex-1 flex-col items-center justify-center gap-3 px-6 pb-6 text-center">
     <svg lucideTriangleAlert [size]="32" class="text-destructive"></svg>
@@ -135,7 +145,7 @@
       </button>
     </div>
     }
-    <app-note-editor [noteId]="tab.noteId" class="block h-full" />
+    <app-note-editor [noteId]="tab.noteId" [tabId]="tab.id" [scroller]="contentRoot" class="block h-full" />
     }
   </div>
   }

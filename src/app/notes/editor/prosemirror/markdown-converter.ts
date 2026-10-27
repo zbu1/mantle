@@ -220,6 +220,14 @@ export function codeBody(node: PMNode): { text: string; params: string; fence: s
   return { text: lines.slice(1, -1).join('\n'), params: open[2].trim(), fence: open[1], offset: lines[0].length + 1 };
 }
 
+/** A code block's code, without fences, as a paragraph of its lines. */
+export function codeAsParagraph(node: PMNode): PMNode {
+  const content = codeBody(node)
+    .text.split('\n')
+    .flatMap((line, i) => [...(i > 0 ? [schema.nodes['hard_break'].create()] : []), ...(line ? [schema.text(line)] : [])]);
+  return schema.nodes['paragraph'].create(null, content);
+}
+
 /** The fence a code block is written with: its own, lengthened past any run of the same character inside. */
 export function codeFence(fence: string, text: string): string {
   const char = fence.startsWith('~') ? '~' : '`';

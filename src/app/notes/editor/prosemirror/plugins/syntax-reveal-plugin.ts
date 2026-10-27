@@ -36,7 +36,7 @@ const INLINE_MARKS = ['strong', 'em', 'strike', 'highlight', 'comment', 'math', 
 /** Characters the serializer backslash-escapes in plain text. */
 const ESCAPABLE = /[`*\\~[\]_$]/;
 /** The delimiters in raw text, shown muted. */
-const SYNTAX = /\\(?=\S)|[*_~`$]+|={2}|%{2}|!?\[|\]\(.*?\)|\]|^-{3,}$/g;
+export const SYNTAX = /\\(?=\S)|[*_~`$]+|={2}|%{2}|!?\[|\]\(.*?\)|\]|^-{3,}$/g;
 
 export const syntaxRevealKey = new PluginKey<DecorationSet>('syntax-reveal');
 

@@ -1,6 +1,6 @@
 <header class="relative grid h-10 shrink-0 select-none text-surface-foreground"
   [style.grid-template-columns]="gridTemplateColumns()" [style.transition]="layoutTransition()">
-  <div class="flex min-w-0 items-center gap-1 pl-2 pr-1">
+  <div data-tauri-drag-region class="flex min-w-0 items-center gap-1 pl-2 pr-1">
     <app-main-menu />
   </div>
   <button type="button" title="Toggle sidebar" (click)="toggleSidebar()"
@@ -9,7 +9,7 @@
     <svg lucidePanelLeft [size]="14"></svg>
   </button>
   <div data-tauri-drag-region
-    class="flex min-w-0 items-stretch gap-1 overflow-x-auto rounded-bl-xl border-border pr-1 [app-region:drag]"
+    class="flex min-w-0 items-stretch gap-1 overflow-hidden rounded-bl-xl border-border pr-1 [app-region:drag]"
     [style.padding-left.px]="tabsPaddingLeft()" [style.transition]="tabsPaddingTransition()">
     @if (tabsState.tabs().length > 0 && !tabsState.split()) {
     <app-tab-strip [paneId]="tabsState.activePane().id" />

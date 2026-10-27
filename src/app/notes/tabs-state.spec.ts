@@ -194,6 +194,26 @@ describe('TabsState', () => {
     expect(state.canGoForward()).toBe(false);
   });
 
+  it('jumps several entries back or forward at once, as pressing the button that many times would', () => {
+    const state = TestBed.inject(TabsState);
+    state.openNote(noteA);
+    const tabId = state.tabs()[0].id;
+    state.openNote(noteB);
+    state.openNote(noteC);
+    const noteIds = (entries: { noteId: string }[]) => entries.map((e) => e.noteId);
+    expect(noteIds(state.backEntries())).toEqual([noteB.id, noteA.id]);
+
+    state.goBack(2);
+    expect(state.tabs().find((t) => t.id === tabId)?.noteId).toBe(noteA.id);
+    expect(noteIds(state.backEntries())).toEqual([]);
+    expect(noteIds(state.forwardEntries())).toEqual([noteB.id, noteC.id]);
+
+    state.goForward(2);
+    expect(state.tabs().find((t) => t.id === tabId)?.noteId).toBe(noteC.id);
+    expect(noteIds(state.backEntries())).toEqual([noteB.id, noteA.id]);
+    expect(state.canGoForward()).toBe(false);
+  });
+
   it('clears forward history when navigating to a new note after going back', () => {
     const state = TestBed.inject(TabsState);
     state.openNote(noteA);

@@ -117,10 +117,15 @@ export class TabMenu {
   /** Renaming happens in the note's title field, above its editor. */
   private rename(tab: NoteTab): void {
     this.tabsState.setActive(tab.id);
-    setTimeout(() => {
-      const title = document.querySelector<HTMLInputElement>('[data-note-title]');
-      title?.focus();
-      title?.select();
-    });
+    focusNoteTitle();
   }
+}
+
+/** Focuses and selects the active note's title field once it has rendered. */
+export function focusNoteTitle(): void {
+  setTimeout(() => {
+    const title = document.querySelector<HTMLInputElement>('[data-note-title]');
+    title?.focus();
+    title?.select();
+  });
 }

@@ -4,7 +4,7 @@ import { setBlockType } from 'prosemirror-commands';
 import { closeHistory } from 'prosemirror-history';
 import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 import { highlightCode } from '../code-languages';
-import { codeBody } from '../markdown-converter';
+import { codeAsParagraph, codeBody } from '../markdown-converter';
 import { schema } from '../schema';
 
 const codeBlock = schema.nodes['code_block'];
@@ -112,10 +112,7 @@ export function setCodeBlock(view: EditorView, params: string): boolean {
 export function codeBlockToParagraph(view: EditorView, pos: number): void {
   const node = view.state.doc.nodeAt(pos);
   if (node?.type !== schema.nodes['code_block']) return;
-  const content = codeBody(node)
-    .text.split('\n')
-    .flatMap((line, i) => [...(i > 0 ? [schema.nodes['hard_break'].create()] : []), ...(line ? [schema.text(line)] : [])]);
-  view.dispatch(view.state.tr.replaceWith(pos, pos + node.nodeSize, schema.nodes['paragraph'].create(null, content)));
+  view.dispatch(view.state.tr.replaceWith(pos, pos + node.nodeSize, codeAsParagraph(node)));
 }
 
 /** The unit Tab adds before a line in a code block. */

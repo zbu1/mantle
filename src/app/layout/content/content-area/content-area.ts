@@ -1,4 +1,4 @@
-import { Component, ElementRef, HostListener, computed, effect, inject, input, viewChild } from '@angular/core';
+import { Component, ElementRef, HostListener, computed, effect, inject, input, signal, viewChild } from '@angular/core';
 import { VaultActions } from '../../../notes/vault-actions';
 import {
   LucideArrowLeft,
@@ -25,6 +25,7 @@ import { VaultState } from '../../../notes/vault-state';
 import { FavoritesState } from '../../../notes/favorites-state';
 import { VaultMetaState } from '../../../notes/vault-meta-state';
 import { NoteEditor } from '../../../notes/editor/note-editor';
+import { FindBar } from '../../../notes/editor/find-bar/find-bar';
 import { FilePreview } from '../../../notes/file-preview/file-preview';
 import { HelpPopover } from '../../../shared/help-popover/help-popover';
 import { PropertiesPanel } from '../../../notes/properties-panel/properties-panel';
@@ -49,6 +50,7 @@ const RENAME_DEBOUNCE_MS = 1000;
   selector: 'app-content-area',
   imports: [
     NoteEditor,
+    FindBar,
     FilePreview,
     HelpPopover,
     PropertiesPanel,
@@ -166,8 +168,21 @@ export class ContentArea {
     if (relPath !== null) this.favorites.toggle(relPath);
   }
 
+  /** The find bar: null when closed, else whether it shows the replace field. */
+  protected readonly find = signal<{ replace: boolean } | null>(null);
+  private readonly findBar = viewChild(FindBar);
+
   @HostListener('document:keydown', ['$event'])
   protected onDocumentKeydown(event: KeyboardEvent): void {
+    const key = event.key.toLowerCase();
+    // Ctrl+F / Ctrl+H: the note's own find bar, never the WebView's.
+    if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && (key === 'f' || key === 'h')) {
+      event.preventDefault();
+      if (!this.isActivePane() || !this.noteEditor()) return;
+      this.find.set({ replace: key === 'h' });
+      this.findBar()?.focus();
+      return;
+    }
     if (!this.isActivePane()) return;
     if (!(event.ctrlKey || event.metaKey) || !event.shiftKey || event.altKey || event.key.toLowerCase() !== 'b') return;
     if (this.favoritableNoteId() === null) return;
@@ -249,6 +264,20 @@ export class ContentArea {
 
   protected goForward(): void {
     this.tabsState.goForward();
+  }
+
+  /** Right-click on back or forward: that way's history, nearest first, to jump several steps at once. */
+  protected openHistoryMenu(event: MouseEvent, forward: boolean): void {
+    const entries = forward ? this.tabsState.forwardEntries() : this.tabsState.backEntries();
+    if (entries.length === 0) return;
+    this.contextMenuState.open(
+      event,
+      entries.map((entry, i) => ({
+        kind: 'item' as const,
+        label: entry.title,
+        action: () => (forward ? this.tabsState.goForward(i + 1) : this.tabsState.goBack(i + 1)),
+      })),
+    );
   }
 
   /** The folders above the note, outermost first, each with its vault-relative path. */

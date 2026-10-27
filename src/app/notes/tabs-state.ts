@@ -172,6 +172,10 @@ export class TabsState {
 
   readonly canGoBack = computed(() => this.history().back.length > 0);
   readonly canGoForward = computed(() => this.history().forward.length > 0);
+  /** Where back leads, nearest first. */
+  readonly backEntries = computed(() => [...this.history().back].reverse());
+  /** Where forward leads, nearest first. */
+  readonly forwardEntries = computed(() => this.history().forward);
 
   /** Hidden notes' relPaths, whose tabs are left out of what's persisted: their path is sealed. */
   private readonly hiddenNoteIds = signal<ReadonlySet<string>>(new Set());
@@ -359,20 +363,23 @@ export class TabsState {
     );
   }
 
-  goBack(): void {
+  /** Goes back `steps` entries, as pressing back that many times would. */
+  goBack(steps = 1): void {
     const current = this.currentEntry();
     const { back, forward } = this.history();
-    if (!this.vaultRoot.isOpen() || !current || back.length === 0) return;
-    this.history.set({ back: back.slice(0, -1), forward: [current, ...forward] });
-    this.restore(back[back.length - 1]);
+    if (!this.vaultRoot.isOpen() || !current || steps < 1 || steps > back.length) return;
+    const at = back.length - steps;
+    this.history.set({ back: back.slice(0, at), forward: [...back.slice(at + 1), current, ...forward] });
+    this.restore(back[at]);
   }
 
-  goForward(): void {
+  /** Goes forward `steps` entries, as pressing forward that many times would. */
+  goForward(steps = 1): void {
     const current = this.currentEntry();
     const { back, forward } = this.history();
-    if (!this.vaultRoot.isOpen() || !current || forward.length === 0) return;
-    this.history.set({ back: [...back, current], forward: forward.slice(1) });
-    this.restore(forward[0]);
+    if (!this.vaultRoot.isOpen() || !current || steps < 1 || steps > forward.length) return;
+    this.history.set({ back: [...back, current, ...forward.slice(0, steps - 1)], forward: forward.slice(steps) });
+    this.restore(forward[steps - 1]);
   }
 
   private addTab(paneId: string, note: NoteRef, activate: boolean): void {

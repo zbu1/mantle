@@ -249,6 +249,58 @@ button.focus-ring-inset:focus-visible,
   margin: 1em 0 0.4em;
 }
 
+/* The fold chevron beside a heading (heading-fold-plugin): on hover, or always while folded. */
+.ProseMirror > h1,
+.ProseMirror > h2,
+.ProseMirror > h3,
+.ProseMirror > h4,
+.ProseMirror > h5,
+.ProseMirror > h6 {
+  position: relative;
+}
+
+.ProseMirror .heading-fold {
+  position: absolute;
+  left: -1.4rem;
+  top: 50%;
+  display: flex;
+  width: 1.1rem;
+  height: 1.1rem;
+  translate: 0 -50%;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.25rem;
+  color: var(--muted-foreground);
+  opacity: 0;
+  cursor: pointer;
+}
+
+.ProseMirror .heading-fold::before {
+  content: '';
+  width: 0.4rem;
+  height: 0.4rem;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  rotate: 45deg;
+  translate: 0 -0.1rem;
+  transition: rotate 120ms;
+}
+
+.ProseMirror .heading-fold-folded::before {
+  rotate: -45deg;
+  translate: -0.1rem 0;
+}
+
+.ProseMirror :hover > .heading-fold,
+.ProseMirror .heading-fold-folded {
+  opacity: 1;
+}
+
+.ProseMirror .heading-fold:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+
 .ProseMirror h1,
 .ProseMirror p.md-h1 {
   font-size: 1.5em;
@@ -522,4 +574,15 @@ button.focus-ring-inset:focus-visible,
 .ProseMirror a.wikilink:has(.wikilink-broken) {
   color: var(--muted-foreground);
   text-decoration-style: dashed;
+}
+
+/* In-note find (find-plugin). */
+.ProseMirror .find-match {
+  background: color-mix(in oklab, var(--primary) 18%, transparent);
+  border-radius: 2px;
+}
+
+.ProseMirror .find-match-current {
+  background: color-mix(in oklab, var(--primary) 45%, transparent);
+  outline: 1px solid var(--primary);
 }

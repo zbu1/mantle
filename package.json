@@ -27,6 +27,7 @@
     "orderedmap": "^2.1.1",
     "pdfjs-dist": "^6.4.299",
     "prosemirror-commands": "^1.6.0",
+    "prosemirror-dropcursor": "^1.8.4",
     "prosemirror-gapcursor": "^1.4.1",
     "prosemirror-history": "^1.4.1",
     "prosemirror-inputrules": "^1.5.1",

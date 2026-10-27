@@ -14,6 +14,7 @@ import { NoteEncryptionActions } from '../../notes/note-encryption-actions';
 import { TagGroup } from '../../notes/tags';
 import { VaultActions } from '../../notes/vault-actions';
 import { canUndoDelete } from '../../notes/vault-history-state';
+import { focusNoteTitle } from '../../notes/tab-menu';
 import { TagActions } from '../../notes/tag-actions';
 import { TagsState } from '../../notes/tags-state';
 import { COLLAPSE_THRESHOLD, SIDEBAR_SECTIONS, SidebarState } from './sidebar-state';
@@ -188,7 +189,7 @@ export class Sidebar {
       try {
         const created = await this.vaultActions.createNote(relDir, name);
         this.tabsState.openNote({ id: created.relPath, title: created.name });
-        this.renameState.renamingPath.set(created.relPath);
+        focusNoteTitle();
         return;
       } catch {
         // name collision — try the next candidate

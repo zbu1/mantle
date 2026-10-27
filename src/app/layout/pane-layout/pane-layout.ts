@@ -21,7 +21,7 @@ const MIN_SHARE = 0.1;
       <div class="flex h-full min-h-0 min-w-0 flex-col" (pointerdown)="tabsState.focusPane(pane.id)"
         (focusin)="tabsState.focusPane(pane.id)" (dragover)="onDragOver($event)" (drop)="onDrop($event, pane)">
         @if (tabsState.split()) {
-          <app-tab-strip [paneId]="pane.id" class="h-9 shrink-0 overflow-x-auto border-b border-border px-1"
+          <app-tab-strip [paneId]="pane.id" class="h-9 shrink-0 border-b border-border px-1"
             [class.bg-surface]="tabsState.activePaneId() !== pane.id" />
         }
         <app-content-area [paneId]="pane.id" class="block min-h-0 flex-1" />

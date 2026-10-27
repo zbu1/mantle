@@ -4,6 +4,7 @@ import { DialogState } from '../shared/dialog/dialog-state';
 import { AttachmentsState } from './attachments-state';
 import { NoteLinksState } from './note-links-state';
 import { NotesState, titleFromRelPath } from './notes-state';
+import { focusNoteTitle } from './tab-menu';
 import { TabsState } from './tabs-state';
 import { VaultHistoryState, canUndoDelete } from './vault-history-state';
 import { VaultMetaState } from './vault-meta-state';
@@ -55,7 +56,10 @@ export class VaultActions {
 
   async createAndOpenNote(relDir = ''): Promise<CreatedNote | null> {
     const created = await this.vaultState.createAndOpenNote(relDir);
-    if (created) this.recordCreated('note', created, () => this.vaultState.createNote(relDir, created.name));
+    if (created) {
+      this.recordCreated('note', created, () => this.vaultState.createNote(relDir, created.name));
+      focusNoteTitle();
+    }
     return created;
   }
 
