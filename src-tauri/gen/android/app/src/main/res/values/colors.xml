@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The surface, primary and background tokens of src/styles/theme.css: the system bars show the frame behind them. -->
+    <color name="surface">#F1EADF</color>
+    <color name="primary">#B94D22</color>
+    <color name="background">#FBF8F3</color>
+</resources>

@@ -1,5 +1,6 @@
 import { Component, computed, effect, inject } from '@angular/core';
 import { invoke, isTauri } from '@tauri-apps/api/core';
+import { isMobile } from './core/tauri-env';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { MainLayout } from './layout/main-layout/main-layout';
 import { NotesState } from './notes/notes-state';
@@ -31,13 +32,18 @@ export class App {
     effect(() => {
       const title = this.windowTitle();
       document.title = title;
-      if (isTauri()) void getCurrentWindow().setTitle(title);
+      if (isTauri() && !isMobile) void getCurrentWindow().setTitle(title);
     });
 
-    // Every close path (title bar, File › Exit, Alt+F4) lands here: write out
-    // debounced edits while the keys are still there, then lock. The Rust
-    // side wipes keys again on exit as a backstop.
-    if (isTauri()) {
+    // Android may kill a backgrounded app without warning, so edits go out as soon as it's hidden.
+    if (isMobile) {
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') void this.notesState.flushPending();
+      });
+    } else if (isTauri()) {
+      // Every close path (title bar, File › Exit, Alt+F4) lands here: write out
+      // debounced edits while the keys are still there, then lock. The Rust
+      // side wipes keys again on exit as a backstop.
       void getCurrentWindow().onCloseRequested(async () => {
         await this.notesState.flushPending();
         await invoke('lock_all_credential_profiles').catch(() => {});

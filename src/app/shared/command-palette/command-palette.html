@@ -1,6 +1,6 @@
 @if (state.isOpen()) {
-<div class="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-[15vh]" (pointerdown)="onBackdropPointerDown($event)">
-  <div class="flex max-h-[60vh] w-[560px] flex-col overflow-hidden rounded-lg border border-border bg-surface text-surface-foreground shadow-xl animate-pop-in">
+<div class="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-[15vh] mobile:pt-3" (pointerdown)="onBackdropPointerDown($event)">
+  <div role="dialog" aria-modal="true" aria-label="Command Palette" class="flex max-h-[60vh] w-[560px] max-w-[calc(100vw-1.5rem)] flex-col mobile:max-h-[calc(100%-1.5rem)] overflow-hidden rounded-lg border border-border bg-surface text-surface-foreground shadow-xl animate-pop-in">
     <div class="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2.5">
       <svg lucideCommand [size]="15" class="shrink-0 text-muted-foreground"></svg>
       <input #input type="text" [value]="query()" (input)="onQueryInput(input.value)" placeholder="Type a command…"

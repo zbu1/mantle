@@ -55,11 +55,13 @@ export class TabMenu {
       { kind: 'separator' },
       {
         kind: 'item',
+        desktopOnly: true,
         label: 'Open to the Right',
         action: () => this.tabsState.openBeside({ id: tab.noteId, title: tab.title }, 'row', pane?.id),
       },
       {
         kind: 'item',
+        desktopOnly: true,
         label: 'Open Below',
         action: () => this.tabsState.openBeside({ id: tab.noteId, title: tab.title }, 'column', pane?.id),
       },
@@ -90,6 +92,7 @@ export class TabMenu {
       },
       {
         kind: 'item',
+        desktopOnly: true,
         label: 'Show in File Explorer',
         icon: 'reveal',
         disabled: !exists,

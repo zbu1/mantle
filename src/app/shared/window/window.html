@@ -8,14 +8,14 @@
   (pointerdown)="raise()" (keydown.escape)="state().close()">
   <span #focusSink tabindex="-1" class="sr-only"></span>
 
-  <div class="frame flex h-10 shrink-0 touch-none items-stretch select-none" [class.border-b]="!minimized()"
+  <div class="frame flex h-10 shrink-0 touch-none items-stretch select-none mobile:h-12" [class.border-b]="!minimized()"
     [class.border-border]="!minimized()"
     (pointerdown)="onTitlebarPointerDown($event)" (pointermove)="onTitlebarPointerMove($event)"
     (pointerup)="onTitlebarPointerEnd($event)" (pointercancel)="onTitlebarPointerEnd($event)"
     (lostpointercapture)="onTitlebarPointerEnd($event)" (dblclick)="onTitlebarDoubleClick($event)">
     <div class="flex min-w-0 flex-1 items-center gap-2 pl-3" [class.cursor-pointer]="minimized()" (click)="onTitleClick()">
       <span class="flex shrink-0 items-center text-primary empty:hidden"><ng-content select="[windowIcon]" /></span>
-      <h2 class="min-w-0 truncate text-xs font-semibold tracking-tight">{{ title() }}</h2>
+      <h2 class="min-w-0 truncate text-xs font-semibold tracking-tight mobile:text-base">{{ title() }}</h2>
     </div>
     <div class="flex">
       @if (minimized()) {
@@ -32,7 +32,7 @@
       }
       <button type="button" [title]="maximized() ? 'Restore Down' : 'Maximize'"
         [attr.aria-label]="maximized() ? 'Restore Down' : 'Maximize'" (click)="state().toggleMaximized()"
-        class="inline-flex w-11 items-center justify-center text-foreground hover:bg-background">
+        class="mobile:hidden inline-flex w-11 items-center justify-center text-foreground hover:bg-background">
         @if (maximized()) {
         <svg lucideMinimize [size]="13"></svg>
         } @else {

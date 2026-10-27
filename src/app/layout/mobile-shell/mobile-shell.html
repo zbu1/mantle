@@ -1,0 +1,94 @@
+@if (!filesAccess()) {
+<section class="welcome-rise flex flex-1 flex-col items-center justify-center gap-6 px-8 pb-12 text-center">
+  <span class="inline-flex size-16 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+    <svg lucideFolderLock [size]="28"></svg>
+  </span>
+  <div class="flex flex-col gap-3">
+    <h1 class="text-2xl font-semibold tracking-tight text-foreground">Let Mantle reach your notes<span class="text-primary">.</span></h1>
+    <p class="text-sm leading-relaxed text-muted-foreground">
+      A vault is a plain folder of notes on your phone, so a sync app like Syncthing can keep it in step with your
+      computer. To read and write it, Android needs you to turn on
+      <span class="font-medium text-foreground">All files access</span> for Mantle.
+    </p>
+  </div>
+  <button type="button" (click)="requestFilesAccess()"
+    class="h-11 rounded-xl bg-primary px-6 text-sm font-semibold text-primary-foreground shadow-card active:opacity-90">
+    Allow Access
+  </button>
+  <p class="text-xs text-muted-foreground">Mantle only works in the folders you open as vaults.</p>
+</section>
+} @else if (vaultRoot.isOpen() && !vaultState.managing()) {
+<main class="shadow-card mx-1.5 mt-1.5 min-h-0 flex-1 overflow-hidden rounded-xl border border-input bg-background">
+  <app-content-area />
+</main>
+<app-mobile-toolbar (openTabs)="tabsOpen.set(true)" />
+
+<!-- The drawer stays rendered while shut, so it slides both ways; `inert` keeps it out of reach meanwhile. -->
+<div aria-hidden="true" (click)="closeDrawer()"
+  class="fixed inset-0 z-40 bg-black/40 transition-opacity duration-200"
+  [class.opacity-0]="!drawerOpen()" [class.pointer-events-none]="!drawerOpen()"></div>
+<nav aria-label="Vault" [attr.inert]="drawerOpen() ? null : ''"
+  class="frame fixed inset-y-0 left-0 z-40 flex w-[86vw] max-w-sm flex-col rounded-r-2xl transition-transform duration-200 ease-out"
+  [class.-translate-x-full]="!drawerOpen()" [class.shadow-window]="drawerOpen()">
+  <div class="flex h-14 shrink-0 items-center gap-1 pl-3 pr-1.5">
+    <app-vault-menu />
+    <span class="flex-1"></span>
+    <button type="button" aria-label="Commands" (click)="closeDrawer(); commandPalette.open()"
+      class="inline-flex size-10 items-center justify-center rounded-lg text-foreground/80 active:bg-background">
+      <svg lucideCommand [size]="19"></svg>
+    </button>
+    <button type="button" aria-label="Settings" (click)="closeDrawer(); settings.open()"
+      class="inline-flex size-10 items-center justify-center rounded-lg text-foreground/80 active:bg-background">
+      <svg lucideSettings [size]="19"></svg>
+    </button>
+  </div>
+  <div class="flex min-h-0 flex-1 flex-col px-1.5 pb-1.5">
+    <app-sidebar />
+  </div>
+</nav>
+
+@if (tabsOpen()) {
+<div aria-hidden="true" class="fixed inset-0 z-40 bg-black/40" (click)="tabsOpen.set(false)"></div>
+<section aria-labelledby="mobile-tabs-heading"
+  class="animate-pop-in shadow-window fixed inset-x-0 bottom-0 z-40 flex max-h-[75%] flex-col rounded-t-2xl border-t border-border bg-surface text-surface-foreground">
+  <div class="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-input"></div>
+  <header class="flex shrink-0 items-center gap-2 px-4 pb-2 pt-3">
+    <h2 id="mobile-tabs-heading" class="flex-1 text-base font-semibold tracking-tight">
+      Open tabs <span class="ml-1 font-medium tabular-nums text-muted-foreground">{{ tabRows().length }}</span>
+    </h2>
+    @if (tabRows().length > 0) {
+    <button type="button" (click)="closeAllTabs()"
+      class="h-9 rounded-lg px-3 text-sm font-medium text-muted-foreground active:bg-background">Close All</button>
+    }
+  </header>
+  <ul class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2">
+    @for (row of tabRows(); track row.tab.id) {
+    <li class="flex items-center rounded-xl" [class.bg-background]="row.active" [class.shadow-card]="row.active">
+      <button type="button" (click)="showTab(row.tab.id)" [attr.aria-current]="row.active ? 'page' : null"
+        class="flex min-w-0 flex-1 flex-col py-2.5 pl-3 text-left">
+        <span class="truncate text-sm font-medium" [class.text-primary]="row.active" [class.italic]="row.tab.missing">{{ row.tab.title }}</span>
+        @if (row.folder) {
+        <span class="truncate text-xs text-muted-foreground">{{ row.folder }}</span>
+        }
+      </button>
+      <button type="button" [attr.aria-label]="'Close ' + row.tab.title" (click)="tabsState.closeTab(row.tab.id)"
+        class="inline-flex size-11 shrink-0 items-center justify-center rounded-lg text-muted-foreground active:bg-accent">
+        <svg lucideX [size]="17"></svg>
+      </button>
+    </li>
+    } @empty {
+    <li class="px-3 py-6 text-center text-sm text-muted-foreground">No tabs open.</li>
+    }
+  </ul>
+  <footer class="shrink-0 p-3">
+    <button type="button" (click)="newTab()"
+      class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-input bg-background text-sm font-medium active:bg-accent">
+      <svg lucidePlus [size]="17"></svg>
+      New Tab
+    </button>
+  </footer>
+</section>
+}
+} @else {
+<app-welcome />
+}

@@ -26,7 +26,6 @@ serde_json = "1"
 serde_yaml = "0.9"
 mntl-core = { path = "../crates/mntl-core" }
 notify = "6"
-trash = "5.2.6"
 tauri-plugin-log = { version = "2.9.0", features = ["colored"] }
 log = "0.4.34"
 base64 = "0.22"
@@ -35,3 +34,7 @@ zeroize = "1.8"
 percent-encoding = "2"
 sha2 = "0.10"
 
+
+# Android has no OS trash; deletes there are permanent (`vault::move_to_trash`).
+[target.'cfg(not(target_os = "android"))'.dependencies]
+trash = "5.2.6"

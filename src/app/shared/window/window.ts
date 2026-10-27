@@ -2,6 +2,7 @@ import { Component, ElementRef, HostListener, computed, effect, inject, input, s
 import { LucideMaximize, LucideMinimize, LucideMinus, LucideX } from '@lucide/angular';
 import { WindowModel } from './window-model';
 import { WindowStack } from './window-stack';
+import { isMobile } from '../../core/tauri-env';
 
 /** Height of the app's own title bar (`h-10` in header.html) — a window never covers it, so its controls stay reachable. */
 const APP_HEADER_HEIGHT = 40;
@@ -110,7 +111,8 @@ export class Window {
   private readonly focusSink = viewChild<ElementRef<HTMLElement>>('focusSink');
 
   protected readonly minimized = computed(() => this.state().minimized());
-  protected readonly maximized = computed(() => this.state().maximized());
+  // On Android every window fills the screen.
+  protected readonly maximized = computed(() => isMobile || this.state().maximized());
 
   protected readonly frameClass = computed(() =>
     this.maximized() && !this.minimized()
@@ -129,7 +131,7 @@ export class Window {
       return { 'z-index': zIndex, right: `${DOCK_MARGIN}px`, bottom: `${bottom}px`, width: `${DOCK_WIDTH}px` };
     }
     if (this.maximized()) {
-      return { 'z-index': zIndex, left: '0', right: '0', top: `${APP_HEADER_HEIGHT}px`, bottom: '0' };
+      return { 'z-index': zIndex, left: '0', right: '0', top: isMobile ? '0' : `${APP_HEADER_HEIGHT}px`, bottom: '0' };
     }
 
     const resized = this.size();

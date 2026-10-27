@@ -1,6 +1,6 @@
 import { Injectable, effect, signal } from '@angular/core';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
-import { isTauri } from '../core/tauri-env';
+import { isMobile, isTauri } from '../core/tauri-env';
 import { formatError, logError } from '../core/logger';
 
 const STORAGE_KEY = 'mantle.zoom.v1';
@@ -33,7 +33,8 @@ export class ZoomState {
       } catch {
         // storage unavailable: the level just won't outlive the session
       }
-      if (!isTauri()) {
+      // Android's WebView has no zoom API; CSS zoom does the same there.
+      if (!isTauri() || isMobile) {
         document.documentElement.style.setProperty('zoom', String(level));
         return;
       }

@@ -1,6 +1,6 @@
 import { Component, computed, input, output } from '@angular/core';
 
-const BASE = 'flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs';
+const BASE = 'flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs mobile:py-2.5 mobile:text-sm';
 
 /**
  * A single row inside an <app-menu-surface>. Project the leading icon with the
@@ -27,7 +27,7 @@ const BASE = 'flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs';
       </span>
       <span class="flex-1 truncate">{{ label() }}</span>
       @if (shortcut()) {
-        <span class="shrink-0 text-[10px] tracking-wide text-muted-foreground">{{ shortcut() }}</span>
+        <span class="shrink-0 text-[10px] tracking-wide text-muted-foreground mobile:hidden">{{ shortcut() }}</span>
       }
       <span class="flex shrink-0 items-center justify-center">
         <ng-content select="[menuItemTrailing]" />

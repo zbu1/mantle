@@ -18,8 +18,8 @@ export interface HistoryStep {
 
 const MAX_STEPS = 100;
 
-/** Deleting can be undone wherever the OS trash can be restored from: not on macOS. */
-export const canUndoDelete = !/Mac/i.test(navigator.userAgent);
+/** Deleting can be undone wherever the OS trash can be restored from: not on macOS or Android. */
+export const canUndoDelete = !/Mac|Android/i.test(navigator.userAgent);
 
 /**
  * Undo and redo for vault actions (create, rename, move, delete, favorite,

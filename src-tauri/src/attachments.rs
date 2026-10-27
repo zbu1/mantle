@@ -644,7 +644,7 @@ fn delete_attachments_inner(vault_root: &str, paths: &[String]) -> Result<(), St
         let path = resolve_rel_path(vault_root, rel)?;
         // Tests unlink rather than fill the developer's recycle bin.
         #[cfg(not(test))]
-        let result = trash::delete(&path).map_err(|e| e.to_string());
+        let result = crate::vault::move_to_trash(&path).map_err(|e| e.to_string());
         #[cfg(test)]
         let result = fs::remove_file(&path).map_err(|e| e.to_string());
         result.map_err(|e| format!("Failed to delete attachment: {e}"))?;

@@ -1,8 +1,8 @@
 import { Injectable, inject } from '@angular/core';
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
-import { save } from '@tauri-apps/plugin-dialog';
 import { formatError, logError, logInfo } from '../core/logger';
 import { DialogState } from '../shared/dialog/dialog-state';
+import { FolderPickerState } from '../shared/folder-picker/folder-picker-state';
 import { NotesState } from './notes-state';
 import { TabsState } from './tabs-state';
 import { canUndoDelete } from './vault-history-state';
@@ -78,6 +78,7 @@ export class AttachmentsState {
   private readonly vaultState = inject(VaultState);
   private readonly notesState = inject(NotesState);
   private readonly dialogState = inject(DialogState);
+  private readonly folderPicker = inject(FolderPickerState);
   private readonly tabsState = inject(TabsState);
 
   async info(noteRelPath: string, src: string): Promise<AttachmentInfo | null> {
@@ -103,7 +104,7 @@ export class AttachmentsState {
   async saveDecryptedCopy(relPath: string): Promise<void> {
     const vaultRoot = this.vaultState.rootPath();
     if (!vaultRoot) return;
-    const destPath = await save({ defaultPath: fileNameOf(relPath).replace(/\.enc$/, '') });
+    const destPath = await this.folderPicker.pickNewPath('Save Decrypted Copy', fileNameOf(relPath).replace(/\.enc$/, ''));
     if (!destPath) return;
     try {
       await invoke('save_attachment_copy', { vaultRoot, relPath, destPath });

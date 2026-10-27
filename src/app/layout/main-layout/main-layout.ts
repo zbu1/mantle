@@ -20,6 +20,9 @@ import { MarkdownExportModal } from '../../notes/markdown-export/markdown-export
 import { VaultRootState } from '../../notes/vault-root-state';
 import { VaultState } from '../../notes/vault-state';
 import { ZoomState } from '../../shared/zoom-state';
+import { FolderPicker } from '../../shared/folder-picker/folder-picker';
+import { isMobile } from '../../core/tauri-env';
+import { MobileShell } from '../mobile-shell/mobile-shell';
 
 @Component({
   selector: 'app-main-layout',
@@ -40,6 +43,8 @@ import { ZoomState } from '../../shared/zoom-state';
     CommandPalette,
     EncryptionPanel,
     HoverTooltipHost,
+    FolderPicker,
+    MobileShell,
   ],
   templateUrl: './main-layout.html',
 })
@@ -47,6 +52,7 @@ export class MainLayout {
   protected readonly vaultRoot = inject(VaultRootState);
   protected readonly vaultState = inject(VaultState);
   protected readonly tabsState = inject(TabsState);
+  protected readonly isMobile = isMobile;
   private readonly hoverTooltipState = inject(HoverTooltipState);
   // Created here so the saved zoom applies, and its shortcuts work, from startup.
   private readonly zoom = inject(ZoomState);

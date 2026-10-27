@@ -22,6 +22,22 @@ Angular 22 (frontend, signals-based, no NgModules).
   step; other actions (favorites, tags, encryption, profiles) record their own.
   Undoing a delete restores from the OS trash (`restore_from_trash`; not on
   macOS, where deletes keep their confirmation).
+- **Android** (`src-tauri/gen/android/`, arm64, Android 10+): the same app,
+  with `isMobile` (`core/tauri-env.ts`, also the `mobile:` Tailwind variant)
+  swapping the desktop chrome for `layout/mobile-shell/` — one pane, the
+  sidebar as a drawer, a bottom bar that turns into a formatting toolbar
+  while the editor has focus, and Android's back gesture closing overlays
+  (each closes on Escape) before going back through notes. Vaults are plain
+  folders in shared storage behind "All files access"; `MainActivity.kt`
+  exposes that check, the storage root and "move to back" as
+  `window.MantleAndroid`, and pads the webview clear of the system bars and
+  keyboard. Folder and save dialogs go through `FolderPickerState`, an
+  in-app browser (`list_folders`) on Android since its picker returns
+  `content://` URIs. There's no OS trash there, so deletes are permanent and
+  confirmed (`move_to_trash`, `canUndoDelete`). Context-menu items marked
+  `desktopOnly` (file explorer, default app, split panes) are left out.
+  CI (`build.yml`'s `android` job) builds a release APK signed with the
+  committed `debug.keystore`, so each installs over the last.
 - **Rust backend** (`src-tauri/`): Tauri commands in `src-tauri/src/vault.rs`
   for scanning a vault directory and reading/writing/creating notes, on top of
   the `mntl-core` crate. Plain Markdown files (`.md` / `.markdown`) also open
@@ -184,6 +200,7 @@ Package manager is **pnpm** (see `pnpm-lock.yaml`), not npm.
 - `pnpm run tauri dev` — run the full Tauri app (Angular + Rust) in dev mode
 - `pnpm run build` — production Angular build
 - `pnpm test` — run Jest test suite
+- `pnpm tauri android build --apk --target aarch64` — build the Android APK (needs JDK 17–24, the Android SDK/NDK, `ANDROID_HOME` and `NDK_HOME`; on Windows, Developer Mode for the symlink it makes)
 - `cargo check` / `cargo build` (from repo root or `src-tauri/`) — check/build the Rust workspace (`src-tauri` + `crates/mntl-core`)
 - `cargo test` (from repo root) — run Rust tests, including `crates/mntl-core`'s crypto tests
 

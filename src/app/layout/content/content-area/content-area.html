@@ -1,22 +1,29 @@
 <div #contentRoot class="scrollbar-thin mr-1 flex h-full flex-col overflow-y-auto overscroll-contain"
   (contextmenu)="onContentContextMenu($event)">
-  <div class="sticky top-0 z-10 flex shrink-0 items-center gap-1 bg-background px-4 py-2">
+  <div class="sticky top-0 z-10 flex shrink-0 items-center gap-1 bg-background px-4 py-2 mobile:min-h-12 mobile:px-1.5 mobile:py-1">
+    @if (isMobile) {
+    <!-- Android: the vault drawer. Back and forward are in the bottom bar. -->
+    <button type="button" aria-label="Vault" (click)="sidebarState.setCollapsed(false)"
+      class="inline-flex size-10 shrink-0 items-center justify-center rounded-lg text-foreground/80 active:bg-surface">
+      <svg lucideMenu [size]="20"></svg>
+    </button>
+    }
     <button type="button" title="Back" [disabled]="!tabsState.canGoBack()" (click)="goBack()"
       (contextmenu)="openHistoryMenu($event, false)"
-      class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-surface hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent">
+      class="mobile:hidden inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-surface hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent">
       <svg lucideArrowLeft [size]="16"></svg>
     </button>
     <button type="button" title="Forward" [disabled]="!tabsState.canGoForward()" (click)="goForward()"
       (contextmenu)="openHistoryMenu($event, true)"
-      class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-surface hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent">
+      class="mobile:hidden inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-surface hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent">
       <svg lucideArrowRight [size]="16"></svg>
     </button>
     @if (activeTab(); as tab) {
     <button type="button" title="Expand note" (click)="toggleFullscreen()"
-      class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-surface hover:text-foreground">
+      class="mobile:hidden inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-surface hover:text-foreground">
       <svg lucideExpand [size]="16"></svg>
     </button>
-    <span class="h-4 w-px shrink-0 bg-border"></span>
+    <span class="h-4 w-px shrink-0 bg-border mobile:hidden"></span>
     <nav aria-label="Note location" class="flex min-w-0 items-center text-xs text-muted-foreground">
       @for (crumb of folderCrumbs(tab); track crumb.relPath) {
       <button type="button" [title]="'Show ' + crumb.relPath + ' in sidebar'" (click)="sidebarState.revealFolder(crumb.relPath)"
@@ -29,7 +36,7 @@
     @if (!activeIsFile()) {
     <button #encryptionButton type="button" title="Encryption" (click)="onEncryptionClick()"
       [class.bg-surface]="isEncryptionPanelOpen()" [class.text-foreground]="isEncryptionPanelOpen()"
-      class="inline-flex h-7 shrink-0 items-center gap-1 rounded px-1.5 text-muted-foreground hover:bg-surface hover:text-foreground">
+      class="inline-flex h-7 shrink-0 mobile:h-10 mobile:rounded-lg items-center gap-1 rounded px-1.5 text-muted-foreground hover:bg-surface hover:text-foreground">
       @if (lockedProfileId()) {
       <svg lucideLock [size]="13"></svg>
       <span class="max-w-24 truncate text-xs">{{ lockedProfileName() }}</span>
@@ -46,24 +53,24 @@
     @if (!activeIsFile() && !lockedProfileId()) {
     <button type="button" [title]="sourceMode() ? 'Show formatted note' : 'Show Markdown source'" [attr.aria-pressed]="sourceMode()"
       (click)="tabsState.toggleSource(tab.id)" [class.text-primary]="sourceMode()" [class.text-muted-foreground]="!sourceMode()"
-      class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded hover:bg-surface hover:text-foreground">
+      class="inline-flex h-7 w-7 mobile:size-10 mobile:rounded-lg shrink-0 items-center justify-center rounded hover:bg-surface hover:text-foreground">
       <svg lucideCodeXml [size]="15"></svg>
     </button>
     }
     @if (noteEditor(); as editor) {
-    <span class="shrink-0 text-xs text-muted-foreground">{{ editor.textStats().words }} {{ editor.textStats().words === 1 ? 'word' : 'words' }}
+    <span class="shrink-0 text-xs text-muted-foreground mobile:hidden">{{ editor.textStats().words }} {{ editor.textStats().words === 1 ? 'word' : 'words' }}
       · {{ editor.textStats().characters }} {{ editor.textStats().characters === 1 ? 'character' : 'characters' }}</span>
     }
     @if (favoritableNoteId()) {
     <button type="button" [title]="(activeIsFavorite() ? 'Remove from Favorites' : 'Add to Favorites') + ' (Ctrl+Shift+B)'"
       [attr.aria-pressed]="activeIsFavorite()" (click)="toggleActiveFavorite()"
       [class.text-primary]="activeIsFavorite()" [class.text-muted-foreground]="!activeIsFavorite()"
-      class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded hover:bg-surface hover:text-foreground">
+      class="inline-flex h-7 w-7 mobile:size-10 mobile:rounded-lg shrink-0 items-center justify-center rounded hover:bg-surface hover:text-foreground">
       <svg lucideStar [size]="15" [class.fill-current]="activeIsFavorite()"></svg>
     </button>
     }
     <button type="button" title="More" (click)="tabMenu.open($event, tab)"
-      class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-surface hover:text-foreground">
+      class="inline-flex h-7 w-7 mobile:size-10 mobile:rounded-lg shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-surface hover:text-foreground">
       <svg lucideEllipsis [size]="16"></svg>
     </button>
     }
@@ -112,7 +119,7 @@
   <!-- No title: the breadcrumb names the file, and the image gets the whole area. -->
   <app-file-preview [relPath]="tab.noteId" class="mx-6 mb-6" />
   } @else {
-  <div class="mx-auto max-w-4xl px-6 pb-6 h-full min-w-0 w-full">
+  <div class="mx-auto max-w-4xl px-6 pb-6 h-full min-w-0 w-full mobile:px-4">
     <input #titleInput data-note-title type="text" [value]="tab.title" (input)="onTitleInput(tab, titleInput.value)"
       (keydown)="onTitleKeydown($event, tab, titleInput)" (blur)="onTitleBlur(tab)"
       class="mb-2 w-full min-w-0 truncate border-0 bg-transparent p-0 text-2xl font-semibold tracking-tight text-foreground outline-none! focus-visible:shadow-none" />
@@ -190,7 +197,11 @@
     </svg>
     <div class="text-lg font-medium text-foreground">No notes open</div>
     <div class="text-xs text-muted-foreground">
+      @if (isMobile) {
+      Pick one from the vault drawer, or search for it below.
+      } @else {
       Select one from the sidebar, or press <span class="kbd">Ctrl+P</span> to jump to a note.
+      }
     </div>
   </div>
   }

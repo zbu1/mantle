@@ -537,6 +537,32 @@ pub fn create_vault(path: String) -> Result<String, String> {
     })
 }
 
+/// A folder in [`list_folders`]' listing.
+#[derive(Serialize)]
+pub struct FolderEntry {
+    name: String,
+    /// Holds a `.mantle/` folder: a vault Mantle has opened before.
+    vault: bool,
+}
+
+/// The visible subfolders of the absolute directory `path`, by name, for the
+/// in-app folder browser that stands in for a native folder dialog on Android.
+#[tauri::command]
+pub fn list_folders(path: String) -> Result<Vec<FolderEntry>, String> {
+    logged("list_folders", || {
+        let mut folders: Vec<FolderEntry> = fs::read_dir(&path)
+            .map_err(|e| format!("Failed to read folder: {e}"))?
+            .flatten()
+            .filter(|entry| entry.file_type().is_ok_and(|t| t.is_dir()))
+            .filter_map(|entry| entry.file_name().into_string().ok())
+            .filter(|name| !name.starts_with('.'))
+            .map(|name| FolderEntry { vault: Path::new(&path).join(&name).join(".mantle").is_dir(), name })
+            .collect();
+        folders.sort_by_key(|f| f.name.to_lowercase());
+        Ok(folders)
+    })
+}
+
 /// Renames or moves the vault directory `from` to `to`, returning `to`.
 ///
 /// `to` is checked like a new vault's path: its parent must exist and it must
@@ -1073,7 +1099,7 @@ pub fn delete_note(vault_root: String, rel_path: String, keys: State<SessionKeys
         let path = resolve_note(&vault_root, &rel_path, &keys)?;
         // Send to the OS recycle bin/trash rather than unlinking outright, so a
         // deleted note stays recoverable through the normal OS trash UI.
-        trash::delete(&path).map_err(|e| format!("Failed to delete note: {e}"))?;
+        move_to_trash(&path).map_err(|e| format!("Failed to delete note: {e}"))?;
         if hidden.is_some() {
             keys.trash_hidden(&vault_root, &rel_path)?;
         }
@@ -1112,15 +1138,25 @@ pub(crate) fn delete_folder_inner(vault_root: &str, rel_path: &str, keys: &Sessi
             continue;
         }
         let path = resolve_rel_path(vault_root, &note.disk)?;
-        trash::delete(&path).map_err(|e| format!("Failed to delete note: {e}"))?;
+        move_to_trash(&path).map_err(|e| format!("Failed to delete note: {e}"))?;
         keys.trash_hidden(vault_root, &rel)?;
     }
     if resolve_rel_dir(vault_root, "")?.join(rel_path).exists() {
         let path = resolve_rel_path(vault_root, rel_path)?;
-        // Same recycle-bin behavior as delete_note; trash::delete handles directories recursively.
-        trash::delete(&path).map_err(|e| format!("Failed to delete folder: {e}"))?;
+        // Same recycle-bin behavior as delete_note; it handles directories recursively.
+        move_to_trash(&path).map_err(|e| format!("Failed to delete folder: {e}"))?;
     }
     Ok(())
+}
+
+/// Send a file or folder to the OS trash. Android has none, so there it's
+/// deleted outright; the frontend confirms first (`canUndoDelete`).
+pub(crate) fn move_to_trash(path: &Path) -> Result<(), String> {
+    #[cfg(not(target_os = "android"))]
+    let result = trash::delete(path).map_err(|e| e.to_string());
+    #[cfg(target_os = "android")]
+    let result = if path.is_dir() { fs::remove_dir_all(path) } else { fs::remove_file(path) }.map_err(|e| e.to_string());
+    result
 }
 
 /// Put deleted vault items back from the OS trash, for undoing a delete. Each
@@ -1132,7 +1168,7 @@ pub fn restore_from_trash(vault_root: String, rel_paths: Vec<String>, keys: Stat
     logged("restore_from_trash", || restore_from_trash_inner(&vault_root, &rel_paths, &keys))
 }
 
-#[cfg(any(target_os = "windows", all(unix, not(target_os = "macos"))))]
+#[cfg(any(target_os = "windows", all(unix, not(any(target_os = "macos", target_os = "android")))))]
 fn restore_from_trash_inner(vault_root: &str, rel_paths: &[String], keys: &SessionKeys) -> Result<(), String> {
     // The trash reports plain paths; ours may carry Windows' `\\?\` prefix.
     fn key(path: &Path) -> String {
@@ -1174,7 +1210,7 @@ fn restore_from_trash_inner(vault_root: &str, rel_paths: &[String], keys: &Sessi
     trash::os_limited::restore_all(items).map_err(|e| format!("Failed to restore from the trash: {e}"))
 }
 
-#[cfg(not(any(target_os = "windows", all(unix, not(target_os = "macos")))))]
+#[cfg(not(any(target_os = "windows", all(unix, not(any(target_os = "macos", target_os = "android"))))))]
 fn restore_from_trash_inner(_vault_root: &str, _rel_paths: &[String], _keys: &SessionKeys) -> Result<(), String> {
     Err("Restoring from the trash isn't supported on this system".to_string())
 }
@@ -1500,6 +1536,18 @@ mod tests {
         assert_eq!(create_vault(path.clone()).unwrap(), path);
         assert!(parent.join("My Vault").join(".mantle").join("state.json").is_file());
         assert!(matches!(scan_vault_inner(&path, &SessionKeys::default()).unwrap(), VaultNode::Folder { children, .. } if children.is_empty()));
+    }
+
+    #[test]
+    fn list_folders_lists_visible_subfolders_and_flags_vaults() {
+        let parent = temp_dir("list-folders");
+        fs::create_dir_all(parent.join("notes").join(".mantle")).unwrap();
+        fs::create_dir(parent.join("Archive")).unwrap();
+        fs::create_dir(parent.join(".hidden")).unwrap();
+        fs::write(parent.join("file.md"), "").unwrap();
+        let folders = list_folders(parent.to_string_lossy().into_owned()).unwrap();
+        let listed: Vec<_> = folders.iter().map(|f| (f.name.as_str(), f.vault)).collect();
+        assert_eq!(listed, [("Archive", false), ("notes", true)]);
     }
 
     #[test]

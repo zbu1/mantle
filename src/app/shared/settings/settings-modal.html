@@ -1,13 +1,13 @@
 <app-window windowId="settings" title="Settings" [state]="state" [width]="720" [height]="560" [minimizable]="false" [dimBackground]="true">
   <svg windowIcon lucideSettings2 [size]="14"></svg>
   @if (state.isOpen()) {
-    <div class="flex flex-1 overflow-hidden">
-      <nav class="scrollbar-thin w-44 shrink-0 overflow-y-auto border-r border-border p-2">
-        <h3 id="settings-nav-options" class="px-2.5 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Options</h3>
-        <div role="group" aria-labelledby="settings-nav-options">
+    <div class="flex flex-1 overflow-hidden mobile:flex-col">
+      <nav class="scrollbar-thin w-44 shrink-0 overflow-y-auto border-r border-border p-2 mobile:flex mobile:w-full mobile:items-center mobile:gap-1 mobile:overflow-x-auto mobile:border-b mobile:border-r-0 mobile:p-1.5 mobile:[scrollbar-width:none]">
+        <h3 id="settings-nav-options" class="mobile:hidden px-2.5 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Options</h3>
+        <div role="group" aria-labelledby="settings-nav-options" class="mobile:contents">
         @for (cat of categories; track cat.id) {
         <button type="button" (click)="state.selectCategory(cat.id)"
-          class="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs"
+          class="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs mobile:w-auto mobile:shrink-0 mobile:py-2 mobile:text-sm"
           [class]="state.activeCategory() === cat.id ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-background hover:text-foreground'">
           <span class="flex size-3.5 shrink-0 items-center justify-center">
             @switch (cat.id) {
@@ -27,11 +27,11 @@
         }
         </div>
 
-        <h3 id="settings-nav-profiles" class="mt-3 px-2.5 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Credential Profiles</h3>
-        <div role="group" aria-labelledby="settings-nav-profiles">
+        <h3 id="settings-nav-profiles" class="mobile:hidden mt-3 px-2.5 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Credential Profiles</h3>
+        <div role="group" aria-labelledby="settings-nav-profiles" class="mobile:contents">
         @for (profile of credentialsState.profiles(); track profile.id) {
         <button type="button" (click)="state.selectProfile(profile.id)"
-          class="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs"
+          class="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs mobile:w-auto mobile:shrink-0 mobile:py-2 mobile:text-sm"
           [class]="state.profileId() === profile.id ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-background hover:text-foreground'">
           <span class="flex size-3.5 shrink-0 items-center justify-center" [title]="profile.unlocked ? 'Unlocked' : 'Locked'">
             @if (profile.unlocked) {
@@ -46,7 +46,7 @@
         </div>
       </nav>
 
-      <div class="scrollbar-thin flex-1 overflow-y-auto px-6 py-4">
+      <div class="scrollbar-thin flex-1 overflow-y-auto px-6 py-4 mobile:px-4">
         @if (selectedProfile(); as profile) {
         <app-profile-settings-panel [profileId]="profile.id" />
         } @else {
@@ -212,11 +212,11 @@
         <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Current Vault</h3>
         <app-settings-row label="Vault Path" [description]="vaultState.rootPath() ?? 'No vault open'">
           <button type="button" (click)="revealVault()" [disabled]="!vaultState.rootPath()"
-            class="rounded-md border border-border px-2.5 py-1 text-xs text-foreground hover:bg-background disabled:pointer-events-none disabled:opacity-40">
+            class="mobile:hidden rounded-md border border-border px-2.5 py-1 text-xs text-foreground hover:bg-background disabled:pointer-events-none disabled:opacity-40">
             Reveal in File Explorer
           </button>
         </app-settings-row>
-        <app-settings-row label="Vault Metadata" description="Favorites, sort order, and collapsed folders live in .mantle/.">
+        <app-settings-row class="mobile:hidden" label="Vault Metadata" description="Favorites, sort order, and collapsed folders live in .mantle/.">
           <button type="button" (click)="revealMantleFolder()" [disabled]="!vaultState.rootPath()"
             class="rounded-md border border-border px-2.5 py-1 text-xs text-foreground hover:bg-background disabled:pointer-events-none disabled:opacity-40">
             Open .mantle Folder
@@ -352,7 +352,7 @@
         </app-settings-row>
 
         <h3 class="mb-1 mt-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Data</h3>
-        <app-settings-row label="Log" description="Errors are recorded on disk, without passwords, keys or note content. It's capped at 5 MB, keeping one older file.">
+        <app-settings-row class="mobile:hidden" label="Log" description="Errors are recorded on disk, without passwords, keys or note content. It's capped at 5 MB, keeping one older file.">
           <button type="button" (click)="openLogFolder()"
             class="rounded-md border border-border px-2.5 py-1 text-xs text-foreground hover:bg-background">
             Open Log Folder

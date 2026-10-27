@@ -36,6 +36,8 @@ export interface ContextMenuAction {
   disabled?: boolean;
   /** Key combination shown at the row's end, e.g. `Ctrl+X`. */
   shortcut?: string;
+  /** Left out on Android: OS file explorers, default apps and split panes are desktop things. */
+  desktopOnly?: boolean;
   action: () => void;
 }
 

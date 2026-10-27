@@ -50,6 +50,11 @@ export class EditContextState {
     });
   }
 
+  /** The editor that last had focus, while it's still there. */
+  get editorView(): EditorView | null {
+    return this.editor;
+  }
+
   /** The editor `view` took focus. */
   focusEditor(view: EditorView): void {
     this.editor = view;

@@ -291,6 +291,7 @@ impl SessionKeys {
     }
 
     /// The trashed hidden notes at `rel_path` or inside it, taken off the list.
+    #[cfg_attr(target_os = "android", allow(dead_code))] // restoring from the trash is desktop-only
     pub(crate) fn take_trashed(&self, vault_root: &str, rel_path: &str) -> Result<Vec<HiddenNote>, String> {
         self.with_vault(vault_root, |inner| {
             let inside = |rel: &String| rel == rel_path || rel.starts_with(&format!("{rel_path}/"));

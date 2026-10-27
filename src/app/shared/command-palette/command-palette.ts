@@ -49,7 +49,7 @@ import { VaultMetaState } from '../../notes/vault-meta-state';
 import { VaultRenameState } from '../../notes/vault-rename-state';
 import { VaultState } from '../../notes/vault-state';
 import { SORT_MODES, flattenVaultNotes, folderPaths } from '../../notes/vault-tree.model';
-import { isTauri } from '../../core/tauri-env';
+import { isMobile, isTauri } from '../../core/tauri-env';
 import { SectionId, SidebarState } from '../../layout/sidebar/sidebar-state';
 import { CommandPaletteState } from './command-palette-state';
 import { CommandPaletteIcon, CommandPaletteItem, filterCommandPaletteItems } from './command-palette.model';
@@ -353,7 +353,7 @@ export class CommandPalette {
       { id: 'reset-zoom', label: 'Reset Zoom', icon: 'rotate-ccw', keywords: ['zoom', 'reset', 'actual'], run: () => this.zoom.reset() },
     );
 
-    items.push({
+    if (!isMobile) items.push({
       id: 'fullscreen',
       label: 'Toggle Fullscreen',
       icon: 'expand',
@@ -374,7 +374,7 @@ export class CommandPalette {
       keywords: ['settings', 'preferences'],
       run: () => this.settingsModalState.open(),
     });
-    items.push({
+    if (!isMobile) items.push({
       id: 'shortcuts',
       label: 'Keyboard Shortcuts',
       icon: 'keyboard',
@@ -396,7 +396,7 @@ export class CommandPalette {
       run: () => void this.showAbout(),
     });
 
-    if (isTauri()) {
+    if (isTauri() && !isMobile) {
       items.push({
         id: 'exit',
         label: 'Exit',

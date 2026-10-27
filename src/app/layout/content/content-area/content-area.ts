@@ -13,6 +13,7 @@ import {
   LucideFolderOpen,
   LucideLock,
   LucideLockOpen,
+  LucideMenu,
   LucideRefreshCw,
   LucideStar,
   LucideTriangleAlert,
@@ -45,6 +46,7 @@ import { SidebarState } from '../../sidebar/sidebar-state';
 import { CONVERT_HELP, NoteEncryptionActions } from '../../../notes/note-encryption-actions';
 import { TabMenu } from '../../../notes/tab-menu';
 import { EmptyTab } from '../../../notes/empty-tab/empty-tab';
+import { isMobile } from '../../../core/tauri-env';
 
 const RENAME_DEBOUNCE_MS = 1000;
 
@@ -63,6 +65,7 @@ const RENAME_DEBOUNCE_MS = 1000;
     LucideEllipsis,
     LucideLock,
     LucideLockOpen,
+    LucideMenu,
     LucideFileText,
     LucideFileInput,
     LucideX,
@@ -91,6 +94,7 @@ export class ContentArea {
   private readonly favorites = inject(FavoritesState);
   protected readonly sidebarState = inject(SidebarState);
   protected readonly tabMenu = inject(TabMenu);
+  protected readonly isMobile = isMobile;
 
   private readonly contentRoot = viewChild<ElementRef<HTMLElement>>('contentRoot');
   protected readonly noteEditor = viewChild(NoteEditor);
@@ -394,6 +398,8 @@ export class ContentArea {
 
   /** Right-click outside the editor (the toolbar, the title): the active tab's menu. */
   protected onContentContextMenu(event: MouseEvent): void {
+    // A long press in text on Android is for selecting it.
+    if (isMobile && (event.target as HTMLElement).closest('.ProseMirror, input, textarea')) return;
     const tab = this.activeTab();
     if (tab) this.tabMenu.open(event, tab);
   }
@@ -403,7 +409,7 @@ export class ContentArea {
       { kind: 'item', label: 'Reveal in Sidebar', action: () => this.sidebarState.revealFolder(relPath) },
       { kind: 'item', label: 'New Note Here', icon: 'new-note', action: () => void this.vaultActions.createAndOpenNote(relPath) },
       { kind: 'separator' },
-      { kind: 'item', label: 'Show in File Explorer', icon: 'reveal', action: () => void this.vaultState.revealInFileExplorer(relPath) },
+      { kind: 'item', desktopOnly: true, label: 'Show in File Explorer', icon: 'reveal', action: () => void this.vaultState.revealInFileExplorer(relPath) },
     ];
     this.contextMenuState.open(event, items);
   }

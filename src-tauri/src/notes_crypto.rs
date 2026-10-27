@@ -282,7 +282,7 @@ pub(crate) fn convert_markdown_batch(
 /// the developer's recycle bin.
 pub(crate) fn discard(path: &Path) -> Result<(), String> {
     #[cfg(not(test))]
-    let result = trash::delete(path).map_err(|e| e.to_string());
+    let result = crate::vault::move_to_trash(path).map_err(|e| e.to_string());
     #[cfg(test)]
     let result = fs::remove_file(path).map_err(|e| e.to_string());
     result.map_err(|e| format!("Failed to move the original to the trash: {e}"))

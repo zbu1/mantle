@@ -1,13 +1,14 @@
 import { Component, ElementRef, HostListener, computed, inject, signal } from '@angular/core';
 import { dirname, join } from '@tauri-apps/api/path';
-import { save } from '@tauri-apps/plugin-dialog';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { LucideArrowLeft, LucideArrowRight, LucideEllipsis, LucideFolderInput, LucideFolderOpen, LucideFolderPlus } from '@lucide/angular';
 import { CredentialsState } from '../../notes/credentials-state';
 import { VaultState, vaultNameFromPath } from '../../notes/vault-state';
 import { ContextMenuState } from '../../shared/context-menu/context-menu-state';
 import { DialogState } from '../../shared/dialog/dialog-state';
+import { FolderPickerState } from '../../shared/folder-picker/folder-picker-state';
 import { WindowControls } from '../window-controls/window-controls';
+import { isMobile } from '../../core/tauri-env';
 
 interface RecentVault {
   path: string;
@@ -134,10 +135,12 @@ const STRATA: StrataLayer[] = Array.from({ length: STRATA_COUNT }, (_, layer) =>
 })
 export class Welcome {
   protected readonly vaultState = inject(VaultState);
+  protected readonly isMobile = isMobile;
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly credentials = inject(CredentialsState);
   private readonly contextMenu = inject(ContextMenuState);
   private readonly dialog = inject(DialogState);
+  private readonly folderPicker = inject(FolderPickerState);
 
   protected readonly strata = STRATA;
   protected readonly strataViewBox = `0 0 ${STRATA_WIDTH} ${STRATA_HEIGHT}`;
@@ -192,7 +195,7 @@ export class Welcome {
 
   protected openMenu(event: MouseEvent, path: string): void {
     this.contextMenu.open(event, [
-      { kind: 'item', label: 'Reveal in File Explorer', icon: 'reveal', action: () => void revealItemInDir(path) },
+      { kind: 'item', desktopOnly: true, label: 'Reveal in File Explorer', icon: 'reveal', action: () => void revealItemInDir(path) },
       { kind: 'item', label: 'Rename', icon: 'rename', action: () => this.startRename(path) },
       { kind: 'item', label: 'Move…', icon: 'move-to-root', action: () => void this.moveVault(path) },
       { kind: 'separator' },
@@ -225,7 +228,7 @@ export class Welcome {
 
   private moveVault(path: string): Promise<void> {
     return this.run(async () => {
-      const to = await save({ title: 'Move Vault', defaultPath: path });
+      const to = await this.folderPicker.pickNewPath('Move Vault', path);
       if (to) await this.move(path, to);
     });
   }

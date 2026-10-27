@@ -58,3 +58,52 @@ jobs:
         with:
           name: mantle-${{ matrix.target }}
           path: target/${{ matrix.target }}/release/bundle/
+
+  android:
+    permissions:
+      contents: write # upload the APK to the release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      # Gradle 8.14 (from the Tauri template) runs on JDK 17-24 only.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - uses: swatinem/rust-cache@v2
+
+      - run: pnpm install --frozen-lockfile
+
+      # The runner image ships the Android SDK and NDK. A release build, for an
+      # optimized backend (Argon2id unlocks are slow unoptimized), signed with
+      # the debug key committed in src-tauri/gen/android/app.
+      - name: Build APK
+        run: |
+          export NDK_HOME="$ANDROID_NDK_LATEST_HOME"
+          pnpm tauri android build --apk --target aarch64
+          version=$(jq -r .version src-tauri/tauri.conf.json)
+          mkdir -p dist-android
+          cp "$(find src-tauri/gen/android/app/build/outputs/apk -name '*-release.apk' | head -n 1)" "dist-android/Mantle_${version}_android-arm64.apk"
+
+      - name: Attach to release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.release.tag_name }}" dist-android/*.apk --clobber
+
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          name: mantle-android-arm64
+          path: dist-android/*.apk

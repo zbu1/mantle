@@ -14,6 +14,7 @@ import { NoteEncryptionActions } from '../../notes/note-encryption-actions';
 import { TagGroup } from '../../notes/tags';
 import { VaultActions } from '../../notes/vault-actions';
 import { canUndoDelete } from '../../notes/vault-history-state';
+import { isMobile } from '../../core/tauri-env';
 import { focusNoteTitle } from '../../notes/tab-menu';
 import { TagActions } from '../../notes/tag-actions';
 import { TagsState } from '../../notes/tags-state';
@@ -73,6 +74,9 @@ interface FavoriteRow {
 })
 export class Sidebar {
   protected readonly state = inject(SidebarState);
+  protected readonly isMobile = isMobile;
+  /** Rendered: the drawer on Android (see `MobileShell`) keeps it while shut, so it can slide. */
+  protected readonly shown = computed(() => isMobile || !this.state.collapsed());
   protected readonly vaultState = inject(VaultState);
   private readonly tabsState = inject(TabsState);
   private readonly contextMenuState = inject(ContextMenuState);
@@ -190,6 +194,7 @@ export class Sidebar {
       try {
         const created = await this.vaultActions.createNote(relDir, name);
         this.tabsState.openNote({ id: created.relPath, title: created.name });
+        this.closeDrawer();
         focusNoteTitle();
         return;
       } catch {
@@ -227,7 +232,7 @@ export class Sidebar {
       { kind: 'item', label: 'Open', icon: 'open', action: () => this.onOpenNote(note) },
       { kind: 'item', label: 'Open in New Tab', icon: 'open-new-tab', action: () => this.onOpenNoteInBackground(note) },
       { kind: 'separator' },
-      { kind: 'item', label: 'Show in File Explorer', icon: 'reveal', action: () => void this.vaultState.revealInFileExplorer(note.relPath) },
+      { kind: 'item', desktopOnly: true, label: 'Show in File Explorer', icon: 'reveal', action: () => void this.vaultState.revealInFileExplorer(note.relPath) },
       { kind: 'separator' },
       this.favoriteMenuItem(note.relPath),
       { kind: 'item', label: 'Remove from Recents', icon: 'close', action: () => this.vaultMeta.removeRecent(note.relPath) },
@@ -246,6 +251,12 @@ export class Sidebar {
 
   protected onOpenNote(note: VaultNoteNode): void {
     this.tabsState.openNote({ id: note.relPath, title: note.name });
+    this.closeDrawer();
+  }
+
+  /** On Android the sidebar is a drawer over the note (`MobileShell`): opening something from it shuts it. */
+  private closeDrawer(): void {
+    if (isMobile) this.state.setCollapsed(true);
   }
 
   protected onOpenNoteInBackground(note: VaultNoteNode): void {
@@ -255,6 +266,7 @@ export class Sidebar {
   /** Files open in a read-only preview tab, which tabs tell apart from notes by extension. */
   protected onOpenFile(file: VaultFileNode): void {
     this.tabsState.openNote({ id: file.relPath, title: file.name });
+    this.closeDrawer();
   }
 
   protected onFileContextMenu(payload: { event: MouseEvent; file: VaultFileNode }): void {
@@ -270,12 +282,13 @@ export class Sidebar {
       },
       {
         kind: 'item',
+        desktopOnly: true,
         label: 'Open in Default App',
         icon: 'open-external',
         action: () => void this.attachments.openInDefaultApp(file.relPath),
       },
       { kind: 'separator' },
-      { kind: 'item', label: 'Show in File Explorer', icon: 'reveal', action: () => void this.vaultState.revealInFileExplorer(file.relPath) },
+      { kind: 'item', desktopOnly: true, label: 'Show in File Explorer', icon: 'reveal', action: () => void this.vaultState.revealInFileExplorer(file.relPath) },
       { kind: 'item', label: 'Copy Path', icon: 'copy', action: () => void navigator.clipboard.writeText(file.relPath) },
       { kind: 'separator' },
       { kind: 'item', label: 'Delete', icon: 'delete', danger: true, action: () => void this.deleteFile(file) },
@@ -337,11 +350,12 @@ export class Sidebar {
       { kind: 'item', label: 'Open in New Tab', icon: 'open-new-tab', action: () => this.onOpenNoteInBackground(note) },
       {
         kind: 'item',
+        desktopOnly: true,
         label: 'Open to the Right',
         action: () => this.tabsState.openBeside({ id: note.relPath, title: note.name }),
       },
       { kind: 'separator' },
-      { kind: 'item', label: 'Show in File Explorer', icon: 'reveal', action: () => void this.vaultState.revealInFileExplorer(note.relPath) },
+      { kind: 'item', desktopOnly: true, label: 'Show in File Explorer', icon: 'reveal', action: () => void this.vaultState.revealInFileExplorer(note.relPath) },
       { kind: 'separator' },
       { kind: 'item', label: 'Duplicate', icon: 'duplicate', action: () => void this.vaultActions.duplicate(note.relPath) },
       { kind: 'item', label: 'Copy', icon: 'copy', shortcut: 'Ctrl+C', action: () => this.clipboardState.copy([note.relPath]) },
@@ -483,6 +497,7 @@ export class Sidebar {
       { kind: 'separator' },
       {
         kind: 'item',
+        desktopOnly: true,
         label: 'Show in File Explorer',
         icon: 'reveal',
         action: () => void this.vaultState.revealInFileExplorer(folder.relPath),
@@ -542,6 +557,7 @@ export class Sidebar {
       { kind: 'separator' },
       {
         kind: 'item',
+        desktopOnly: true,
         label: 'Show in File Explorer',
         icon: 'reveal',
         action: () => void this.vaultState.revealInFileExplorer(''),
@@ -574,7 +590,7 @@ export class Sidebar {
       { kind: 'item', label: 'Open', icon: 'open', action: () => this.onOpenNote(note) },
       { kind: 'item', label: 'Open in New Tab', icon: 'open-new-tab', action: () => this.onOpenNoteInBackground(note) },
       { kind: 'separator' },
-      { kind: 'item', label: 'Show in File Explorer', icon: 'reveal', action: () => void this.vaultState.revealInFileExplorer(note.relPath) },
+      { kind: 'item', desktopOnly: true, label: 'Show in File Explorer', icon: 'reveal', action: () => void this.vaultState.revealInFileExplorer(note.relPath) },
       { kind: 'separator' },
       { kind: 'item', label: 'Remove from Favorites', icon: 'unfavorite', action: () => this.favorites.remove([note.relPath]) },
     ];

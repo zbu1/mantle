@@ -2,8 +2,10 @@ import { bootstrapApplication } from "@angular/platform-browser";
 import { App } from "./app/app";
 import { appConfig } from "./app/app.config";
 import { initLogging, logError, formatError } from "./app/core/logger";
+import { isMobile } from "./app/core/tauri-env";
 
 initLogging();
+if (isMobile) document.documentElement.classList.add("mobile");
 
 /**
  * Last-resort UI for when Angular itself never mounts (e.g. a bootstrap-time

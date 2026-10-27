@@ -2,13 +2,13 @@ import { Injectable, computed, effect, inject, signal, untracked } from '@angula
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { join } from '@tauri-apps/api/path';
-import { open, save } from '@tauri-apps/plugin-dialog';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { flattenVaultNotes, hiddenTreePaths, withNoteFields, withRenamedNote, VaultFolderNode } from './vault-tree.model';
 import { TabsState } from './tabs-state';
 import { VaultMetaState } from './vault-meta-state';
 import { VaultRootState } from './vault-root-state';
 import { formatError, logError, logInfo } from '../core/logger';
+import { FolderPickerState } from '../shared/folder-picker/folder-picker-state';
 
 const RECENT_KEY = 'mantle.vault.recent.v1';
 const MAX_RECENT_VAULTS = 8;
@@ -50,6 +50,7 @@ export interface CreatedFolder {
 export class VaultState {
   private readonly tabsState = inject(TabsState);
   private readonly vaultMeta = inject(VaultMetaState);
+  private readonly folderPicker = inject(FolderPickerState);
 
   readonly rootPath = inject(VaultRootState).path;
   readonly tree = signal<VaultFolderNode | null>(null);
@@ -159,8 +160,8 @@ export class VaultState {
   }
 
   async pickVault(): Promise<void> {
-    const selected = await open({ directory: true, multiple: false });
-    if (!selected || Array.isArray(selected)) return;
+    const selected = await this.folderPicker.pickFolder('Open a Vault');
+    if (!selected) return;
     this.rootPath.set(selected);
     await this.refresh();
   }
@@ -171,9 +172,9 @@ export class VaultState {
    * goes. Resolves what the import did, or null if a dialog was cancelled.
    */
   async importObsidianVault(): Promise<ImportReport | null> {
-    const source = await open({ directory: true, multiple: false, title: 'Choose an Obsidian Vault' });
-    if (!source || Array.isArray(source)) return null;
-    const dest = await save({ title: 'Create the New Mantle Vault', defaultPath: `${vaultNameFromPath(source)} (Mantle)` });
+    const source = await this.folderPicker.pickFolder('Choose an Obsidian Vault');
+    if (!source) return null;
+    const dest = await this.folderPicker.pickNewPath('Create the New Mantle Vault', `${vaultNameFromPath(source)} (Mantle)`);
     if (!dest) return null;
     this.error.set(null);
     try {
@@ -195,7 +196,7 @@ export class VaultState {
    * (refusing one that already exists) and seeds its `.mantle/` state.
    */
   async createVault(): Promise<void> {
-    const selected = await save({ title: 'Create New Vault', defaultPath: 'New Vault' });
+    const selected = await this.folderPicker.pickNewPath('Create New Vault', 'New Vault');
     if (!selected) return;
     this.error.set(null);
     try {

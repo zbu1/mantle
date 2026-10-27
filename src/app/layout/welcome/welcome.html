@@ -38,11 +38,13 @@
     </button>
     }
   </div>
+  @if (!isMobile) {
   <app-window-controls class="[app-region:no-drag]" />
+  }
 </div>
 
 <main data-welcome
-  class="scrollbar-thin relative z-10 mx-auto grid w-full max-w-5xl flex-1 content-start gap-14 overflow-y-auto px-10 pb-40 pt-[9vh] md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] md:gap-20">
+  class="scrollbar-thin relative z-10 mx-auto grid w-full max-w-5xl flex-1 content-start gap-14 overflow-y-auto px-10 pb-40 pt-[9vh] mobile:gap-10 mobile:px-5 mobile:pt-[5vh] md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] md:gap-20">
   <section class="welcome-rise flex min-w-0 flex-col">
     <p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-primary">{{ vaultState.managing() ? 'Manage vaults' : 'No vault open' }}</p>
     <h1 class="mt-5 text-5xl font-semibold leading-[1.02] tracking-[-0.04em] text-foreground lg:text-6xl">
@@ -140,7 +142,7 @@
           </span>
         </button>
         <button type="button" (click)="openMenu($event, vault.path)" aria-label="Vault actions" data-welcome-vault-menu
-          class="absolute right-2 top-1/2 inline-flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity duration-150 hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover/row:opacity-100">
+          class="absolute right-2 top-1/2 inline-flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground opacity-0 mobile:size-10 mobile:opacity-100 transition-opacity duration-150 hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover/row:opacity-100">
           <svg lucideEllipsis [size]="14"></svg>
         </button>
         }
@@ -150,7 +152,7 @@
     } @else {
     <div class="rounded-xl border border-dashed border-input px-5 py-8 text-center">
       <p class="text-sm font-medium text-foreground">Nothing here yet</p>
-      <p class="mt-1 text-xs text-muted-foreground">Vaults you open will show up here, one keypress away.</p>
+      <p class="mt-1 text-xs text-muted-foreground">Vaults you open will show up here<span class="mobile:hidden">, one keypress away</span>.</p>
     </div>
     }
   </section>

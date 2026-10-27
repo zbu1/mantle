@@ -1,16 +1,16 @@
 <div #toolbar class="relative mb-2 flex items-center gap-0.5">
   <button type="button" title="New Note (Ctrl+N)" aria-label="New Note" [disabled]="!hasVault()" (click)="onNewNote()"
-    class="inline-flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary transition-colors hover:bg-primary hover:text-primary-foreground disabled:pointer-events-none disabled:opacity-40">
+    class="inline-flex size-7 mobile:size-10 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary transition-colors hover:bg-primary hover:text-primary-foreground disabled:pointer-events-none disabled:opacity-40">
     <svg lucidePlus [size]="15"></svg>
   </button>
   <button type="button" title="New Folder" aria-label="New Folder" [disabled]="!hasVault()" (click)="onNewFolder()"
-    class="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-background/60 hover:text-foreground disabled:pointer-events-none disabled:opacity-40">
+    class="inline-flex size-7 mobile:size-10 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-background/60 hover:text-foreground disabled:pointer-events-none disabled:opacity-40">
     <svg lucideFolderPlus [size]="15"></svg>
   </button>
 
   <button type="button" title="Sort" aria-label="Sort" [disabled]="!hasVault()" (click)="toggleMenu('sort')"
     [attr.aria-expanded]="openMenu() === 'sort'"
-    class="inline-flex h-7 shrink-0 items-center gap-0.5 rounded-md pl-1.5 pr-1 text-muted-foreground hover:bg-background/60 hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+    class="inline-flex h-7 mobile:h-10 shrink-0 items-center gap-0.5 rounded-md pl-1.5 pr-1 text-muted-foreground hover:bg-background/60 hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
     [class.bg-background/60]="openMenu() === 'sort'" [class.text-foreground]="openMenu() === 'sort'">
     <svg lucideArrowDownAZ [size]="15"></svg>
     <svg lucideChevronDown [size]="10"></svg>
@@ -19,7 +19,7 @@
   <button type="button" [title]="anyFolderExpanded() ? 'Collapse All Folders' : 'Expand All Folders'"
     [attr.aria-label]="anyFolderExpanded() ? 'Collapse All Folders' : 'Expand All Folders'" [disabled]="!hasVault()"
     (click)="toggleAllFolders()"
-    class="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-background/60 hover:text-foreground disabled:pointer-events-none disabled:opacity-40">
+    class="inline-flex size-7 mobile:size-10 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-background/60 hover:text-foreground disabled:pointer-events-none disabled:opacity-40">
     @if (anyFolderExpanded()) {
     <svg lucideFoldVertical [size]="15"></svg>
     } @else {
@@ -29,7 +29,7 @@
 
   <button type="button" title="Display Options" aria-label="Display Options" (click)="toggleMenu('display')"
     [attr.aria-expanded]="openMenu() === 'display'"
-    class="inline-flex h-7 shrink-0 items-center gap-0.5 rounded-md pl-1.5 pr-1 text-muted-foreground hover:bg-background/60 hover:text-foreground"
+    class="inline-flex h-7 mobile:h-10 shrink-0 items-center gap-0.5 rounded-md pl-1.5 pr-1 text-muted-foreground hover:bg-background/60 hover:text-foreground"
     [class.bg-background/60]="openMenu() === 'display'" [class.text-foreground]="openMenu() === 'display'">
     <svg lucideEye [size]="15"></svg>
     <svg lucideChevronDown [size]="10"></svg>
@@ -38,7 +38,7 @@
   <span class="flex-1"></span>
 
   <button type="button" title="More" aria-label="More" (click)="toggleMenu('more')" [attr.aria-expanded]="openMenu() === 'more'"
-    class="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-background/60 hover:text-foreground"
+    class="inline-flex size-7 mobile:size-10 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-background/60 hover:text-foreground"
     [class.bg-background/60]="openMenu() === 'more'" [class.text-foreground]="openMenu() === 'more'">
     <svg lucideEllipsis [size]="16"></svg>
   </button>
@@ -84,7 +84,7 @@
       <svg menuItemIcon lucideLockKeyhole [size]="14"></svg>
     </app-menu-item>
     <app-menu-separator />
-    <app-menu-item label="Reveal Vault in File Explorer" [disabled]="!hasVault()"
+    <app-menu-item class="mobile:hidden" label="Reveal Vault in File Explorer" [disabled]="!hasVault()"
       [active]="hoveredItem() === 'revealVault'" (hovered)="hoveredItem.set('revealVault')" (selected)="revealVault()">
       <svg menuItemIcon lucideFolderOpen [size]="14"></svg>
     </app-menu-item>
@@ -103,7 +103,7 @@
 </div>
 
 <label
-  class="flex h-7 w-full min-w-0 cursor-text items-center gap-1.5 rounded-md border border-border bg-background/60 px-2 text-xs transition-colors focus-within:border-ring/60 focus-within:bg-background"
+  class="flex h-7 w-full min-w-0 cursor-text mobile:h-10 mobile:text-sm items-center gap-1.5 rounded-md border border-border bg-background/60 px-2 text-xs transition-colors focus-within:border-ring/60 focus-within:bg-background"
   [class.opacity-50]="!hasVault()">
   <svg lucideSearch [size]="12" class="shrink-0 text-muted-foreground"></svg>
   <input #field type="text" placeholder="Filter notes" autocomplete="off" spellcheck="false" aria-label="Filter notes"

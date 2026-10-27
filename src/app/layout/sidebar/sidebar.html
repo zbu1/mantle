@@ -1,9 +1,9 @@
-<aside class="relative mb-2 flex shrink-0 flex-col rounded-xl bg-background text-foreground"
-  [class.shadow-card]="!state.collapsed()"
-  [class.mr-1]="!state.collapsed()" [class.border]="!state.collapsed()" [class.border-input]="!state.collapsed()"
-  [style.width.px]="state.effectiveWidth()"
+<aside class="relative mb-2 flex shrink-0 flex-col rounded-xl bg-background text-foreground mobile:mb-0 mobile:min-h-0 mobile:flex-1"
+  [class.shadow-card]="shown()"
+  [class.mr-1]="shown() && !isMobile" [class.border]="shown()" [class.border-input]="shown()"
+  [style.width.px]="isMobile ? null : state.effectiveWidth()"
   [style.transition]="state.resizing() ? 'none' : 'width 200ms ease-out'">
-  @if (!state.collapsed()) {
+  @if (shown()) {
   <app-vault-header [(filter)]="filterQuery" (newNote)="onNewNote()" (newFolder)="onNewFolder()" />
 
   <!-- The vault tree: the sidebar's body, always open, taking whatever height the sections below leave. -->
@@ -128,7 +128,7 @@
   }
   }
 
-  <div class="group absolute inset-y-0 right-0 z-10 -mr-1 flex w-2 cursor-col-resize items-center justify-center"
+  <div class="group absolute inset-y-0 right-0 z-10 -mr-1 flex w-2 cursor-col-resize mobile:hidden items-center justify-center"
     (pointerdown)="onResizePointerDown($event)" (pointermove)="onResizePointerMove($event)"
     (pointerup)="onResizePointerUp($event)" (lostpointercapture)="onResizeLostPointerCapture()">
     <div class="h-full w-px bg-transparent group-hover:bg-primary/40 group-active:bg-primary/60"></div>

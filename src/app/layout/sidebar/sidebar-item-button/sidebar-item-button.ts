@@ -37,7 +37,7 @@ export class SidebarItemButton {
   });
 
   protected readonly buttonClass = computed(() => {
-    const layout = this.collapsed() ? 'h-9 w-full justify-center' : 'w-full py-1 pr-2 text-left';
+    const layout = this.collapsed() ? 'h-9 w-full justify-center' : 'w-full py-1 pr-2 text-left mobile:py-2.5 mobile:text-sm';
     // Active and selected stack: the rail and heavier label, plus the fill.
     const rail = this.active()
       ? ' font-medium before:absolute before:inset-y-1 before:left-0.5 before:w-0.5 before:rounded-full before:bg-primary'

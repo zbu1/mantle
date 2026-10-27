@@ -6,6 +6,9 @@
 @import "@fontsource/inter/600.css";
 @import "@fontsource/inter/700.css";
 
+/* The Android app (see `isMobile` in core/tauri-env.ts): `mobile:hidden`, `mobile:h-11`, ... */
+@custom-variant mobile (&:where(.mobile, .mobile *));
+
 :root {
   font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
   font-size: 16px;
@@ -26,6 +29,20 @@
 
 *:focus {
   outline: none;
+}
+
+/* Touch: no grey flash on tap, no text selection or callout from long-pressing a control (that opens its menu). */
+.mobile {
+  -webkit-tap-highlight-color: transparent;
+}
+.mobile :is(button, [role="button"], [role="menuitem"], [draggable="true"]) {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+/* There's no keyboard to press shortcuts on. */
+.mobile .kbd {
+  display: none;
 }
 
 /* Text fields and editor content show the caret (and a border tint) rather than a focus ring. */

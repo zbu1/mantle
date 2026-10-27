@@ -23,6 +23,7 @@ import { gapCursor } from 'prosemirror-gapcursor';
 import { dropCursor } from 'prosemirror-dropcursor';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
+import { isMobile } from '../../core/tauri-env';
 
 import { AttachmentsState, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, attachmentUrl } from '../attachments-state';
 import { CredentialsState } from '../credentials-state';
@@ -89,6 +90,16 @@ import { dirOf } from '../vault-tree.model';
 
 /** Meta on a transaction that brings in an edit made in another pane, so it isn't saved again. */
 const OTHER_PANE = 'mantle:other-pane';
+
+/** Asks for one file through the WebView's own picker; null if the user backs out. */
+function chooseFile(accept: string): Promise<File | null> {
+  return new Promise((resolve) => {
+    const input = Object.assign(document.createElement('input'), { type: 'file', accept });
+    input.addEventListener('change', () => resolve(input.files?.[0] ?? null));
+    input.addEventListener('cancel', () => resolve(null));
+    input.click();
+  });
+}
 
 /**
  * Where each tab left each note: scroll offset and selection, restored when
@@ -249,7 +260,8 @@ export class NoteEditor {
           mathPlugin(),
           // Last, so images and code blocks get their own menus first.
           new Plugin({
-            props: { handleDOMEvents: { contextmenu: (view, event) => (this.openTextMenu(event, view), true) } },
+            // On Android a long press selects text, with the system's own Cut / Copy / Paste.
+            props: { handleDOMEvents: { contextmenu: (view, event) => !isMobile && (this.openTextMenu(event, view), true) } },
           }),
           imagePlugin(this.imageContext()),
           codeBlockPlugin({
@@ -399,22 +411,28 @@ export class NoteEditor {
    */
   private imageContext(): ImageContext {
     const args = () => ({ vaultRoot: this.vaultRoot() ?? '', noteRelPath: this.noteId() });
+    const save = async (file: File) => {
+      // A data URL is the cheapest way to get base64 out of a File.
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
+      // A video's type (`video/quicktime`) doesn't name its extension; its file name does.
+      const ext = file.type.startsWith('image/')
+        ? file.type.slice('image/'.length).replace('+xml', '')
+        : (file.name.split('.').pop()?.toLowerCase() ?? '');
+      return invoke<string>('save_attachment', { ...args(), data: dataUrl.slice(dataUrl.indexOf(',') + 1), ext });
+    };
     return {
-      save: async (file) => {
-        // A data URL is the cheapest way to get base64 out of a File.
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = () => reject(reader.error);
-          reader.readAsDataURL(file);
-        });
-        // A video's type (`video/quicktime`) doesn't name its extension; its file name does.
-        const ext = file.type.startsWith('image/')
-          ? file.type.slice('image/'.length).replace('+xml', '')
-          : (file.name.split('.').pop()?.toLowerCase() ?? '');
-        return invoke<string>('save_attachment', { ...args(), data: dataUrl.slice(dataUrl.indexOf(',') + 1), ext });
-      },
+      save,
       pick: async () => {
+        // Android's file dialog hands back a `content://` URI, not a path the backend can read; the WebView's own picker gives the bytes.
+        if (isMobile) {
+          const file = await chooseFile([...IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS, 'pdf'].map((ext) => `.${ext}`).join(','));
+          return file && save(file);
+        }
         const sourcePath = await open({
           multiple: false,
           filters: [{ name: 'Images, Videos and PDFs', extensions: [...IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS, 'pdf'] }],
@@ -582,6 +600,7 @@ export class NoteEditor {
     this.contextMenuState.open(event, [
       {
         kind: 'item',
+        desktopOnly: true,
         label: 'Show in File Explorer',
         icon: 'reveal',
         disabled: !info,
@@ -595,6 +614,7 @@ export class NoteEditor {
       },
       {
         kind: 'item',
+        desktopOnly: true,
         label: 'Open in Default App',
         icon: 'open-external',
         // A sealed image would have to be decrypted to disk for another app.

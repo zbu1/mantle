@@ -38,7 +38,7 @@ import { renderPdfPages } from '../pdf-pages';
         </div>
         <div class="mt-1 flex items-center gap-2">
           <button type="button" (click)="vaultState.revealInFileExplorer(relPath())"
-            class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs text-foreground hover:bg-surface">
+            class="mobile:hidden inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs text-foreground hover:bg-surface">
             <svg lucideFolderOpen [size]="13"></svg>
             Show in File Explorer
           </button>
@@ -52,7 +52,7 @@ import { renderPdfPages } from '../pdf-pages';
             }
           } @else {
             <button type="button" (click)="attachments.openInDefaultApp(relPath())"
-              class="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:opacity-90">
+              class="mobile:hidden inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:opacity-90">
               <svg lucideExternalLink [size]="13"></svg>
               Open in Default App
             </button>

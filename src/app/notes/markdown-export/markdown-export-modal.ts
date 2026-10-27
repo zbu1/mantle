@@ -1,7 +1,7 @@
 import { Component, ElementRef, HostListener, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
 import { LucideFileDown, LucideLock, LucideLockOpen } from '@lucide/angular';
-import { open } from '@tauri-apps/plugin-dialog';
 import { formatError } from '../../core/logger';
+import { FolderPickerState } from '../../shared/folder-picker/folder-picker-state';
 import { CredentialsState } from '../credentials-state';
 import { VaultState } from '../vault-state';
 import { VaultNoteNode, flattenAllNotes } from '../vault-tree.model';
@@ -35,6 +35,7 @@ export class MarkdownExportModal {
   private readonly state = inject(MarkdownExportState);
   private readonly credentialsState = inject(CredentialsState);
   private readonly vaultState = inject(VaultState);
+  private readonly folderPicker = inject(FolderPickerState);
 
   protected readonly request = this.state.request;
   protected readonly exporting = computed(() => this.request()?.mode === 'export');
@@ -150,8 +151,8 @@ export class MarkdownExportModal {
   }
 
   protected async chooseDest(): Promise<void> {
-    const picked = await open({ directory: true, multiple: false, title: 'Export to a new or empty folder' });
-    if (typeof picked === 'string') {
+    const picked = await this.folderPicker.pickFolder('Export to a new or empty folder');
+    if (picked) {
       this.dest.set(picked);
       this.error.set(null);
     }
