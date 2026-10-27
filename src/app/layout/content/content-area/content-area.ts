@@ -21,7 +21,7 @@ import { TabsState, NoteTab, NoteShowingTab } from '../../../notes/tabs-state';
 import { NotesState, titleFromRelPath } from '../../../notes/notes-state';
 import { CredentialsState } from '../../../notes/credentials-state';
 import { EncryptionPanelState } from '../../../notes/encryption-panel/encryption-panel-state';
-import { VaultState } from '../../../notes/vault-state';
+import { VaultState, vaultNameFromPath } from '../../../notes/vault-state';
 import { FavoritesState } from '../../../notes/favorites-state';
 import { VaultMetaState } from '../../../notes/vault-meta-state';
 import { NoteEditor } from '../../../notes/editor/note-editor';
@@ -123,6 +123,8 @@ export class ContentArea {
     const tab = this.activeTab();
     return !!tab && !isNotePath(tab.noteId);
   });
+
+  protected readonly vaultName = computed(() => vaultNameFromPath(this.vaultState.rootPath() ?? ''));
 
   /** Vault failed to open (bad/missing path, permissions, etc.) — show a fallback screen instead of the editor. */
   protected readonly vaultError = computed(() => (this.vaultState.tree() ? null : this.vaultState.error()));

@@ -87,6 +87,19 @@
       </button>
     </div>
   </div>
+  } @else if (!vaultState.tree() && vaultState.loading()) {
+  <div role="status" class="vault-loading flex flex-1 flex-col items-center justify-center gap-4 px-6 pb-16 text-center">
+    <!-- The strata from the empty state, warming bottom-up in turn while the scan runs. -->
+    <svg viewBox="0 0 160 64" width="160" height="64" fill="none" stroke-width="1.5" stroke-linecap="round"
+      aria-hidden="true">
+      @for (y of [8, 20, 32, 44, 56]; track y; let i = $index) {
+      <path [attr.d]="'M4 ' + y + ' C 30 ' + (y - 6) + ', 50 ' + (y + 6) + ', 80 ' + y + ' S 130 ' + (y - 6) + ', 156 ' + y"
+        class="vault-loading-stratum stroke-primary" [style.animation-delay.ms]="(4 - i) * 180" />
+      }
+    </svg>
+    <div class="text-lg font-medium text-foreground">Opening {{ vaultName() }}</div>
+    <div class="text-xs text-muted-foreground">Reading notes, tags and links. Notes of unlocked profiles are decrypted as they're read.</div>
+  </div>
   } @else if (activeTab(); as tab) {
   @if (activeIsFile()) {
   <!-- No title: the breadcrumb names the file, and the image gets the whole area. -->

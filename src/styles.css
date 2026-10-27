@@ -154,6 +154,32 @@ button.focus-ring-inset:focus-visible,
   }
 }
 
+/* Vault loading screen: fades in only if the scan takes a moment, then the strata pulse bottom-up. */
+@keyframes vault-loading-pulse {
+  0%,
+  100% {
+    opacity: 0.15;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+
+.vault-loading {
+  animation: welcome-settle 400ms 250ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.vault-loading-stratum {
+  animation: vault-loading-pulse 1.6s ease-in-out infinite both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vault-loading-stratum {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
 .scrollbar-thin {
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
