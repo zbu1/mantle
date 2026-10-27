@@ -103,9 +103,9 @@ export const SLASH_COMMAND_ITEMS: SlashCommandItem[] = [
   },
   {
     id: 'image',
-    label: 'Image',
+    label: 'Image, Video or PDF',
     icon: 'image',
-    keywords: ['image', 'picture', 'photo', 'img'],
+    keywords: ['image', 'picture', 'photo', 'img', 'video', 'movie', 'pdf', 'document', 'embed'],
     run: (view) => void pickImage(view),
   },
   // The note's properties panel lives outside the editor; `NoteEditor` hears these.

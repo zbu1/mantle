@@ -413,7 +413,7 @@ export class NoteEditor {
       pick: async () => {
         const sourcePath = await open({
           multiple: false,
-          filters: [{ name: 'Images and Videos', extensions: [...IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS] }],
+          filters: [{ name: 'Images, Videos and PDFs', extensions: [...IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS, 'pdf'] }],
         });
         return sourcePath ? invoke<string>('import_attachment', { ...args(), sourcePath }) : null;
       },
@@ -422,6 +422,7 @@ export class NoteEditor {
         const info = await this.attachments.info(this.noteId(), src);
         return info && { ...info, profile: info.profile && this.credentialsState.displayNameOf(info.profile) };
       },
+      open: (src) => void this.attachments.openLinked(this.noteId(), src),
       contextMenu: (event, view, pos, node) => void this.openImageMenu(event, view, pos, node.attrs['src']),
     };
   }
@@ -550,7 +551,7 @@ export class NoteEditor {
         kind: 'submenu',
         label: 'Insert',
         items: [
-          { kind: 'item', label: 'Image…', action: () => void pickImage(view) },
+          { kind: 'item', label: 'Image, Video or PDF…', action: () => void pickImage(view) },
           { kind: 'item', label: 'Divider', action: () => insertHorizontalRule(view) },
         ],
       },

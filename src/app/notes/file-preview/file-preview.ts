@@ -3,6 +3,7 @@ import { LucideDownload, LucideExternalLink, LucideFileQuestion, LucideFolderOpe
 import { formatError, logError } from '../../core/logger';
 import { AttachmentsState, attachmentUrl, isImagePath, isPdfPath, isVideoPath } from '../attachments-state';
 import { VaultState } from '../vault-state';
+import { renderPdfPages } from '../pdf-pages';
 
 /**
  * A read-only tab for a file in the vault that isn't a note: an image, video
@@ -84,39 +85,19 @@ export class FilePreview {
     effect((onCleanup) => {
       const host = this.pages()?.nativeElement;
       if (!host) return;
+      let stop: (() => void) | null = null;
       let cancelled = false;
-      onCleanup(() => (cancelled = true));
-      void this.renderPdf(this.url(), host, () => cancelled).catch((err) => {
-        logError(`Failed to show PDF: ${formatError(err)}`);
-        if (!cancelled) this.failed.set(true);
+      onCleanup(() => {
+        cancelled = true;
+        stop?.();
       });
+      renderPdfPages(this.url(), host, host, 'shrink-0 bg-white shadow-card').then(
+        (done) => (cancelled ? done() : (stop = done)),
+        (err) => {
+          logError(`Failed to show PDF: ${formatError(err)}`);
+          if (!cancelled) this.failed.set(true);
+        },
+      );
     });
-  }
-
-  /** Draws every page of the PDF at `url` into `host`, one canvas each, in order. */
-  private async renderPdf(url: string, host: HTMLElement, cancelled: () => boolean): Promise<void> {
-    const pdfjs = await import('pdfjs-dist');
-    pdfjs.GlobalWorkerOptions.workerSrc = 'pdfjs/pdf.worker.min.mjs';
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const task = pdfjs.getDocument({ data: new Uint8Array(await response.arrayBuffer()) });
-    try {
-      const pdf = await task.promise;
-      host.replaceChildren();
-      const scale = window.devicePixelRatio || 1;
-      for (let n = 1; n <= pdf.numPages && !cancelled(); n++) {
-        const page = await pdf.getPage(n);
-        const viewport = page.getViewport({ scale: 1.5 * scale });
-        const canvas = document.createElement('canvas');
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        canvas.style.width = `min(100% - 2rem, ${viewport.width / scale}px)`;
-        canvas.className = 'shrink-0 bg-white shadow-card';
-        host.append(canvas);
-        await page.render({ canvas, viewport }).promise;
-      }
-    } finally {
-      await task.destroy();
-    }
   }
 }

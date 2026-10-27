@@ -24,6 +24,8 @@ export interface ImageContext {
   url(src: string): string;
   /** Where an image `src` from the current note leads; null for a remote URL or a missing file. */
   describe(src: string): Promise<ImageDescription | null>;
+  /** Opens the file an image `src` from the current note leads to in its own tab. */
+  open(src: string): void;
   /** Opens the context menu for the image `node` at `pos`. */
   contextMenu(event: MouseEvent, view: EditorView, pos: number, node: PMNode): void;
 }
@@ -65,9 +67,9 @@ export function relinkImages(view: EditorView, sources: Readonly<Record<string, 
   if (tr.docChanged) view.dispatch(tr.setMeta('addToHistory', false));
 }
 
-/** Stores and inserts the image and video files among `files`, if any; false if there are none to handle. */
+/** Stores and inserts the image, video and PDF files among `files`, if any; false if there are none to handle. */
 function insertFiles(view: EditorView, files: FileList | undefined, pos?: number): boolean {
-  const images = [...(files ?? [])].filter((file) => /^(image|video)\//.test(file.type));
+  const images = [...(files ?? [])].filter((file) => /^(image|video)\/|^application\/pdf$/.test(file.type));
   const context = imageContext(view);
   if (images.length === 0 || !context) return false;
   void (async () => {

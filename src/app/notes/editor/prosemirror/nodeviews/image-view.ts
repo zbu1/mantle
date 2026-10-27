@@ -1,6 +1,7 @@
 import { Node as PMNode } from 'prosemirror-model';
 import { EditorView, NodeView } from 'prosemirror-view';
-import { isVideoPath } from '../../../attachments-state';
+import { isPdfPath, isVideoPath } from '../../../attachments-state';
+import { renderPdfPages } from '../../../pdf-pages';
 import { imageContext } from '../plugins/image-plugin';
 import { revealImageSource } from '../plugins/syntax-reveal-plugin';
 
@@ -8,7 +9,11 @@ const svg = (size: number, body: string) =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
 const LOCK_ICON = svg(11, '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>');
 const CODE_ICON = svg(14, '<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>');
+const OPEN_ICON = svg(14, '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>');
 const ZOOM_ICON = svg(14, '<circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/><line x1="11" x2="11" y1="8" y2="14"/><line x1="8" x2="14" y1="11" y2="11"/>');
+
+/** An embedded PDF's frame height when the embed doesn't give one (`![[doc.pdf|600]]`). */
+const PDF_HEIGHT = 480;
 
 const TOOL = 'flex size-6 items-center justify-center rounded-md bg-surface/90 text-muted-foreground shadow-card hover:text-foreground';
 
@@ -37,7 +42,8 @@ export function zoomImage(url: string, caption: string): void {
 
 /**
  * Renders an image node, loading a vault image through the `mantle://`
- * protocol rather than its Markdown `src` — as a player, for a video. A
+ * protocol rather than its Markdown `src` — as a player, for a video, and as a
+ * scrollable frame of its pages, for a PDF. A
  * missing image, or one whose profile is locked, shows the browser's own
  * broken-image box with its alt text.
  *
@@ -49,9 +55,12 @@ export function zoomImage(url: string, caption: string): void {
  */
 export class ImageView implements NodeView {
   readonly dom: HTMLElement;
-  private img: HTMLImageElement | HTMLVideoElement;
+  private img: HTMLElement;
   private readonly tools: HTMLElement;
   private readonly zoomButton: HTMLButtonElement;
+  private readonly openButton: HTMLButtonElement;
+  /** The PDF the frame shows, and how to stop drawing it. */
+  private pdf: { url: string; stop?: () => void; cancelled?: boolean } | null = null;
   private readonly bar: HTMLElement;
   /** Bumped per selection, so a slow lookup can't fill in a bar that has since moved on. */
   private describing = 0;
@@ -77,7 +86,8 @@ export class ImageView implements NodeView {
       if (pos !== undefined) revealImageSource(this.view, pos);
     });
     this.zoomButton = this.tool('Zoom', ZOOM_ICON, () => this.zoom());
-    this.tools.append(source, this.zoomButton);
+    this.openButton = this.tool('Open in tab', OPEN_ICON, () => imageContext(this.view)?.open(this.node.attrs['src']));
+    this.tools.append(source, this.zoomButton, this.openButton);
     this.dom.append(this.tools);
 
     this.bar = document.createElement('span');
@@ -117,24 +127,63 @@ export class ImageView implements NodeView {
 
   private render(): void {
     const { src, alt, title, size } = this.node.attrs;
-    const tag = isVideoPath(src) ? 'video' : 'img';
+    const pdf = isPdfPath(src);
+    // The PDF frame is a `div`, kept apart from images by its tag.
+    const tag = pdf ? 'div' : isVideoPath(src) ? 'video' : 'img';
     if (this.img.localName !== tag) {
+      this.stopPdf();
       const media = document.createElement(tag);
       if (media instanceof HTMLVideoElement) media.controls = true;
-      media.className = this.img.className || 'note-image';
+      media.className = pdf
+        ? 'note-pdf scrollbar-thin flex flex-col items-center gap-3 overflow-auto rounded-md border border-border bg-surface py-3'
+        : 'note-image';
       this.img.replaceWith(media);
       this.img = media;
     }
-    // A video plays in place.
-    this.zoomButton.hidden = tag === 'video';
+    this.dom.classList.toggle('w-full', pdf);
+    // A video plays in place; a PDF scrolls in place, or opens in a tab.
+    this.zoomButton.hidden = tag !== 'img';
+    this.openButton.hidden = !pdf;
     // Resolved on every render: a relative `src` depends on which note this is.
     const url = imageContext(this.view)?.url(src) ?? src;
-    if (this.img.getAttribute('src') !== url) this.img.src = url;
-    if (this.img instanceof HTMLImageElement) this.img.alt = alt ?? '';
     this.img.title = title ?? alt ?? '';
-    const width = parseInt(size ?? '', 10);
-    if (width > 0) this.img.width = width;
-    else this.img.removeAttribute('width');
+    const length = parseInt(size ?? '', 10);
+    if (this.img instanceof HTMLDivElement) {
+      this.img.style.height = `${length > 0 ? length : PDF_HEIGHT}px`;
+      if (this.pdf?.url !== url) this.showPdf(url);
+      return;
+    }
+    const media = this.img as HTMLImageElement | HTMLVideoElement;
+    if (media.getAttribute('src') !== url) media.src = url;
+    if (media instanceof HTMLImageElement) media.alt = alt ?? '';
+    if (length > 0) media.width = length;
+    else media.removeAttribute('width');
+  }
+
+  private showPdf(url: string): void {
+    this.stopPdf();
+    const frame = this.img;
+    const pdf: NonNullable<ImageView['pdf']> = { url };
+    this.pdf = pdf;
+    renderPdfPages(url, frame, frame, 'shrink-0 bg-white shadow-card').then(
+      (stop) => (pdf.cancelled ? stop() : (pdf.stop = stop)),
+      () => {
+        if (pdf.cancelled) return;
+        frame.classList.add('items-center', 'justify-center');
+        frame.textContent = "This PDF can't be shown. It may be missing, damaged, or encrypted under a locked profile.";
+      },
+    );
+  }
+
+  private stopPdf(): void {
+    if (!this.pdf) return;
+    this.pdf.cancelled = true;
+    this.pdf.stop?.();
+    this.pdf = null;
+  }
+
+  destroy(): void {
+    this.stopPdf();
   }
 
   update(node: PMNode): boolean {
