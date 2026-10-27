@@ -438,6 +438,26 @@ button.focus-ring-inset:focus-visible,
   margin: 0.5em 0;
 }
 
+/* Footnotes (footnote-plugin) and task states beyond `[ ]` / `[x]`. */
+.ProseMirror .footnote-ref {
+  vertical-align: super;
+  font-size: 0.75em;
+  line-height: 0;
+  color: var(--primary);
+  cursor: help;
+}
+.ProseMirror .footnote-missing {
+  color: var(--muted-foreground);
+  text-decoration: underline wavy var(--destructive);
+}
+.ProseMirror .footnote-def {
+  color: var(--muted-foreground);
+  font-size: 0.875em;
+}
+.ProseMirror li[data-type='taskItem'][data-status='-']>.task-content {
+  opacity: 0.7;
+}
+
 /* Callouts (callout-plugin): a quote starting `[!type]`, tinted by its type. */
 .ProseMirror blockquote.callout {
   --callout: var(--code-title);

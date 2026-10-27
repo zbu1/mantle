@@ -45,6 +45,7 @@ import { trailingParagraphPlugin } from './prosemirror/plugins/trailing-paragrap
 import { listMarkerPlugin } from './prosemirror/plugins/list-marker-plugin';
 import { foldedHeadings, headingFoldKey, headingFoldPlugin, setFoldedHeadings } from './prosemirror/plugins/heading-fold-plugin';
 import { calloutPlugin } from './prosemirror/plugins/callout-plugin';
+import { footnotePlugin } from './prosemirror/plugins/footnote-plugin';
 import { HeadingFoldState, NoteFolds } from './heading-fold-state';
 import { findPlugin, findStatus } from './prosemirror/plugins/find-plugin';
 import { demoteEmptyLeadingBlock } from './prosemirror/commands/demote-empty-leading-block';
@@ -235,6 +236,7 @@ export class NoteEditor {
           gapCursor(),
           headingFoldPlugin(),
           calloutPlugin(),
+          footnotePlugin(),
           findPlugin(),
           dropCursor({ color: 'var(--primary)', width: 2 }),
           trailingParagraphPlugin(),

@@ -349,7 +349,7 @@ export const markdownSerializer = new MarkdownSerializer(
       state.text(lead + escaped, false);
     },
     task_item(state, node) {
-      state.write(node.attrs['checked'] ? '[x] ' : '[ ] ');
+      state.write(`[${taskStatus(node)}] `);
       state.renderContent(node);
     },
     image(state, node, parent, index) {
@@ -421,9 +421,20 @@ function renderBulletList(state: MarkdownSerializerState, node: PMNode, parent: 
   state.renderList(list, '  ', () => node.attrs['bullet'] + ' ');
 }
 
-const CHECKBOX = /^\[([ xX])\](?:\s+|$)/;
+/** A checkbox: any one character in brackets, as other apps allow states like `[-]` and `[/]`. */
+const CHECKBOX = /^\[([^[\]\n\\])\](?:\s+|$)/;
 
-/** The checkbox a list item starts with: whether it's checked, and the item without it. */
+/** The attrs of a task item whose checkbox holds `char`: checked unless it's blank. */
+export function taskAttrs(char: string): { checked: boolean; status: string | null } {
+  return { checked: char !== ' ', status: char === ' ' || char === 'x' ? null : char };
+}
+
+/** The character between a task item's brackets. */
+export function taskStatus(item: PMNode): string {
+  return item.attrs['status'] ?? (item.attrs['checked'] ? 'x' : ' ');
+}
+
+/** The checkbox a list item starts with: its state, and the item without it. */
 function taskItem(item: PMNode): PMNode | null {
   const paragraph = item.firstChild;
   const text = paragraph?.type === schema.nodes['paragraph'] ? paragraph.firstChild : null;
@@ -431,7 +442,7 @@ function taskItem(item: PMNode): PMNode | null {
   if (!paragraph || !text || !match) return null;
   const rest = text.text!.slice(match[0].length);
   const inline = rest ? paragraph.content.replaceChild(0, schema.text(rest, text.marks)) : paragraph.content.cut(text.nodeSize);
-  return schema.nodes['task_item'].create({ checked: match[1] !== ' ' }, item.content.replaceChild(0, paragraph.copy(inline)));
+  return schema.nodes['task_item'].create(taskAttrs(match[1]), item.content.replaceChild(0, paragraph.copy(inline)));
 }
 
 function transformTaskLists(node: PMNode): PMNode {

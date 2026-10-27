@@ -3,7 +3,7 @@ import { Command, EditorState, NodeSelection, Plugin, PluginKey, TextSelection, 
 import { Mapping, findWrapping, liftTarget } from 'prosemirror-transform';
 import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 import { openUrl } from '@tauri-apps/plugin-opener';
-import { codeBody, codeFence, parseMarkdown, serializeMarkdown } from '../markdown-converter';
+import { codeBody, codeFence, parseMarkdown, serializeMarkdown, taskAttrs, taskStatus } from '../markdown-converter';
 import { schema } from '../schema';
 
 /*
@@ -73,7 +73,7 @@ function expectedPrefix(doc: PMNode, pos: number): string {
 function taskPrefix(doc: PMNode, pos: number): string {
   const $pos = doc.resolve(pos);
   if ($pos.parent.type !== taskItem || $pos.index() !== 0) return '';
-  return `${$pos.node(-1).attrs['bullet']} [${$pos.parent.attrs['checked'] ? 'x' : ' '}] `;
+  return `${$pos.node(-1).attrs['bullet']} [${taskStatus($pos.parent)}] `;
 }
 
 // --- Character-level edits --------------------------------------------------
@@ -538,11 +538,11 @@ export function taskMarkerPlugin(): Plugin {
       const text = block.textBetween(0, end);
       if (text === $old.parent.textBetween(0, oldEnd)) return null;
       const tr = state.tr;
-      const checkbox = /^[-*+][ \t]+\[([ xX]?)\][ \t]*$/.exec(text);
+      const checkbox = /^[-*+][ \t]+\[([^[\]\n\\]?)\][ \t]*$/.exec(text);
       if (checkbox) {
-        const checked = !!checkbox[1].trim();
+        const attrs = taskAttrs(checkbox[1] || ' ');
         const item = state.doc.nodeAt(pos - 1)!;
-        if (item.attrs['checked'] !== checked) tr.setNodeMarkup(pos - 1, null, { ...item.attrs, checked });
+        if (taskStatus(item) !== taskStatus(item.type.create(attrs))) tr.setNodeMarkup(pos - 1, null, { ...item.attrs, ...attrs });
       } else {
         tr.removeMark(start, start + end, prefixMark);
         const marker = /^[-*+]?[ \t]*/.exec(text)![0].length;

@@ -53,15 +53,24 @@ export class TaskItemView implements NodeView {
     if (typeof pos !== 'number') return;
 
     this.view.dispatch(
+      // A click makes it a plain `[ ]` / `[x]`, whatever state it had.
       this.view.state.tr.setNodeMarkup(pos, undefined, {
         ...this.node.attrs,
         checked: this.checkbox.checked,
+        status: null,
       })
     );
   }
 
   private syncChecked() {
-    this.dom.setAttribute('data-checked', this.node.attrs['checked'] ? 'true' : 'false');
+    const status: string | null = this.node.attrs['status'];
+    // Done (`[x]`, `[X]`) and cancelled (`[-]`) items are struck through, `[/]` shows half done, other states just checked.
+    const done = this.node.attrs['checked'] && (!status || status === 'X' || status === '-');
+    this.dom.setAttribute('data-checked', done ? 'true' : 'false');
+    if (status) this.dom.setAttribute('data-status', status);
+    else this.dom.removeAttribute('data-status');
+    this.checkbox.indeterminate = status === '/';
+    this.checkbox.title = status ? `[${status}]` : '';
     // Its `- [ ] ` shows as text instead.
     const first = this.node.firstChild?.firstChild;
     this.dom.toggleAttribute('data-revealed', !!first && first.marks.some((mark) => mark.type.name === 'md_prefix'));

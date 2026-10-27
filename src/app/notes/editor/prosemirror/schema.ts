@@ -109,7 +109,8 @@ const baseNodes = OrderedMap.from<NodeSpec>({
     },
   },
   task_item: {
-    attrs: { checked: { default: false } },
+    // `status`: the character between the brackets when it's not ` ` or `x` (`[-]`, `[/]`, `[X]`…), so it saves as written.
+    attrs: { checked: { default: false }, status: { default: null } },
     content: 'paragraph block*',
     defining: true,
     parseDOM: [
