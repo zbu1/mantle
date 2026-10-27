@@ -58,6 +58,10 @@ pub struct VaultMeta {
     /// to `name-asc` for one it doesn't know.
     #[serde(default = "default_sort_mode")]
     pub sort_mode: String,
+    /// Folders sorted their own way rather than by `sort_mode`, by
+    /// `rel_path`, with the same mode strings.
+    #[serde(default)]
+    pub folder_sort: BTreeMap<String, String>,
     /// Recently opened notes, most recent first. The frontend owns dedupe
     /// and the size cap; this is stored as-is.
     #[serde(default)]
@@ -96,6 +100,7 @@ impl Default for VaultMeta {
             order: HashMap::new(),
             collapsed_folders: Vec::new(),
             sort_mode: default_sort_mode(),
+            folder_sort: BTreeMap::new(),
             recent_notes: Vec::new(),
             property_types: BTreeMap::new(),
         }
@@ -177,6 +182,7 @@ mod tests {
             order: HashMap::from([("Work".to_string(), vec!["todo.mntl".to_string(), "notes.mntl".to_string()])]),
             collapsed_folders: vec!["Archive".to_string()],
             sort_mode: "modified".to_string(),
+            folder_sort: BTreeMap::from([("Projects".to_string(), "manual".to_string())]),
             recent_notes: vec![
                 RecentNote { rel_path: "Work/todo.mntl".to_string(), opened_at: 1_758_000_000_000 },
                 RecentNote { rel_path: "notes.mntl.enc".to_string(), opened_at: 1_757_900_000_000 },

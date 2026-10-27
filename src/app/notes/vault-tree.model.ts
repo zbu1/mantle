@@ -178,19 +178,26 @@ export const SORT_MODES: readonly { id: SortMode; label: string }[] = [
 const byName = (a: VaultNode, b: VaultNode) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
 
 /**
- * `root` with every folder's children in `mode`'s order, folders first.
- * Dates sort newest first. `manual` follows `order` (child file names per
- * folder relPath); anything it doesn't list goes after, by name.
+ * `root` with every folder's children in `mode`'s order (or the folder's own,
+ * from `folderSort`), folders first. Dates sort newest first, a missing
+ * creation time counting as the modification time. `manual` follows `order`
+ * (child file names per folder relPath); anything it doesn't list goes after,
+ * by name.
  */
-export function sortVaultTree(root: VaultFolderNode, mode: SortMode, order: Readonly<Record<string, readonly string[]>>): VaultFolderNode {
+export function sortVaultTree(
+  root: VaultFolderNode,
+  mode: SortMode,
+  order: Readonly<Record<string, readonly string[]>>,
+  folderSort: Readonly<Record<string, SortMode>> = {},
+): VaultFolderNode {
   const compare = (folder: VaultFolderNode): ((a: VaultNode, b: VaultNode) => number) => {
-    switch (mode) {
+    switch (folderSort[folder.relPath] ?? mode) {
       case 'name-desc':
         return (a, b) => byName(b, a);
       case 'modified':
         return (a, b) => (b.modified ?? 0) - (a.modified ?? 0) || byName(a, b);
       case 'created':
-        return (a, b) => (b.created ?? 0) - (a.created ?? 0) || byName(a, b);
+        return (a, b) => (b.created ?? b.modified ?? 0) - (a.created ?? a.modified ?? 0) || byName(a, b);
       case 'manual': {
         const rank = new Map((order[folder.relPath] ?? []).map((name, i) => [name, i]));
         const rankOf = (node: VaultNode) => rank.get(fileNameOf(node.relPath)) ?? Infinity;

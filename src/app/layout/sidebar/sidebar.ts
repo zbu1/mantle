@@ -30,6 +30,7 @@ import { VaultSelectionState } from '../../notes/vault-selection-state';
 import {
   filterVaultTree,
   findFolder,
+  SORT_MODES,
   sortVaultTree,
   flattenAllNotes,
   flattenTreeNodes,
@@ -97,7 +98,7 @@ export class Sidebar {
 
   protected readonly visibleTree = computed(() => {
     const tree = this.vaultState.tree();
-    return tree ? sortVaultTree(filterVaultTree(tree, this.filterQuery()), this.vaultMeta.sortMode(), this.vaultMeta.order()) : null;
+    return tree ? sortVaultTree(filterVaultTree(tree, this.filterQuery()), this.vaultMeta.sortMode(), this.vaultMeta.order(), this.vaultMeta.folderSort()) : null;
   });
 
   /** Every tree node by relPath, for telling what kind of item a selected path is. */
@@ -488,6 +489,7 @@ export class Sidebar {
       },
       { kind: 'separator' },
       { kind: 'item', label: 'Rename', icon: 'rename', action: () => this.renameState.renamingPath.set(folder.relPath) },
+      this.folderSortMenu(folder.relPath),
       { kind: 'separator' },
       ...(markdown.length > 0 ? [this.convertMenuItem(markdown)] : []),
       ...(mantle.length > 0 ? [this.toMarkdownMenuItem(mantle)] : []),
@@ -503,6 +505,26 @@ export class Sidebar {
       { kind: 'item', label: 'Delete', icon: 'delete', danger: true, action: () => void this.deleteFolder(folder) },
     ];
     this.contextMenuState.open(event, items);
+  }
+
+  /** "Sort By": the vault's order, or one of the folder's own. */
+  private folderSortMenu(relPath: string): ContextMenuItem {
+    const own = this.vaultMeta.folderSort()[relPath] ?? null;
+    const vaultLabel = SORT_MODES.find((mode) => mode.id === this.vaultMeta.sortMode())?.label;
+    return {
+      kind: 'submenu',
+      label: 'Sort By',
+      items: [
+        { kind: 'item', label: `Vault Default (${vaultLabel})`, checked: own === null, action: () => this.vaultMeta.setFolderSort(relPath, null) },
+        { kind: 'separator' },
+        ...SORT_MODES.map((mode) => ({
+          kind: 'item' as const,
+          label: mode.label,
+          checked: own === mode.id,
+          action: () => this.vaultMeta.setFolderSort(relPath, mode.id),
+        })),
+      ],
+    };
   }
 
   /** Right-click on the vault tree's background: create/paste at the vault root. */

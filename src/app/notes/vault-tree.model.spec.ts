@@ -117,4 +117,12 @@ describe('sortVaultTree', () => {
   it("follows the manual order, then names for anything it doesn't list", () => {
     expect(names('manual', { '': ['note 9.mntl', 'b.mntl'] })).toEqual(['Z', 'note 9', 'b', 'note 10']);
   });
+
+  it("sorts a folder with its own mode by that, and falls back to modified for a missing creation time", () => {
+    const nested: VaultFolderNode = { ...root, children: [{ type: 'folder', name: 'Sub', relPath: 'Sub', children: root.children.filter((c) => c.type === 'note') }] };
+    const sorted = sortVaultTree(nested, 'name-asc', {}, { Sub: 'name-desc' });
+    expect((sorted.children[0] as VaultFolderNode).children.map((c) => c.name)).toEqual(['note 10', 'note 9', 'b']);
+    const undated: VaultFolderNode = { ...root, children: [note('old', 1, 2), { ...note('new', 5, 0), created: undefined }] };
+    expect(sortVaultTree(undated, 'created', {}).children.map((c) => c.name)).toEqual(['new', 'old']);
+  });
 });

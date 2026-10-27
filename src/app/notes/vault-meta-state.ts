@@ -23,6 +23,8 @@ export interface VaultMeta {
   order: Record<string, string[]>;
   collapsedFolders: string[];
   sortMode: SortMode;
+  /** Folders sorted their own way, by relPath. */
+  folderSort: Record<string, SortMode>;
   recentNotes: RecentNote[];
   /** Each property's vault-wide type, by `propertyTypeKey`. */
   propertyTypes: Record<string, PropertyType>;
@@ -34,7 +36,7 @@ export const MAX_RECENT_NOTES = 20;
 const SAVE_DEBOUNCE_MS = 500;
 
 function emptyMeta(): VaultMeta {
-  return { version: 1, favorites: [], order: {}, collapsedFolders: [], sortMode: 'name-asc', recentNotes: [], propertyTypes: {} };
+  return { version: 1, favorites: [], order: {}, collapsedFolders: [], sortMode: 'name-asc', folderSort: {}, recentNotes: [], propertyTypes: {} };
 }
 
 /** Tolerates a missing or partial payload, filling absent fields with defaults. */
@@ -59,6 +61,11 @@ function normalizeMeta(raw: unknown): VaultMeta {
   );
   // A mode from a newer build falls back rather than sorting nonsensically.
   if (!SORT_MODES.some((mode) => mode.id === meta.sortMode)) meta.sortMode = 'name-asc';
+  meta.folderSort = Object.fromEntries(
+    Object.entries(meta.folderSort && typeof meta.folderSort === 'object' ? meta.folderSort : {}).filter(([, mode]) =>
+      SORT_MODES.some((known) => known.id === mode),
+    ),
+  );
   return meta;
 }
 
@@ -94,6 +101,9 @@ export class VaultMetaState {
 
   /** How the vault tree sorts. */
   readonly sortMode = computed<SortMode>(() => this.meta()?.sortMode ?? 'name-asc');
+
+  /** Folders sorted their own way rather than by `sortMode`, by relPath. */
+  readonly folderSort = computed<Readonly<Record<string, SortMode>>>(() => this.meta()?.folderSort ?? {});
 
   /** Manual child order per folder, for the `manual` sort mode. */
   readonly order = computed<Readonly<Record<string, readonly string[]>>>(() => this.meta()?.order ?? {});
@@ -281,6 +291,21 @@ export class VaultMetaState {
     });
   }
 
+  /** Sorts the folder `relPath` by `mode`, or by the vault's sort order for null. Not for hidden folders, which aren't recorded. */
+  setFolderSort(relPath: string, mode: SortMode | null): void {
+    const meta = this.meta();
+    const before = meta?.folderSort[relPath] ?? null;
+    if (!meta || before === mode || this.hiddenPaths().has(relPath)) return;
+    const { [relPath]: _, ...rest } = meta.folderSort;
+    this.meta.set({ ...meta, folderSort: mode ? { ...rest, [relPath]: mode } : rest });
+    this.scheduleSave();
+    this.history.record({
+      label: 'Change Folder Sort Order',
+      undo: async () => this.setFolderSort(relPath, before),
+      redo: async () => this.setFolderSort(relPath, mode),
+    });
+  }
+
   setFolderCollapsed(relPath: string, collapsed: boolean): void {
     if (this.hiddenPaths().has(relPath)) {
       this.sessionCollapsed.update((folders) => {
@@ -311,14 +336,21 @@ export class VaultMetaState {
     this.updateList('favorites', (favorites) => favorites.map(move));
     this.updateList('recentNotes', (recents) => recents.map((entry) => (move(entry.relPath) === entry.relPath ? entry : { ...entry, relPath: move(entry.relPath) })));
     const meta = this.meta();
-    if (!meta || !Object.keys(meta.order).some((key) => move(key) !== key)) return;
-    this.meta.set({ ...meta, order: Object.fromEntries(Object.entries(meta.order).map(([key, names]) => [move(key), names])) });
+    const moved = (keys: object) => Object.keys(keys).some((key) => move(key) !== key);
+    if (!meta || (!moved(meta.order) && !moved(meta.folderSort))) return;
+    const rekey = <T>(map: Record<string, T>) => Object.fromEntries(Object.entries(map).map(([key, value]) => [move(key), value]));
+    this.meta.set({ ...meta, order: rekey(meta.order), folderSort: rekey(meta.folderSort) });
     this.scheduleSave();
   }
 
   /** A folder was deleted in-app: forget that it, or anything in it, was collapsed. */
   forgetFolder(relPath: string): void {
-    this.updateList('collapsedFolders', (folders) => folders.filter((path) => path !== relPath && !path.startsWith(`${relPath}/`)));
+    const gone = (path: string) => path === relPath || path.startsWith(`${relPath}/`);
+    this.updateList('collapsedFolders', (folders) => folders.filter((path) => !gone(path)));
+    const meta = this.meta();
+    if (!meta || !Object.keys(meta.folderSort).some(gone)) return;
+    this.meta.set({ ...meta, folderSort: Object.fromEntries(Object.entries(meta.folderSort).filter(([path]) => !gone(path))) });
+    this.scheduleSave();
   }
 
   /** A note was deleted in-app: drop it from recents and favorites. */
