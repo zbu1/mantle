@@ -134,6 +134,15 @@ function select(tr: Transaction, match: Match): Transaction {
   return tr.setSelection(TextSelection.create(tr.doc, match.from, match.to)).scrollIntoView();
 }
 
+/**
+ * `scrollIntoView()` on the transaction does nothing while focus is in the
+ * find bar (ProseMirror only scrolls to a DOM selection inside the editor),
+ * so scroll the current match's highlight into view directly.
+ */
+function scrollToCurrent(view: EditorView): void {
+  view.dom.querySelector('.find-match-current')?.scrollIntoView?.({ block: 'nearest' });
+}
+
 /** Selects the next (or previous) match, wrapping around. */
 export function findNext(view: EditorView, backward = false): void {
   const { matches, current } = findKey.getState(view.state)!;
@@ -143,6 +152,7 @@ export function findNext(view: EditorView, backward = false): void {
   // The current match isn't selected yet (just typed the query): go to it first.
   const index = !onCurrent && !backward ? current : (current + (backward ? -1 : 1) + matches.length) % matches.length;
   view.dispatch(select(view.state.tr, matches[index]));
+  scrollToCurrent(view);
 }
 
 /** What `match` is replaced with: `replacement`, with `$1`-style groups filled in for a regex query. */
@@ -162,6 +172,7 @@ export function replaceCurrent(view: EditorView, replacement: string): void {
   const next = findMatches(tr.doc, query);
   const after = matchFrom(next, match.from + text.length);
   view.dispatch(after >= 0 ? select(tr, next[after]) : tr);
+  scrollToCurrent(view);
 }
 
 /** Replaces every match, keeping each one's marks; one undo step. */

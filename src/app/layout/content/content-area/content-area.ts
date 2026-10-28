@@ -217,6 +217,14 @@ export class ContentArea {
       return;
     }
     if (!this.isActivePane()) return;
+    // Esc in the note closes its find bar too, unless the editor used it (e.g. closing the slash menu).
+    if (event.key === 'Escape' && !event.defaultPrevented && this.findBar()) {
+      const dom = this.noteEditor()?.view?.dom;
+      if (dom?.contains(event.target as Node)) {
+        this.findBar()!.close(event);
+        return;
+      }
+    }
     if (!(event.ctrlKey || event.metaKey) || !event.shiftKey || event.altKey || event.key.toLowerCase() !== 'b') return;
     if (this.favoritableNoteId() === null) return;
     event.preventDefault();

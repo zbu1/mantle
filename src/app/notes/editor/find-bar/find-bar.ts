@@ -124,7 +124,7 @@ export class FindBar {
     if (view) replaceAll(view, this.replacement());
   }
 
-  protected close(event?: Event): void {
+  close(event?: Event): void {
     event?.preventDefault();
     event?.stopPropagation();
     const view = this.editor().view;
