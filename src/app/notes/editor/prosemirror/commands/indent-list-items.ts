@@ -1,6 +1,7 @@
 import { Command, EditorState, TextSelection } from 'prosemirror-state';
-import { Node as PMNode } from 'prosemirror-model';
+import { Fragment, Node as PMNode, Slice } from 'prosemirror-model';
 import { liftListItem, sinkListItem } from 'prosemirror-schema-list';
+import { ReplaceAroundStep } from 'prosemirror-transform';
 import { compose } from '../editor-commands';
 import { schema } from '../schema';
 
@@ -24,12 +25,26 @@ function selectedItems(state: EditorState, topmost: boolean): number[] {
   return found.map(({ pos }) => pos + 2);
 }
 
+/** Nests a list's first item, with nothing before it to go under, under a new empty item. */
+const nestFirstItem: Command = (state, dispatch) => {
+  const { $from } = state.selection;
+  if ($from.index(-2) !== 0) return false;
+  const item = $from.node(-1);
+  const list = $from.node(-2);
+  const from = $from.before(-1);
+  const to = from + item.nodeSize;
+  const wrapper = item.type.create(null, [schema.nodes['paragraph'].create(), list.type.create(list.attrs)]);
+  // Around the item, so positions inside it map along.
+  dispatch?.(state.tr.step(new ReplaceAroundStep(from, to, from, to, new Slice(Fragment.from(wrapper), 0, 0), 4, true)));
+  return true;
+};
+
 /**
  * Tab / Shift-Tab in a list: every selected item moves one level, and only
  * that item. Indenting leaves its children where they were (now its next
  * siblings); outdenting brings them up with it, and the items after it become
- * its children. Claims the key anywhere in a list, so focus stays in the
- * editor even when nothing can move (a first item has nothing to nest under).
+ * its children. A first item, with nothing to nest under, goes under a new
+ * empty item. Claims the key anywhere in a list, so focus stays in the editor.
  */
 export function indentListItems(outdent: boolean): Command {
   return (state, dispatch) => {
@@ -49,7 +64,7 @@ export function indentListItems(outdent: boolean): Command {
         run(liftListItem(item.type));
         continue;
       }
-      if (!run(sinkListItem(item.type))) continue;
+      if (!run(sinkListItem(item.type)) && !run(nestFirstItem)) continue;
       // Its children went down with it: bring them back up beside it.
       const $moved = composed.state.doc.resolve(tr.mapping.map(line));
       const moved = $moved.node(-1);

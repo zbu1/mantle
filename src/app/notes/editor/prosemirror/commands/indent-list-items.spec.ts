@@ -22,8 +22,11 @@ describe('indentListItems', () => {
     expect(press('- one\n- two', false, 'two').result).toBe('- one\n  - two');
   });
 
-  it('leaves a first item alone but still takes the key', () => {
-    expect(press('- one\n- two', false, 'one')).toEqual({ result: '- one\n- two', handled: true });
+  it('nests a first item under a new empty item, which reads back the same', () => {
+    const { result } = press('- one\n  - child\n- two', false, 'one');
+    expect(result).toBe('- \n  - one\n  - child\n- two');
+    expect(serializeMarkdown(parseMarkdown(result))).toBe(result);
+    expect(press('- [ ] one', false, 'one').result).toBe('- [ ] \n  - [ ] one');
   });
 
   it('declines outside a list', () => {

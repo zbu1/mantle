@@ -4,7 +4,7 @@ import { Node as PMNode } from 'prosemirror-model';
 import { parseMarkdown, serializeMarkdown } from '../markdown-converter';
 import { schema } from '../schema';
 import { EditorView } from 'prosemirror-view';
-import { exitEmptyQuoteLine, revealImageSource, revealTaskMarker, syntaxRevealPlugin, taskMarkerPlugin } from './syntax-reveal-plugin';
+import { exitEmptyQuoteLine, revealImageSource, revealTaskMarker, syntaxRevealKey, syntaxRevealPlugin, taskMarkerPlugin } from './syntax-reveal-plugin';
 
 function stateFor(markdown: string): EditorState {
   return EditorState.create({ doc: parseMarkdown(markdown), plugins: [history(), syntaxRevealPlugin()] });
@@ -44,6 +44,18 @@ describe('revealing Markdown syntax', () => {
     expect(text(state)).toBe('a bold and __strong__ b');
     expect(serializeMarkdown(state.doc)).toBe(markdown);
     expect(state.doc.firstChild!.child(1).marks[0].type.name).toBe('strong');
+  });
+
+  it('styles revealed text as what it parses to, between muted delimiters', () => {
+    const state = cursorAt(stateFor('**b _i_** ~~s~~ `c` [l](u)'), 'i');
+    const styled = syntaxRevealKey
+      .getState(state)!
+      .find()
+      .flatMap((d) => {
+        const { nodeName } = (d as unknown as { type: { attrs: { nodeName?: string } } }).type.attrs;
+        return nodeName ? [`${nodeName}:${state.doc.textBetween(d.from, d.to)}`] : [];
+      });
+    expect(styled.sort()).toEqual(['em:i', 'strong:b ', 'strong:i']);
   });
 
   it('reveals nested marks together, from the innermost', () => {

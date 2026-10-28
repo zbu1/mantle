@@ -577,6 +577,39 @@ export function revealTaskMarker(state: EditorState, pos: number): Transaction |
 
 // --- Plugin -------------------------------------------------------------------
 
+/** How each mark looks over revealed text that will parse to it. */
+const LIVE_STYLES: Record<string, { nodeName: string; class?: string }> = {
+  strong: { nodeName: 'strong' },
+  em: { nodeName: 'em' },
+  strike: { nodeName: 's' },
+  highlight: { nodeName: 'mark', class: 'md-highlight' },
+  code: { nodeName: 'code' },
+  link: { nodeName: 'a' },
+  wikilink: { nodeName: 'a', class: 'wikilink' },
+};
+
+/**
+ * The text inside revealed delimiters, styled as what it parses to: `**a**`
+ * shows `a` bold between its muted `**`.
+ */
+function liveStyles(raw: string, start: number): Decoration[] {
+  const decorations: Decoration[] = [];
+  let at = 0;
+  parseMarkdown(raw).descendants((node) => {
+    if (!node.isText) return;
+    // ponytail: finds each parsed text in the source by search, so a wikilink alias
+    // that also occurs in its target styles the target; track source offsets if that matters.
+    const found = raw.indexOf(node.text!, at);
+    if (found < 0) return;
+    at = found + node.text!.length;
+    for (const mark of node.marks) {
+      const style = LIVE_STYLES[mark.type.name];
+      if (style) decorations.push(Decoration.inline(start + found, start + at, style));
+    }
+  });
+  return decorations;
+}
+
 function syntaxDecorations(doc: PMNode): DecorationSet {
   const decorations: Decoration[] = [];
   doc.descendants((node, pos) => {
@@ -587,6 +620,7 @@ function syntaxDecorations(doc: PMNode): DecorationSet {
         const from = pos + 1 + offset + match.index;
         decorations.push(Decoration.inline(from, from + match[0].length, { class: 'md-syntax' }));
       }
+      decorations.push(...liveStyles(child.text!, pos + 1 + offset));
     });
     return false;
   });

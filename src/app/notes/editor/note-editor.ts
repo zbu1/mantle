@@ -44,7 +44,7 @@ import { createSlashMenuPlugin } from './prosemirror/plugins/slash-menu-plugin';
 import { buildMarkdownInputRules } from './prosemirror/plugins/markdown-input-rules';
 import { trailingParagraphPlugin } from './prosemirror/plugins/trailing-paragraph-plugin';
 import { listMarkerPlugin } from './prosemirror/plugins/list-marker-plugin';
-import { foldedHeadings, headingFoldKey, headingFoldPlugin, setFoldedHeadings } from './prosemirror/plugins/heading-fold-plugin';
+import { enterAfterFold, foldedHeadings, headingFoldKey, headingFoldPlugin, setFoldedHeadings } from './prosemirror/plugins/heading-fold-plugin';
 import { calloutPlugin } from './prosemirror/plugins/callout-plugin';
 import { footnotePlugin } from './prosemirror/plugins/footnote-plugin';
 import { HeadingFoldState, NoteFolds } from './heading-fold-state';
@@ -124,6 +124,7 @@ function buildEditorKeymap() {
     'Shift-Mod-v': (_state, _dispatch, view) => !!view && (pastePlainText(view), true),
     Enter: chainCommands(
       cellBelow,
+      enterAfterFold,
       codeFenceOnEnter,
       newlineInMathBlock,
       exitEmptyQuoteLine,

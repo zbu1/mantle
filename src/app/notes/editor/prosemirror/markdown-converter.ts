@@ -142,9 +142,13 @@ md.core.ruler.push('heading_style', (state) => {
   return true;
 });
 
-/** markdown-it hides the paragraphs of a tight list (prosemirror-markdown's own check, which it doesn't export). */
+/**
+ * markdown-it hides the paragraphs of a tight list (prosemirror-markdown's own
+ * check, which it doesn't export). Past an item that starts with a list (`- \n  - a`),
+ * so the inner list's paragraph decides.
+ */
 function listIsTight(tokens: { type: string; hidden: boolean }[], i: number): boolean {
-  while (++i < tokens.length) if (tokens[i].type !== 'list_item_open') return tokens[i].hidden;
+  while (++i < tokens.length) if (!/^(list_item|bullet_list|ordered_list)_open$/.test(tokens[i].type)) return tokens[i].hidden;
   return false;
 }
 
