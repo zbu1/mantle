@@ -9,6 +9,7 @@ import { VaultState } from '../../vault-state';
 import { flushAsync, installMockVaultInvoke } from '../../../../testing/mock-vault';
 import { schema } from './schema';
 import { parseMarkdown, serializeMarkdown } from './markdown-converter';
+import { insertTable, tableMenu } from './plugins/table-plugin';
 
 function getEditorView(component: NoteEditor): EditorView {
   return (component as unknown as { editorView: EditorView }).editorView;
@@ -314,6 +315,31 @@ describe('markdown input rules', () => {
       expect(third.type).toBe(schema.nodes['bullet_list']);
       expect(third.textContent).toBe('three');
     });
+
+    it('makes numbered checkboxes, numbering on through a checkbox turned on mid-list', async () => {
+      const { view } = await setup();
+      type(view, '1. [ ] one');
+      pressEnter(view);
+      type(view, 'two');
+      expect(serializeMarkdown(view.state.doc)).toBe('1. [ ] one\n2. [ ] two');
+
+      clear(view);
+      type(view, '1. one');
+      pressEnter(view);
+      type(view, 'two');
+      pressEnter(view);
+      type(view, 'three');
+      let found = -1;
+      view.state.doc.descendants((node, pos) => {
+        if (found < 0 && node.isText && node.text === 'two') found = pos;
+        return found < 0;
+      });
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, found)));
+      type(view, '[x] ');
+      const lists = view.state.doc.content.content.slice(0, 3);
+      expect(lists.map((node) => [node.type.name, node.attrs['order']])).toEqual([['ordered_list', 1], ['task_list', 2], ['ordered_list', 3]]);
+      expect(serializeMarkdown(view.state.doc)).toBe('1. one\n2. [x] two\n3. three');
+    });
   });
 
   describe('inline mark rules', () => {
@@ -565,6 +591,66 @@ describe('markdown input rules', () => {
       expect(block.type).toBe(schema.nodes['code_block']);
       expect(block.attrs['params']).toBe('ts');
       expect(serializeMarkdown(doc)).toContain('```ts');
+    });
+  });
+
+  describe('tables', () => {
+    // jsdom doesn't lay out text, and moving between cells scrolls the cursor into view.
+    beforeAll(() => {
+      Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
+      Range.prototype.getBoundingClientRect = () => new DOMRect();
+    });
+
+    const press = (view: EditorView, key: string, shiftKey = false) =>
+      view.someProp('handleKeyDown', (f) => f(view, new KeyboardEvent('keydown', { key, shiftKey })));
+
+    it('inserts a 3-column table; Tab and Shift-Tab select the next and previous cell, Enter goes down', async () => {
+      const { view } = await setup();
+      insertTable(view);
+      type(view, 'a');
+      press(view, 'Tab');
+      type(view, 'b');
+      press(view, 'Tab', true);
+      type(view, '!');
+      press(view, 'Enter');
+      type(view, 'c');
+      expect(serializeMarkdown(view.state.doc).split('\n\n')[0]).toBe(
+        ['| !   | b   |     |', '| --- | --- | --- |', '| c   |     |     |'].join('\n'),
+      );
+    });
+
+    it('adds a row on Tab in the last cell, and on Enter in the last row', async () => {
+      const { view } = await setup();
+      insertTable(view);
+      for (let i = 0; i < 6; i++) press(view, 'Tab');
+      type(view, 'x');
+      press(view, 'Enter');
+      type(view, 'y');
+      expect(view.state.doc.firstChild!.childCount).toBe(4);
+      expect(serializeMarkdown(view.state.doc)).toContain('| x   |     |     |\n| y   |     |     |');
+    });
+
+    it('aligns a whole column, rows added later included', async () => {
+      const { view } = await setup();
+      insertTable(view);
+      press(view, 'Tab');
+      const center = tableMenu(view, 'column').find((item) => item.kind === 'item' && item.label === 'Align Center');
+      (center as { action: () => void }).action();
+      for (let i = 0; i < 5; i++) press(view, 'Tab');
+      const cells: (string | null)[] = [];
+      view.state.doc.firstChild!.forEach((row) => cells.push(row.child(1).attrs['align']));
+      expect(cells).toEqual(['center', 'center', 'center']);
+      expect(serializeMarkdown(view.state.doc)).toContain('| --- | :-: | --- |');
+    });
+
+    it('folds Markdown typed into a cell back into marks', async () => {
+      const { view } = await setup();
+      insertTable(view);
+      type(view, '**b**');
+      press(view, 'Tab');
+      const cell = view.state.doc.firstChild!.firstChild!.firstChild!;
+      expect(cell.textContent).toBe('b');
+      expect(cell.firstChild!.marks.map((mark) => mark.type.name)).toEqual(['strong']);
     });
   });
 

@@ -390,14 +390,31 @@ button.focus-ring-inset:focus-visible,
   list-style: decimal;
 }
 
-.ProseMirror ul[data-type='taskList'] {
+.ProseMirror [data-type='taskList'] {
   list-style: none;
   padding-left: 0;
 }
 
-.ProseMirror ul[data-type='taskList'] li {
+.ProseMirror [data-type='taskList'] li {
   display: flex;
   align-items: flex-start;
+}
+
+/* A numbered checkbox's number (counter set by the `task_list` schema node). */
+.ProseMirror ol[data-type='taskList']>li {
+  counter-increment: task;
+}
+
+.ProseMirror ol[data-type='taskList']>li::before {
+  content: counter(task) var(--task-delimiter);
+  flex: none;
+  min-width: 1.5em;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.ProseMirror ol[data-type='taskList']>li[data-revealed]::before {
+  display: none;
 }
 
 /* The gap between checkbox and text: a click shows the item's `- [ ] `. */
@@ -424,7 +441,7 @@ button.focus-ring-inset:focus-visible,
   margin-bottom: 0;
 }
 
-.ProseMirror ul[data-type='taskList'] li>label {
+.ProseMirror [data-type='taskList'] li>label {
   margin-top: 0.2em;
 }
 
@@ -479,6 +496,77 @@ button.focus-ring-inset:focus-visible,
   padding-left: 0.75em;
   color: var(--muted-foreground);
   margin: 0.5em 0;
+}
+
+/* Tables (table-plugin): the first row is the header; handles on the hovered cell's row and column open their menus. */
+.ProseMirror .md-table {
+  position: relative;
+  margin: 0.5em 0;
+}
+
+.ProseMirror .md-table-scroll {
+  overflow-x: auto;
+}
+
+.ProseMirror table {
+  border-collapse: collapse;
+}
+
+.ProseMirror :is(td, th) {
+  border: 1px solid var(--border);
+  padding: 0.25em 0.6em;
+  min-width: 4em;
+  vertical-align: top;
+}
+
+.ProseMirror tr:first-child> :is(td, th) {
+  font-weight: 600;
+  background: var(--surface);
+}
+
+.ProseMirror .selectedCell {
+  background: var(--accent);
+}
+
+.ProseMirror-hideselection *::selection {
+  background: transparent;
+}
+
+.ProseMirror-hideselection {
+  caret-color: transparent;
+}
+
+.md-table-handle {
+  position: absolute;
+  z-index: 1;
+  translate: -50% -50%;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--background);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease, background-color 0.12s ease;
+}
+
+.md-table-handle-row {
+  width: 0.5rem;
+  height: 1.1rem;
+}
+
+.md-table-handle-column {
+  width: 1.1rem;
+  height: 0.5rem;
+}
+
+.md-table[data-hover] .md-table-handle {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.md-table-handle:hover {
+  background: var(--primary);
+  border-color: var(--primary);
 }
 
 /* Footnotes (footnote-plugin) and task states beyond `[ ]` / `[x]`. */

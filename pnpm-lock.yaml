@@ -29,6 +29,9 @@ importers:
       '@tauri-apps/api':
         specifier: ^2.12.3
         version: 2.12.3
+      '@tauri-apps/plugin-clipboard-manager':
+        specifier: ^2.5.0
+        version: 2.5.0
       '@tauri-apps/plugin-dialog':
         specifier: ^2.8.2
         version: 2.8.2
@@ -83,6 +86,9 @@ importers:
       prosemirror-state:
         specifier: ^1.4.3
         version: 1.4.4
+      prosemirror-tables:
+        specifier: ^1.8.5
+        version: 1.8.5
       prosemirror-transform:
         specifier: ^1.10.3
         version: 1.12.0
@@ -1953,6 +1959,9 @@ packages:
     engines: {node: '>= 10'}
     hasBin: true
 
+  '@tauri-apps/plugin-clipboard-manager@2.5.0':
+    resolution: {integrity: sha512-dibUy1nKURYDXRMvjNk4deAbTZ5jPQ8wCE4nolt5xniryWgXQ4sK2GkFXoXlHbRdPzfZptZj95BRLfalA7m/2Q==}
+
   '@tauri-apps/plugin-dialog@2.8.2':
     resolution: {integrity: sha512-LFqp8OTx0bHOwhKRhMMDyRDlo/2IO5XxoOclpf8+yvjAfM2ytVdbB6tk63dBlicsR8pRw38maj/GxrU6cW8mXw==}
 
@@ -3691,6 +3700,9 @@ packages:
 
   prosemirror-state@1.4.4:
     resolution: {integrity: sha512-6jiYHH2CIGbCfnxdHbXZ12gySFY/fz/ulZE333G6bPqIZ4F+TXo9ifiR86nAHpWnfoNjOb3o5ESi7J8Uz1jXHw==}
+
+  prosemirror-tables@1.8.5:
+    resolution: {integrity: sha512-V/0cDCsHKHe/tfWkeCmthNUcEp1IVO3p6vwN8XtwE9PZQLAZJigbw3QoraAdfJPir4NKJtNvOB8oYGKRl+t0Dw==}
 
   prosemirror-transform@1.12.0:
     resolution: {integrity: sha512-GxboyN4AMIsoHNtz5uf2r2Ru551i5hWeCMD6E2Ib4Eogqoub0NflniaBPVQ4MrGE5yZ8JV9tUHg9qcZTTrcN4w==}
@@ -5957,6 +5969,10 @@ snapshots:
       '@tauri-apps/cli-win32-ia32-msvc': 2.11.4
       '@tauri-apps/cli-win32-x64-msvc': 2.11.4
 
+  '@tauri-apps/plugin-clipboard-manager@2.5.0':
+    dependencies:
+      '@tauri-apps/api': 2.12.3
+
   '@tauri-apps/plugin-dialog@2.8.2':
     dependencies:
       '@tauri-apps/api': 2.12.3
@@ -7992,6 +8008,14 @@ snapshots:
   prosemirror-state@1.4.4:
     dependencies:
       prosemirror-model: 1.25.11
+      prosemirror-transform: 1.12.0
+      prosemirror-view: 1.42.1
+
+  prosemirror-tables@1.8.5:
+    dependencies:
+      prosemirror-keymap: 1.2.3
+      prosemirror-model: 1.25.11
+      prosemirror-state: 1.4.4
       prosemirror-transform: 1.12.0
       prosemirror-view: 1.42.1
 

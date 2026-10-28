@@ -8,6 +8,7 @@ import {
   toggleCodeBlock,
   insertHorizontalRule,
 } from '../prosemirror/editor-commands';
+import { insertTable } from '../prosemirror/plugins/table-plugin';
 import { pickImage } from '../prosemirror/plugins/image-plugin';
 import { setCodeBlock } from '../prosemirror/plugins/code-block-plugin';
 import { matchLanguages } from '../prosemirror/code-languages';
@@ -22,6 +23,7 @@ export type SlashCommandIcon =
   | 'blockquote'
   | 'code-block'
   | 'divider'
+  | 'table'
   | 'image'
   | 'property'
   | 'tag';
@@ -100,6 +102,13 @@ export const SLASH_COMMAND_ITEMS: SlashCommandItem[] = [
     icon: 'divider',
     keywords: ['divider', 'hr', 'horizontal', 'rule', 'line'],
     run: (view) => insertHorizontalRule(view),
+  },
+  {
+    id: 'table',
+    label: 'Table',
+    icon: 'table',
+    keywords: ['table', 'grid', 'columns', 'rows'],
+    run: (view) => insertTable(view),
   },
   {
     id: 'image',

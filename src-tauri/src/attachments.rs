@@ -341,7 +341,11 @@ pub(crate) fn link_sources(markdown: &str) -> Vec<Source> {
 
         if let Some(inner) = markdown[from..line_end].strip_prefix('[') {
             let Some(close) = inner.find("]]") else { continue };
-            let len = inner[..close].find(['|', '#']).unwrap_or(close);
+            let mut len = inner[..close].find(['|', '#']).unwrap_or(close);
+            // In a table the `|` is escaped: `[[note\|alias]]`.
+            if inner[..len].ends_with('\\') && inner[len..].starts_with('|') {
+                len -= 1;
+            }
             sources.push(Source { range: at + 2..at + 2 + len, embed, wiki: true });
             from = at + 2 + close + 2;
             continue;
@@ -887,7 +891,8 @@ mod tests {
     #[test]
     fn link_sources_finds_markdown_and_obsidian_links_and_embeds() {
         let md = "a ![x](one.png) b ![](<two words.png> \"t\") ![[three.png|300]] [[four.pdf#page=2]] \
-                  [link](five.zip) [![img](six.png)](seven.pdf) [[Note|alias]] [x](#top) \\[no](esc.png) ![bad\n](x)";
+                  [link](five.zip) [![img](six.png)](seven.pdf) [[Note|alias]] [x](#top) \\[no](esc.png) ![bad\n](x) \
+                  | [[In table\\|alias]] | ![[eight.png\\|300]] |";
         assert_eq!(
             sources(md),
             [
@@ -899,6 +904,8 @@ mod tests {
                 ("six.png", true),
                 ("seven.pdf", false),
                 ("Note", false),
+                ("In table", false),
+                ("eight.png", true),
             ]
         );
     }

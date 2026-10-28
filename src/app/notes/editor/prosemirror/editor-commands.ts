@@ -1,5 +1,6 @@
 import { Command, EditorState, Selection, TextSelection, Transaction } from 'prosemirror-state';
 import { EditorView } from 'prosemirror-view';
+import { readText } from '@tauri-apps/plugin-clipboard-manager';
 import { Fragment, MarkType, Node as PMNode, NodeType } from 'prosemirror-model';
 import { Transform } from 'prosemirror-transform';
 import { lift, setBlockType, toggleMark, wrapIn } from 'prosemirror-commands';
@@ -133,8 +134,8 @@ export function turnInto(view: EditorView, kind: BlockKind): void {
         const item = schema.nodes[kind === 'task_list' ? 'task_item' : 'list_item'];
         const listPos = $from.before(depth);
         run((s, dispatch) => {
-          // Keeps what both kinds of list have (`tight`, `bullet`), so it saves as written.
-          const attrs = Object.fromEntries(Object.keys(target.spec.attrs ?? {}).filter((key) => key in list.attrs).map((key) => [key, list.attrs[key]]));
+          // Keeps what both kinds of list have (`tight`, `bullet`, `order`), so it saves as written.
+          const attrs = Object.fromEntries(Object.keys(target.spec.attrs ?? {}).filter((key) => list.attrs[key] != null).map((key) => [key, list.attrs[key]]));
           const items: PMNode[] = [];
           list.forEach((child) => items.push(item.create(item === child.type ? child.attrs : null, child.content, child.marks)));
           const t = s.tr.replaceWith(listPos, listPos + list.nodeSize, target.create(attrs, items));
@@ -296,5 +297,5 @@ export function linkSelection(view: EditorView, href: string): void {
 
 /** Pastes the clipboard as literal text, without reading it as Markdown. */
 export function pastePlainText(view: EditorView): void {
-  void navigator.clipboard.readText().then((text) => text && view.dispatch(view.state.tr.insertText(text)));
+  void readText().then((text) => text && view.dispatch(view.state.tr.insertText(text)));
 }

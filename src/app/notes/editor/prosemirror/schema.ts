@@ -1,6 +1,7 @@
 import { Schema, NodeSpec, MarkSpec, Node as PMNode, Mark as PMMark } from 'prosemirror-model';
 import OrderedMap from 'orderedmap';
 import { addListNodes } from 'prosemirror-schema-list';
+import { tableNodes } from 'prosemirror-tables';
 
 const baseNodes = OrderedMap.from<NodeSpec>({
   doc: {
@@ -103,9 +104,12 @@ const baseNodes = OrderedMap.from<NodeSpec>({
   task_list: {
     content: 'task_item+',
     group: 'block',
-    parseDOM: [{ tag: 'ul[data-type="taskList"]' }],
-    toDOM() {
-      return ['ul', { 'data-type': 'taskList', class: 'task-list list-none p-0' }, 0];
+    parseDOM: [{ tag: '[data-type="taskList"]' }],
+    // Numbered (`1. [ ] `) when it has an `order`, by a CSS counter.
+    toDOM(node: PMNode) {
+      const { order, delimiter } = node.attrs;
+      if (order == null) return ['ul', { 'data-type': 'taskList' }, 0];
+      return ['ol', { 'data-type': 'taskList', style: `counter-reset: task ${order - 1}; --task-delimiter: '${delimiter}'` }, 0];
     },
   },
   task_item: {
@@ -144,7 +148,31 @@ const nodesWithLists = withListNodes
     ...withListNodes.get('ordered_list')!,
     attrs: { order: { default: 1 }, tight: { default: true }, delimiter: { default: '.' } },
   })
-  .update('task_list', { ...withListNodes.get('task_list')!, attrs: listAttrs });
+  // `order` and `delimiter` for a numbered one (`1. [ ] `), else null.
+  .update('task_list', { ...withListNodes.get('task_list')!, attrs: { ...listAttrs, order: { default: null }, delimiter: { default: '.' } } });
+
+/**
+ * GFM pipe tables. Cells hold one line of inline content; the first row is
+ * the header, and every cell of a column has the column's `align`. `source`
+ * is the table as the file wrote it, saved as is while the table reads the same.
+ */
+const tables = tableNodes({
+  tableGroup: 'block',
+  cellContent: '(text | image)*',
+  cellAttributes: {
+    align: {
+      default: null,
+      getFromDOM: (dom) => dom.style.textAlign || null,
+      setDOMAttr: (value, attrs) => {
+        if (value) attrs['style'] = `text-align: ${value}`;
+      },
+    },
+  },
+});
+const nodesWithTables = nodesWithLists.append({
+  ...tables,
+  table: { ...tables.table, attrs: { source: { default: null } } },
+});
 
 export const marks: Record<string, MarkSpec> = {
   // `markup` is the delimiter the file used (`*` or `_`), so it saves as written.
@@ -263,6 +291,6 @@ export const marks: Record<string, MarkSpec> = {
 };
 
 export const schema = new Schema({
-  nodes: nodesWithLists,
+  nodes: nodesWithTables,
   marks,
 });

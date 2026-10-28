@@ -2,6 +2,7 @@ import { Injectable, inject, signal } from '@angular/core';
 import { selectAll } from 'prosemirror-commands';
 import { redo, redoDepth, undo, undoDepth } from 'prosemirror-history';
 import { EditorView } from 'prosemirror-view';
+import { readText } from '@tauri-apps/plugin-clipboard-manager';
 import { formatError, logError } from '../core/logger';
 import { VaultHistoryState } from '../notes/vault-history-state';
 
@@ -108,8 +109,7 @@ export class EditContextState {
         break;
       case 'paste':
         // The webview won't paste through execCommand; read the clipboard and hand it to the editor.
-        navigator.clipboard
-          .readText()
+        readText()
           .then((text) => text && view.pasteText(text))
           .catch((err) => logError(`Failed to paste: ${formatError(err)}`));
         break;

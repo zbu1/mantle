@@ -27,6 +27,8 @@ const headingRule = textblockTypeInputRule(/^(#{1,6})\s$/, schema.nodes['heading
 const horizontalRuleRule = new InputRule(
   /^(?:---|\*\*\*|___)$/,
   (state, match, start, end) => {
+    // A table cell holds one line.
+    if (state.doc.resolve(start).parent.type.spec['tableRole']) return null;
     const tr = state.tr.insert(start - 1, schema.nodes['horizontal_rule'].create({ markup: match[0] }));
     tr.delete(tr.mapping.map(start), tr.mapping.map(end));
     return tr;
@@ -70,7 +72,7 @@ const taskItemRule = new InputRule(/^\[([ xX]?)\]\s$/, (state, match, start, end
   if (
     $before.parent.type !== schema.nodes['paragraph'] ||
     $before.node(-1)?.type !== schema.nodes['list_item'] ||
-    $before.node(-2)?.type !== schema.nodes['bullet_list'] ||
+    ($before.node(-2)?.type !== schema.nodes['bullet_list'] && $before.node(-2)?.type !== schema.nodes['ordered_list']) ||
     $before.index(-1) !== 0
   ) {
     return null;
@@ -87,6 +89,7 @@ const taskItemRule = new InputRule(/^\[([ xX]?)\]\s$/, (state, match, start, end
   const before = items.slice(0, itemIndex);
   const after = items.slice(itemIndex + 1);
 
+  // A numbered list's `order` and `delimiter` carry over; `listMarkerPlugin` renumbers the pieces.
   const taskList = schema.nodes['task_list'].create(
     bulletList.attrs,
     schema.nodes['task_item'].create({ checked }, listItem.content)

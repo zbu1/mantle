@@ -113,6 +113,23 @@ md.block.ruler.at('reference', (state, start, end, silent) =>
   !state.src.startsWith('[^', state.bMarks[start] + state.tShift[start]) && reference(state, start, end, silent),
 );
 
+/** GFM tables, each with its lines as written (less any quote or list indent around it), to save them as they were. */
+md.enable('table');
+const tableRule = (md.block.ruler as unknown as { __rules__: { name: string; fn: BlockRule; alt: string[] }[] }).__rules__.find(
+  (rule) => rule.name === 'table',
+)!;
+const table = tableRule.fn;
+md.block.ruler.at(
+  'table',
+  (state, start, end, silent) => {
+    const at = state.tokens.length;
+    if (!table(state, start, end, silent)) return false;
+    if (!silent) state.tokens[at].meta = { source: state.getLines(start, state.line, state.blkIndent, false) };
+    return true;
+  },
+  { alt: tableRule.alt },
+);
+
 /** How each heading is written, which markdown-it doesn't record: a setext underline, or an ATX heading's closing `#`s. */
 md.core.ruler.push('heading_style', (state) => {
   const lines = state.src.split('\n');
@@ -129,6 +146,10 @@ md.core.ruler.push('heading_style', (state) => {
 function listIsTight(tokens: { type: string; hidden: boolean }[], i: number): boolean {
   while (++i < tokens.length) if (tokens[i].type !== 'list_item_open') return tokens[i].hidden;
   return false;
+}
+
+function cellAlign(tok: { attrGet(name: string): string | null }): { align: string | null } {
+  return { align: /text-align:(\w+)/.exec(tok.attrGet('style') ?? '')?.[1] ?? null };
 }
 
 export const markdownParser = new MarkdownParser(schema, md, {
@@ -159,6 +180,13 @@ export const markdownParser = new MarkdownParser(schema, md, {
     noCloseToken: true,
   },
   hr: { node: 'horizontal_rule', getAttrs: (tok) => ({ markup: tok.markup }) },
+  table: { block: 'table', getAttrs: (tok) => ({ source: tok.meta?.source ?? null }) },
+  thead: { ignore: true },
+  tbody: { ignore: true },
+  tr: { block: 'table_row' },
+  // The header row is just the first one.
+  th: { block: 'table_cell', getAttrs: cellAlign },
+  td: { block: 'table_cell', getAttrs: cellAlign },
   hardbreak: { node: 'hard_break' },
   // Obsidian shows a single newline as a line break; CommonMark would join the lines.
   softbreak: { node: 'hard_break' },
@@ -329,14 +357,9 @@ export const markdownSerializer = new MarkdownSerializer(
       }
       state.closeBlock(node);
     },
-    bullet_list: renderBulletList,
-    task_list: renderBulletList,
-    // Numbers aren't padded to one width, so a tenth item doesn't indent the other nine.
-    ordered_list(state, node) {
-      const start: number = node.attrs['order'];
-      const space = state.repeat(' ', String(start + node.childCount - 1).length + 2);
-      state.renderList(node, space, (i) => `${start + i}${node.attrs['delimiter']} `);
-    },
+    bullet_list: renderList,
+    task_list: renderList,
+    ordered_list: renderList,
     text(state, node, parent, index) {
       if (escaping === 'none' || schema.marks['math'].isInSet(node.marks)) return state.text(node.text!, false);
       // A line after a hard break starts a line of the file, where `- `, `# `, … would start a block.
@@ -369,6 +392,16 @@ export const markdownSerializer = new MarkdownSerializer(
       state.write(node.attrs['markup'] || '---');
       state.closeBlock(node);
     },
+    // As the file wrote it while it reads the same, else with padded columns.
+    // ponytail: reparses its source per save; track edits instead if big tables lag.
+    table(state, node) {
+      const text = tableMarkdown(node);
+      const source: string | null = node.attrs['source'];
+      const table = source !== null && source !== text ? parseMarkdown(source).firstChild : null;
+      const kept = source !== null && (source === text || (table?.type === node.type && tableMarkdown(table) === text));
+      state.text(kept ? source : text, false);
+      state.closeBlock(node);
+    },
   },
   {
     ...defaultMarkdownSerializer.marks,
@@ -395,18 +428,48 @@ export const markdownSerializer = new MarkdownSerializer(
   { escapeExtraCharacters: /\$/g },
 );
 
+/**
+ * A table as Markdown, its columns padded so the pipes line up. A cell is
+ * written as a paragraph would be, with every `|` escaped.
+ * ponytail: pads by UTF-16 length, so wide characters misalign; measure display width if that bothers anyone.
+ */
+function tableMarkdown(table: PMNode): string {
+  const rows: string[][] = [];
+  table.forEach((row) => {
+    const cells: string[] = [];
+    row.forEach((cell) => {
+      const doc = schema.node('doc', null, [schema.nodes['paragraph'].create(null, cell.content)]);
+      cells.push(serializeMarkdown(doc).replace(/\|/g, '\\|'));
+    });
+    rows.push(cells);
+  });
+  const aligns: (string | null)[] = [];
+  table.firstChild?.forEach((cell) => aligns.push(cell.attrs['align']));
+  const widths = aligns.map((_, col) => Math.max(3, ...rows.map((row) => (row[col] ?? '').length)));
+  const line = (cells: string[]) => `| ${widths.map((width, col) => (cells[col] ?? '').padEnd(width)).join(' | ')} |`;
+  const rule = widths.map((width, col) => {
+    const align = aligns[col];
+    return (align === 'left' || align === 'center' ? ':' : '-') + '-'.repeat(width - 2) + (align === 'right' || align === 'center' ? ':' : '-');
+  });
+  return [line(rows[0] ?? []), `| ${rule.join(' | ')} |`, ...rows.slice(1).map(line)].join('\n');
+}
+
+const isOrdered = (list: PMNode): boolean => list.attrs['order'] != null;
+
 /** Whether the list at `index` continues the one before it: a checkbox run after a plain one, or the reverse. */
-function continuesList(parent: PMNode, index: number): boolean {
-  const lists = [schema.nodes['bullet_list'], schema.nodes['task_list']];
+export function continuesList(parent: PMNode, index: number): boolean {
+  const lists = [schema.nodes['bullet_list'], schema.nodes['ordered_list'], schema.nodes['task_list']];
   const [prev, node] = [parent.maybeChild(index - 1), parent.child(index)];
-  return !!prev && prev.type !== node.type && lists.includes(prev.type) && lists.includes(node.type) && prev.attrs['bullet'] === node.attrs['bullet'];
+  if (!prev || prev.type === node.type || !lists.includes(prev.type) || !lists.includes(node.type)) return false;
+  const marker = isOrdered(node) ? 'delimiter' : 'bullet';
+  return isOrdered(prev) === isOrdered(node) && prev.attrs[marker] === node.attrs[marker];
 }
 
 /**
  * A Markdown list with both checkbox and plain items is, here, a run of
- * `task_list`s and `bullet_list`s (see `transformTaskLists`); it saves as one list.
+ * `task_list`s and `bullet_list`s / `ordered_list`s (see `transformTaskLists`); it saves as one list.
  */
-function renderBulletList(state: MarkdownSerializerState, node: PMNode, parent: PMNode, index: number): void {
+function renderList(state: MarkdownSerializerState, node: PMNode, parent: PMNode, index: number): void {
   if (continuesList(parent, index)) return;
   let last = index;
   while (last + 1 < parent.childCount && continuesList(parent, last + 1)) last++;
@@ -418,7 +481,11 @@ function renderBulletList(state: MarkdownSerializerState, node: PMNode, parent: 
   }
   // Unchecked: a list of both kinds of item exists only here.
   const list = node.type.create({ ...node.attrs, tight }, items);
-  state.renderList(list, '  ', () => node.attrs['bullet'] + ' ');
+  if (!isOrdered(node)) return state.renderList(list, '  ', () => node.attrs['bullet'] + ' ');
+  // Numbers aren't padded to one width, so a tenth item doesn't indent the other nine.
+  const start: number = node.attrs['order'];
+  const space = state.repeat(' ', String(start + items.length - 1).length + 2);
+  state.renderList(list, space, (i) => `${start + i}${node.attrs['delimiter']} `);
 }
 
 /** A checkbox: any one character in brackets, as other apps allow states like `[-]` and `[/]`. */
@@ -450,15 +517,18 @@ function transformTaskLists(node: PMNode): PMNode {
   const children: PMNode[] = [];
   node.forEach((child) => {
     child = transformTaskLists(child);
-    if (child.type !== schema.nodes['bullet_list']) {
+    if (child.type !== schema.nodes['bullet_list'] && child.type !== schema.nodes['ordered_list']) {
       children.push(child);
       return;
     }
-    // Split into runs of checkbox and plain items.
+    // Split into runs of checkbox and plain items, each numbered on from the last.
     let run: PMNode[] = [];
     let tasks = false;
+    let done = 0;
     const flush = () => {
-      if (run.length) children.push((tasks ? schema.nodes['task_list'] : child.type).create(child.attrs, run));
+      const attrs = isOrdered(child) ? { ...child.attrs, order: child.attrs['order'] + done } : child.attrs;
+      if (run.length) children.push((tasks ? schema.nodes['task_list'] : child.type).create(attrs, run));
+      done += run.length;
       run = [];
     };
     child.forEach((item) => {

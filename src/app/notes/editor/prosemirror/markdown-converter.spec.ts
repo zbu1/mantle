@@ -91,7 +91,7 @@ describe('markdown escaping', () => {
   const roundTrip = (markdown: string) => serializeMarkdown(parseMarkdown(markdown));
 
   it('leaves syntax it does not read as written', () => {
-    for (const src of ['> [!note] Title\n> body', 'a[^1]\n\n[^1]: note', '- [-] cancelled', '1. [ ] task', '2 * 3 * 4', 'x ~y~ z', '_a_b']) {
+    for (const src of ['> [!note] Title\n> body', 'a[^1]\n\n[^1]: note', '- [-] cancelled', '2 * 3 * 4', 'x ~y~ z', '_a_b']) {
       expect(roundTrip(src)).toBe(src);
     }
   });
@@ -132,6 +132,47 @@ describe('markdown lists', () => {
     const src = '- [ ] task\n- plain\n- [x] done';
     expect(parseMarkdown(src).content.content.map((node) => node.type.name)).toEqual(['task_list', 'bullet_list', 'task_list']);
     expect(roundTrip(src)).toBe(src);
+  });
+
+  it('reads numbered checkboxes, numbering each run on from the last', () => {
+    const src = '3. [ ] task\n4. plain\n5. [x] done';
+    const lists = parseMarkdown(src).content.content;
+    expect(lists.map((node) => [node.type.name, node.attrs['order']])).toEqual([['task_list', 3], ['ordered_list', 4], ['task_list', 5]]);
+    expect(roundTrip(src)).toBe(src);
+    for (const other of ['1) [ ] a\n2) [x] b','1. [ ] a\n   - [ ] nested']) {
+      expect(roundTrip(other)).toBe(other);
+    }
+  });
+});
+
+describe('markdown tables', () => {
+  const roundTrip = (markdown: string) => serializeMarkdown(parseMarkdown(markdown));
+  const src = '|a|b|\n|:-|--:|\n| x \\| y | `c \\| d` |\n| [[n\\|al]] |';
+
+  it('reads a table into rows of cells, the first row its header, with column alignments', () => {
+    const table = parseMarkdown(src).firstChild!;
+    expect(table.type.name).toBe('table');
+    expect(table.childCount).toBe(3);
+    expect(table.child(1).child(0).textContent).toBe('x | y');
+    expect(table.child(2).child(0).firstChild!.marks[0].attrs).toMatchObject({ target: 'n', alias: true });
+    expect(table.child(2).child(1).attrs['align']).toBe('right');
+  });
+
+  it('saves an unedited table as written, in quotes and lists too', () => {
+    for (const markdown of [src, '> | a |\n> |---|\n> | b |', '- item\n\n  | a | b |\n  | - | - |']) {
+      expect(roundTrip(markdown)).toBe(markdown);
+    }
+  });
+
+  it('pads an edited table so the pipes line up, escaping pipes', () => {
+    const doc = parseMarkdown(src);
+    const cell = doc.firstChild!.child(1).child(0);
+    let pos = -1;
+    doc.descendants((node, p) => (node === cell && (pos = p), pos < 0));
+    const edited = doc.replace(pos + 1, pos + 1 + cell.content.size, parseMarkdown('x | yz').firstChild!.slice(0));
+    expect(serializeMarkdown(edited)).toBe(
+      ['| a         | b        |', '| :-------- | -------: |', '| x \\| yz   | `c \\| d` |', '| [[n\\|al]] |          |'].join('\n'),
+    );
   });
 });
 

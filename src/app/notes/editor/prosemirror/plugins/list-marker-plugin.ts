@@ -1,7 +1,7 @@
-import { Plugin, TextSelection } from 'prosemirror-state';
+import { Plugin, TextSelection, Transaction } from 'prosemirror-state';
 import { Node as PMNode, Slice } from 'prosemirror-model';
 import { EditorView } from 'prosemirror-view';
-import { serializeMarkdown } from '../markdown-converter';
+import { continuesList, serializeMarkdown } from '../markdown-converter';
 import { schema } from '../schema';
 
 const LISTS = [schema.nodes['bullet_list'], schema.nodes['ordered_list'], schema.nodes['task_list']];
@@ -42,14 +42,34 @@ function isListCopy(slice: Slice): boolean {
   return list && lines > 1;
 }
 
+/** Numbers each numbered list that continues another (a run of checkbox and plain items) on from it. */
+function renumber(tr: Transaction, node: PMNode, pos: number): boolean {
+  if (node.isTextblock) return false;
+  let next = 0;
+  node.forEach((child, offset, index) => {
+    const continues = continuesList(node, index) && child.attrs['order'] != null;
+    if (continues && child.attrs['order'] !== next) tr.setNodeMarkup(pos + 1 + offset, null, { ...child.attrs, order: next });
+    next = (continues ? next : child.attrs['order']) + child.childCount;
+  });
+  return true;
+}
+
 /**
  * List markers: pressing on (or left of) a bullet or number puts the cursor
  * at the start of that item, and dragging from there selects whole items. A
  * selection that starts at an item's start copies the item itself, marker
- * and all, and copied lists reach other apps as Markdown.
+ * and all, and copied lists reach other apps as Markdown. Numbered lists
+ * split by checkboxes keep counting on.
  */
 export function listMarkerPlugin(): Plugin {
   return new Plugin({
+    appendTransaction(transactions, _oldState, state) {
+      if (!transactions.some((tr) => tr.docChanged)) return null;
+      const tr = state.tr;
+      renumber(tr, state.doc, -1);
+      state.doc.descendants((node, pos) => renumber(tr, node, pos));
+      return tr.docChanged ? tr : null;
+    },
     props: {
       handleDOMEvents: {
         mousedown: (view, event) => {

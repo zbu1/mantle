@@ -53,6 +53,8 @@ import { demoteEmptyLeadingBlock } from './prosemirror/commands/demote-empty-lea
 import { liftListItemAtStart } from './prosemirror/commands/lift-list-item-at-start';
 import { indentListItems } from './prosemirror/commands/indent-list-items';
 import { TaskItemView } from './prosemirror/nodeviews/task-item-view';
+import { TableView, cellBelow, goToCell, insertTable, tableMenu, tablePlugins } from './prosemirror/plugins/table-plugin';
+import { isInTable } from 'prosemirror-tables';
 import { ImageView } from './prosemirror/nodeviews/image-view';
 import {
   ImageContext,
@@ -78,7 +80,7 @@ import { SlashMenu } from './slash-menu/slash-menu';
 import { ADD_PROPERTY_EVENT } from './slash-menu/slash-menu.model';
 import { BlockKind, formatSelection, insertHorizontalRule, linkSelection, pastePlainText, turnInto } from './prosemirror/editor-commands';
 import { pickImage } from './prosemirror/plugins/image-plugin';
-import { ContextMenuAction } from '../../shared/context-menu/context-menu.model';
+import { ContextMenuAction, ContextMenuItem } from '../../shared/context-menu/context-menu.model';
 import { SlashMenuState } from './slash-menu/slash-menu-state';
 import { LinkMenu } from './link-menu/link-menu';
 import { LinkMenuState, LinkSuggestion } from './link-menu/link-menu-state';
@@ -121,6 +123,7 @@ function buildEditorKeymap() {
     'Shift-Mod-h': (_state, _dispatch, view) => !!view && (formatSelection(view, 'highlight', '=='), true),
     'Shift-Mod-v': (_state, _dispatch, view) => !!view && (pastePlainText(view), true),
     Enter: chainCommands(
+      cellBelow,
       codeFenceOnEnter,
       newlineInMathBlock,
       exitEmptyQuoteLine,
@@ -129,8 +132,8 @@ function buildEditorKeymap() {
       splitListItem(schema.nodes['task_item'], { checked: false }),
       baseKeymap['Enter']
     ),
-    Tab: chainCommands(indentCodeLines(false), indentListItems(false), indentedCodeOnTab),
-    'Shift-Tab': chainCommands(indentCodeLines(true), indentListItems(true)),
+    Tab: chainCommands(goToCell(1), indentCodeLines(false), indentListItems(false), indentedCodeOnTab),
+    'Shift-Tab': chainCommands(goToCell(-1), indentCodeLines(true), indentListItems(true)),
     // undoInputRule first, so Backspace right after an auto-conversion restores
     // the literal markdown that triggered it. liftListItemAtStart comes next so
     // Backspace at the very start of a list item just drops its marker in
@@ -261,7 +264,18 @@ export class NoteEditor {
           // Last, so images and code blocks get their own menus first.
           new Plugin({
             // On Android a long press selects text, with the system's own Cut / Copy / Paste.
-            props: { handleDOMEvents: { contextmenu: (view, event) => !isMobile && (this.openTextMenu(event, view), true) } },
+            props: {
+              handleDOMEvents: {
+                contextmenu: (view, event) => {
+                  if (isMobile) return false;
+                  // Now, or the content area's menu opens while the spelling is looked up.
+                  event.preventDefault();
+                  event.stopPropagation();
+                  void this.openTextMenu(event, view);
+                  return true;
+                },
+              },
+            },
           }),
           imagePlugin(this.imageContext()),
           codeBlockPlugin({
@@ -271,6 +285,7 @@ export class NoteEditor {
             },
             contextMenu: (event, view, pos) => this.openCodeBlockMenu(event, view, pos),
           }),
+          ...tablePlugins(),
         ],
       });
 
@@ -280,6 +295,8 @@ export class NoteEditor {
           task_item: (node, nodeView, getPos) => new TaskItemView(node, nodeView, getPos),
           image: (node, nodeView, getPos) => new ImageView(node, nodeView, getPos),
           code_block: (node, nodeView, getPos) => new CodeBlockView(node, nodeView, getPos),
+          table: (node, nodeView) =>
+            new TableView(node, nodeView, (event, part) => this.contextMenuState.open(event, tableMenu(nodeView, part))),
         },
         // Only affects plain-text pastes; HTML clipboard content still goes
         // through the default DOM parser.
@@ -516,8 +533,10 @@ export class NoteEditor {
   }
 
   /** Right-click on text: the clipboard, formatting, block types and inserts. */
-  private openTextMenu(event: MouseEvent, view: EditorView): void {
+  private async openTextMenu(event: MouseEvent, view: EditorView): Promise<void> {
+    const spelling = await spellingItems(view, event);
     const hasSelection = !view.state.selection.empty;
+    const inTable = isInTable(view.state);
     const run = (command: 'cut' | 'copy' | 'paste' | 'selectAll') => () => this.editContext.run(command);
     const turn = (kind: BlockKind) => () => turnInto(view, kind);
     const format = (label: string, mark: string, delimiter: string, shortcut?: string): ContextMenuAction => ({
@@ -528,6 +547,7 @@ export class NoteEditor {
     });
     this.editContext.focusEditor(view);
     this.contextMenuState.open(event, [
+      ...spelling,
       { kind: 'item', label: 'Cut', icon: 'cut', shortcut: 'Ctrl+X', disabled: !hasSelection, action: run('cut') },
       { kind: 'item', label: 'Copy', icon: 'copy', shortcut: 'Ctrl+C', disabled: !hasSelection, action: run('copy') },
       { kind: 'item', label: 'Paste', icon: 'paste', shortcut: 'Ctrl+V', action: run('paste') },
@@ -552,29 +572,33 @@ export class NoteEditor {
           { kind: 'item', label: 'Link…', action: () => void this.promptLink(view) },
         ],
       },
-      {
-        kind: 'submenu',
-        label: 'Turn into',
-        items: [
-          { kind: 'item', label: 'Paragraph', icon: 'paragraph', action: turn('paragraph') },
-          { kind: 'item', label: 'Heading 1', action: turn('h1') },
-          { kind: 'item', label: 'Heading 2', action: turn('h2') },
-          { kind: 'item', label: 'Heading 3', action: turn('h3') },
-          { kind: 'separator' },
-          { kind: 'item', label: 'Bullet List', action: turn('bullet_list') },
-          { kind: 'item', label: 'Numbered List', action: turn('ordered_list') },
-          { kind: 'item', label: 'To-do List', action: turn('task_list') },
-          { kind: 'separator' },
-          { kind: 'item', label: 'Quote', action: turn('blockquote') },
-          { kind: 'item', label: 'Code Block', icon: 'code', action: turn('code_block') },
-        ],
-      },
+      // A cell holds one line, so it has no block types to turn into.
+      inTable
+        ? { kind: 'submenu', label: 'Table', items: tableMenu(view, 'table') }
+        : {
+            kind: 'submenu',
+            label: 'Turn into',
+            items: [
+              { kind: 'item', label: 'Paragraph', icon: 'paragraph', action: turn('paragraph') },
+              { kind: 'item', label: 'Heading 1', action: turn('h1') },
+              { kind: 'item', label: 'Heading 2', action: turn('h2') },
+              { kind: 'item', label: 'Heading 3', action: turn('h3') },
+              { kind: 'separator' },
+              { kind: 'item', label: 'Bullet List', action: turn('bullet_list') },
+              { kind: 'item', label: 'Numbered List', action: turn('ordered_list') },
+              { kind: 'item', label: 'To-do List', action: turn('task_list') },
+              { kind: 'separator' },
+              { kind: 'item', label: 'Quote', action: turn('blockquote') },
+              { kind: 'item', label: 'Code Block', icon: 'code', action: turn('code_block') },
+            ],
+          },
       {
         kind: 'submenu',
         label: 'Insert',
         items: [
           { kind: 'item', label: 'Image, Video or PDF…', action: () => void pickImage(view) },
           { kind: 'item', label: 'Divider', action: () => insertHorizontalRule(view) },
+          { kind: 'item', label: 'Table', disabled: inTable, action: () => insertTable(view) },
         ],
       },
     ]);
@@ -695,4 +719,42 @@ export class NoteEditor {
     const { anchor, head } = view.state.selection;
     viewStates.set(this.appliedKey, { scrollTop: this.scroller()?.scrollTop ?? 0, anchor, head });
   }
+}
+
+/** Fixes for the misspelled word under `event`, for the top of its menu. */
+async function spellingItems(view: EditorView, event: MouseEvent): Promise<ContextMenuItem[]> {
+  const word = wordAt(view, event);
+  if (!word) return [];
+  const suggestions = await invoke<string[] | null>('spelling_suggestions', { word: word.text }).catch(() => null);
+  if (!suggestions) return [];
+  const fixes: ContextMenuItem[] = suggestions.slice(0, 5).map((fix) => ({
+    kind: 'item',
+    label: fix,
+    action: () => {
+      // Only if the word is still there.
+      if (view.state.doc.textBetween(word.from, word.to) === word.text) {
+        view.dispatch(view.state.tr.insertText(fix, word.from, word.to));
+      }
+      view.focus();
+    },
+  }));
+  if (!fixes.length) fixes.push({ kind: 'item', label: 'No suggestions', disabled: true, action: () => {} });
+  return [...fixes, { kind: 'separator' }];
+}
+
+/** The word under `event`, outside code. */
+function wordAt(view: EditorView, event: MouseEvent): { from: number; to: number; text: string } | null {
+  const pos = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
+  if (pos === undefined) return null;
+  const $pos = view.state.doc.resolve(pos);
+  if (!$pos.parent.isTextblock || $pos.parent.type.spec.code || $pos.marks().some((mark) => mark.type.spec.code)) return null;
+  // One character per inline leaf, so string offsets are doc offsets.
+  const text = $pos.parent.textBetween(0, $pos.parent.content.size, undefined, '\u{fffc}');
+  for (const match of text.matchAll(/[\p{L}\p{M}]+(?:'[\p{L}\p{M}]+)*/gu)) {
+    if (match.index <= $pos.parentOffset && $pos.parentOffset <= match.index + match[0].length) {
+      const from = $pos.start() + match.index;
+      return { from, to: from + match[0].length, text: match[0] };
+    }
+  }
+  return null;
 }

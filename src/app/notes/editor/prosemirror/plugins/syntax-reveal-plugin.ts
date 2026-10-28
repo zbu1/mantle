@@ -29,6 +29,7 @@ const hardBreak = schema.nodes['hard_break'];
 const rule = schema.nodes['horizontal_rule'];
 const taskItem = schema.nodes['task_item'];
 const bulletList = schema.nodes['bullet_list'];
+const orderedList = schema.nodes['ordered_list'];
 const listItem = schema.nodes['list_item'];
 
 /** Marks whose delimiters reveal. */
@@ -69,11 +70,13 @@ function expectedPrefix(doc: PMNode, pos: number): string {
   return '> '.repeat(quoteDepth(doc, pos)) + (block.type === heading ? '#'.repeat(block.attrs['level']) + ' ' : '');
 }
 
-/** The `- [ ] ` the textblock at `pos` would show, if it's the first line of a task item. */
+/** The `- [ ] ` (or `1. [ ] `) the textblock at `pos` would show, if it's the first line of a task item. */
 function taskPrefix(doc: PMNode, pos: number): string {
   const $pos = doc.resolve(pos);
   if ($pos.parent.type !== taskItem || $pos.index() !== 0) return '';
-  return `${$pos.node(-1).attrs['bullet']} [${taskStatus($pos.parent)}] `;
+  const { bullet, order, delimiter } = $pos.node(-1).attrs;
+  const marker = order == null ? bullet : `${order + $pos.index(-1)}${delimiter}`;
+  return `${marker} [${taskStatus($pos.parent)}] `;
 }
 
 // --- Character-level edits --------------------------------------------------
@@ -340,14 +343,18 @@ function unfold(tr: Transaction): void {
 /** Parses the textblock at `pos` back from the Markdown it now reads as. */
 function refoldTextblock(tr: Transaction, pos: number): void {
   const block = tr.doc.nodeAt(pos)!;
-  const parsed = parseMarkdown(serializeMarkdown(schema.node('doc', null, [block])));
+  // A table cell's text reads as a paragraph would, and stays in its cell.
+  const cell = !!block.type.spec['tableRole'];
+  const parsed = parseMarkdown(serializeMarkdown(schema.node('doc', null, [cell ? paragraph.create(null, block.content) : block])));
   const $pos = tr.doc.resolve(pos);
   const index = $pos.index();
   const only = parsed.childCount === 1 ? parsed.firstChild! : null;
-  if (only?.isTextblock && only.type !== codeBlock && $pos.parent.canReplaceWith(index, index + 1, only.type)) {
+  if (cell && only?.type === paragraph && block.type.validContent(only.content)) {
+    morph(tr, pos, only.content);
+  } else if (!cell && only?.isTextblock && only.type !== codeBlock && $pos.parent.canReplaceWith(index, index + 1, only.type)) {
     if (!block.hasMarkup(only.type, only.attrs)) tr.setNodeMarkup(pos, only.type, only.attrs);
     morph(tr, pos, only.content);
-  } else if ($pos.parent.canReplace(index, index + 1, parsed.content)) {
+  } else if (!cell && $pos.parent.canReplace(index, index + 1, parsed.content)) {
     // `---` became a rule, `- a` a list, …
     tr.replaceWith(pos, pos + block.nodeSize, parsed.content);
   } else {
@@ -485,8 +492,10 @@ function dropOrphanedSources(tr: Transaction, oldState: EditorState, mapping: Ma
 
 // --- Checkboxes ---------------------------------------------------------------
 
-const sameList = (node: PMNode | null | undefined, list: PMNode): boolean =>
-  node?.type === bulletList && node.attrs['bullet'] === list.attrs['bullet'];
+const sameList = (node: PMNode | null | undefined, list: PMNode): boolean => {
+  const marker = list.type === orderedList ? 'delimiter' : 'bullet';
+  return node?.type === list.type && node.attrs[marker] === list.attrs[marker];
+};
 
 /** Turns the task item at `pos` into a plain list item, splitting its list around it and joining a plain list beside it. */
 function untask(tr: Transaction, pos: number): void {
@@ -498,7 +507,8 @@ function untask(tr: Transaction, pos: number): void {
   list.forEach((item) => items.push(item));
   const before = items.slice(0, index);
   const after = items.slice(index + 1);
-  const plain = bulletList.create(list.attrs, listItem.create(null, items[index].content));
+  // Numbered by `listMarkerPlugin`.
+  const plain = (list.attrs['order'] == null ? bulletList : orderedList).create(list.attrs, listItem.create(null, items[index].content));
   const parts = [...(before.length ? [list.copy(Fragment.from(before))] : []), plain, ...(after.length ? [list.copy(Fragment.from(after))] : [])];
 
   const { anchor, head } = tr.selection;
@@ -538,14 +548,14 @@ export function taskMarkerPlugin(): Plugin {
       const text = block.textBetween(0, end);
       if (text === $old.parent.textBetween(0, oldEnd)) return null;
       const tr = state.tr;
-      const checkbox = /^[-*+][ \t]+\[([^[\]\n\\]?)\][ \t]*$/.exec(text);
+      const checkbox = /^(?:[-*+]|\d+[.)])[ \t]+\[([^[\]\n\\]?)\][ \t]*$/.exec(text);
       if (checkbox) {
         const attrs = taskAttrs(checkbox[1] || ' ');
         const item = state.doc.nodeAt(pos - 1)!;
         if (taskStatus(item) !== taskStatus(item.type.create(attrs))) tr.setNodeMarkup(pos - 1, null, { ...item.attrs, ...attrs });
       } else {
         tr.removeMark(start, start + end, prefixMark);
-        const marker = /^[-*+]?[ \t]*/.exec(text)![0].length;
+        const marker = /^(?:[-*+]|\d+[.)])?[ \t]*/.exec(text)![0].length;
         if (marker) tr.delete(start, start + marker);
         untask(tr, pos - 1);
       }

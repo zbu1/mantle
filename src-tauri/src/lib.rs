@@ -6,6 +6,7 @@ mod links;
 mod migrate;
 mod logging;
 mod notes_crypto;
+mod spelling;
 mod tags;
 mod vault;
 mod vault_meta;
@@ -32,10 +33,12 @@ pub fn run() {
         )
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(watcher::WatcherState::default())
         .manage(credentials::SessionKeys::default())
         .register_asynchronous_uri_scheme_protocol("mantle", attachments::protocol)
         .invoke_handler(tauri::generate_handler![
+            spelling::spelling_suggestions,
             vault::scan_vault,
             vault::create_vault,
             vault::move_vault,
