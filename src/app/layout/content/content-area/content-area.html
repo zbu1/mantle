@@ -158,12 +158,12 @@
         to a Mantle note first.
       </p>
       <button type="button" (click)="convertActiveNote()"
-        class="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-foreground/80 hover:bg-background hover:text-foreground">
+        class="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 mobile:h-10 mobile:px-3 text-foreground/80 hover:bg-background hover:text-foreground">
         Convert
       </button>
       <app-help-popover [text]="convertHelp" label="What does converting do?" />
       <button type="button" title="Don't show again" aria-label="Don't show again" (click)="markdownNotice.dismiss()"
-        class="inline-flex size-5 shrink-0 items-center justify-center rounded hover:bg-background hover:text-foreground">
+        class="inline-flex size-5 mobile:size-10 shrink-0 items-center justify-center rounded hover:bg-background hover:text-foreground">
         <svg lucideX [size]="12"></svg>
       </button>
     </div>

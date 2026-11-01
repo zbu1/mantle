@@ -18,7 +18,7 @@ import { ItemStylePickerState } from './item-style-picker-state';
     <div class="scrollbar-thin mt-2 grid max-h-64 grid-cols-6 gap-1 overflow-y-auto">
       @for (entry of icons; track entry[0]) {
       <button type="button" [attr.title]="entry[0]" [attr.aria-label]="entry[0]" (click)="state.choose(entry[0])"
-        class="focus-ring-inset flex h-9 items-center justify-center rounded-md text-foreground/80 hover:bg-accent hover:text-foreground">
+        class="mobile:h-10 focus-ring-inset flex h-9 items-center justify-center rounded-md text-foreground/80 hover:bg-accent hover:text-foreground">
         <svg [lucideIcon]="entry[1]" [size]="16"></svg>
       </button>
       }
@@ -27,13 +27,13 @@ import { ItemStylePickerState } from './item-style-picker-state';
     <div class="mt-2 flex flex-wrap gap-2">
       @for (color of colors; track color.id) {
       <button type="button" [attr.title]="color.label" [attr.aria-label]="color.label" (click)="state.choose(color.id)"
-        class="focus-ring-inset size-7 rounded-full border border-border" [style.background]="color.css"></button>
+        class="mobile:size-10 focus-ring-inset size-7 rounded-full border border-border" [style.background]="color.css"></button>
       }
     </div>
     }
     <div class="mt-3 flex justify-end gap-2 text-xs">
-      <button type="button" (click)="state.choose(null)" class="focus-ring-inset rounded-md px-2 py-1 text-muted-foreground hover:bg-accent hover:text-foreground">Remove</button>
-      <button type="button" (click)="state.dismiss()" class="focus-ring-inset rounded-md px-2 py-1 hover:bg-accent">Cancel</button>
+      <button type="button" (click)="state.choose(null)" class="mobile:min-h-10 focus-ring-inset rounded-md px-2 py-1 text-muted-foreground hover:bg-accent hover:text-foreground">Remove</button>
+      <button type="button" (click)="state.dismiss()" class="mobile:min-h-10 focus-ring-inset rounded-md px-2 py-1 hover:bg-accent">Cancel</button>
     </div>
   </div>
 </div>

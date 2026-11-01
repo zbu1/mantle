@@ -109,7 +109,7 @@
     class="min-w-0 flex-1 border-0 bg-transparent p-0 text-foreground outline-none! placeholder:text-muted-foreground/70 focus-visible:shadow-none" />
   @if (filter()) {
   <button type="button" aria-label="Clear filter" (click)="clearFilter(field)"
-    class="-mr-1 inline-flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-surface hover:text-foreground">
+    class="-mr-1 inline-flex size-5 mobile:size-10 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-surface hover:text-foreground">
     <svg lucideX [size]="11"></svg>
   </button>
   }

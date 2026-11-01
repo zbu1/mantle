@@ -9,9 +9,9 @@
   }
 
   @if (showTags()) {
-  <div class="grid grid-cols-[minmax(7rem,10rem)_1fr] items-start gap-x-2">
+  <div class="grid grid-cols-[minmax(7rem,10rem)_1fr] mobile:grid-cols-1 items-start gap-x-2">
     <button type="button" (click)="openTagsMenu($event)" (contextmenu)="openTagsMenu($event)"
-      class="flex h-7 min-w-0 items-center gap-1.5 rounded-md px-1.5 text-left text-muted-foreground transition-colors hover:bg-surface hover:text-foreground">
+      class="flex h-7 min-w-0 items-center gap-1.5 rounded-md px-1.5 text-left text-muted-foreground transition-colors hover:bg-surface hover:text-foreground mobile:h-10">
       <svg lucideTags [size]="13" class="shrink-0"></svg>
       <span class="truncate">tags</span>
     </button>
@@ -20,10 +20,10 @@
   }
 
   @for (row of rows(); track row.key) {
-  <div class="grid grid-cols-[minmax(7rem,10rem)_1fr] items-center gap-x-2" [attr.data-property]="row.key">
+  <div class="grid grid-cols-[minmax(7rem,10rem)_1fr] mobile:grid-cols-1 items-center gap-x-2" [attr.data-property]="row.key">
     <button type="button" (click)="openMenu($event, row)" (contextmenu)="openMenu($event, row)"
       [title]="row.key"
-      class="flex h-7 min-w-0 items-center gap-1.5 rounded-md px-1.5 text-left text-muted-foreground transition-colors hover:bg-surface hover:text-foreground">
+      class="flex h-7 min-w-0 items-center gap-1.5 rounded-md px-1.5 text-left text-muted-foreground transition-colors hover:bg-surface hover:text-foreground mobile:h-10">
       <span class="contents">
         @switch (row.type) {
         @case ('text') { <svg lucideText [size]="13" class="shrink-0"></svg> }
@@ -36,6 +36,7 @@
         }
       </span>
       <span class="truncate">{{ row.key }}</span>
+      <svg lucideChevronDown [size]="11" class="shrink-0 opacity-60"></svg>
     </button>
 
     <div class="min-w-0">
@@ -46,35 +47,35 @@
       }
       @case ('number') {
       <input type="number" [value]="row.value ?? ''" (change)="onNumber(row.key, number)" (keydown.enter)="number.blur()" #number
-        placeholder="Empty" [attr.aria-label]="row.key" class="property-field w-40" />
+        placeholder="Empty" [attr.aria-label]="row.key" class="property-field w-40 mobile:w-full" />
       }
       @case ('checkbox') {
       <input type="checkbox" [checked]="row.value === true" (change)="setValue(row.key, checkbox.checked)" #checkbox
-        [attr.aria-label]="row.key" class="ml-1.5 size-3.5 accent-[var(--primary)]" />
+        [attr.aria-label]="row.key" class="ml-1.5 size-3.5 mobile:size-6 accent-[var(--primary)]" />
       }
       @case ('date') {
       <input type="date" [value]="row.value ?? ''" (change)="onDateTime(row.key, date)" #date
-        [attr.aria-label]="row.key" class="property-field" />
+        [attr.aria-label]="row.key" class="property-field mobile:w-full" />
       }
       @case ('datetime') {
       <input type="datetime-local" [value]="localDateTime(row.value)" (change)="onDateTime(row.key, datetime)" #datetime
-        [attr.aria-label]="row.key" class="property-field" />
+        [attr.aria-label]="row.key" class="property-field mobile:w-full" />
       }
       @case ('list') {
-      <div class="flex min-h-7 flex-wrap items-center gap-1 py-0.5" role="list" [attr.aria-label]="row.key">
+      <div class="flex min-h-7 mobile:min-h-10 flex-wrap items-center gap-1 py-0.5" role="list" [attr.aria-label]="row.key">
         @for (item of listItems(row.value); track $index) {
         <span role="listitem"
-          class="group/item inline-flex h-6 items-center rounded-md border border-border bg-surface/50 pl-2 pr-0.5 text-foreground/80">
+          class="group/item inline-flex h-6 items-center rounded-md border border-border bg-surface/50 mobile:h-10 pl-2 pr-0.5 text-foreground/80">
           {{ item }}
           <button type="button" [attr.aria-label]="'Remove ' + item" (click)="removeListItem(row, $index)"
-            class="ml-0.5 inline-flex size-4.5 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover/item:opacity-100">
+            class="ml-0.5 inline-flex size-4.5 items-center justify-center rounded text-muted-foreground opacity-0 mobile:size-10 mobile:opacity-100 transition-opacity hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover/item:opacity-100">
             <svg lucideX [size]="11"></svg>
           </button>
         </span>
         }
         <input type="text" #item (keydown)="onListKeydown($event, row, item)" (blur)="addListItem(row, item)"
           [placeholder]="listItems(row.value).length ? '' : 'Empty'" [attr.aria-label]="'Add to ' + row.key"
-          class="property-field w-24 min-w-0 flex-1" />
+          class="property-field w-24 min-w-0 flex-1 mobile:w-full" />
       </div>
       }
       @default {
@@ -87,17 +88,17 @@
   }
 
   @if (addingProperty()) {
-  <div class="grid grid-cols-[minmax(7rem,10rem)_1fr] items-center gap-x-2">
+  <div class="grid grid-cols-[minmax(7rem,10rem)_1fr] mobile:grid-cols-1 items-center gap-x-2">
     <input #nameInput type="text" placeholder="Property name" aria-label="New property name" spellcheck="false"
       (keydown)="onNameKeydown($event, nameInput)" (blur)="onNameBlur(nameInput)" (input)="nameError.set(null)"
-      class="property-field" />
+      class="property-field mobile:w-full" />
     @if (nameError(); as message) {
     <span class="text-destructive">{{ message }}</span>
     }
   </div>
   } @else if (properties() !== null && (showTags() || rows().length > 0)) {
   <button type="button" (click)="startAddingProperty()"
-    class="inline-flex h-7 w-fit items-center gap-1.5 rounded-md px-1.5 text-muted-foreground/70 transition-colors hover:bg-surface hover:text-foreground">
+    class="inline-flex h-7 w-fit items-center gap-1.5 rounded-md px-1.5 text-muted-foreground/70 mobile:h-10 transition-colors hover:bg-surface hover:text-foreground">
     <svg lucidePlus [size]="13"></svg>
     Add property
   </button>
@@ -106,7 +107,7 @@
   @if (showBacklinks()) {
   <div data-backlinks class="flex flex-col">
     <button type="button" (click)="backlinksOpen.set(!backlinksOpen())" [attr.aria-expanded]="backlinksOpen()"
-      class="inline-flex h-7 w-fit items-center gap-1.5 rounded-md px-1.5 text-muted-foreground transition-colors hover:bg-surface hover:text-foreground">
+      class="inline-flex h-7 w-fit items-center gap-1.5 rounded-md px-1.5 text-muted-foreground transition mobile:h-10-colors hover:bg-surface hover:text-foreground">
       <svg lucideChevronRight [size]="13" class="transition-transform" [class.rotate-90]="backlinksOpen()"></svg>
       Linked from
       <span class="text-muted-foreground/70">{{ backlinks().length }}</span>
@@ -116,7 +117,7 @@
       @for (link of backlinks(); track link.note.relPath) {
       <li>
         <button type="button" (click)="openBacklink(link.note.relPath, link.note.name)" [title]="link.note.relPath"
-          class="flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-1.5 text-left transition-colors hover:bg-surface">
+          class="flex h-7 w-full min-w-0 items-center gap-2 mobile:h-10 rounded-md px-1.5 text-left transition-colors hover:bg-surface">
           <span class="truncate text-foreground">{{ link.note.name }}</span>
           @if (link.dir) {
           <span class="truncate text-muted-foreground">{{ link.dir }}</span>
