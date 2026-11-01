@@ -1,5 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { invoke } from '@tauri-apps/api/core';
+import { formatError } from '../core/logger';
 import { DialogState } from '../shared/dialog/dialog-state';
 import { AttachmentsState } from './attachments-state';
 import { NoteLinksState } from './note-links-state';
@@ -56,7 +57,8 @@ export class VaultActions {
 
   async createAndOpenNote(relDir = ''): Promise<CreatedNote | null> {
     const created = await this.vaultState.createAndOpenNote(relDir);
-    if (created) {
+    if (!created) await this.dialogState.alert("Couldn't find a free name for the note.", { title: "Couldn't Create Note", tone: 'error' });
+    else {
       this.recordCreated('note', created, () => this.vaultState.createNote(relDir, created.name));
       focusNoteTitle();
     }
@@ -69,16 +71,26 @@ export class VaultActions {
     return created;
   }
 
-  async createFolderWithUniqueName(relDir = ''): Promise<CreatedNote> {
-    const created = await this.vaultState.createFolderWithUniqueName(relDir);
-    this.recordCreated('folder', created, () => this.vaultState.createFolder(relDir, created.name));
-    return created;
+  async createFolderWithUniqueName(relDir = ''): Promise<CreatedNote | null> {
+    try {
+      const created = await this.vaultState.createFolderWithUniqueName(relDir);
+      this.recordCreated('folder', created, () => this.vaultState.createFolder(relDir, created.name));
+      return created;
+    } catch (err) {
+      await this.dialogState.alert(formatError(err), { title: "Couldn't Create Folder", tone: 'error' });
+      return null;
+    }
   }
 
-  async duplicate(relPath: string): Promise<CreatedNote> {
-    const created = await this.vaultState.duplicateNote(relPath);
-    this.recordCreated('note', created);
-    return created;
+  async duplicate(relPath: string): Promise<CreatedNote | null> {
+    try {
+      const created = await this.vaultState.duplicateNote(relPath);
+      this.recordCreated('note', created);
+      return created;
+    } catch (err) {
+      await this.dialogState.alert(formatError(err), { title: "Couldn't Duplicate Note", tone: 'error' });
+      return null;
+    }
   }
 
   async copy(relPath: string, destRelDir: string): Promise<CreatedNote> {

@@ -241,7 +241,7 @@ export class MainMenu {
     this.closeMenu();
     if (!this.hasVault()) return;
     const created = await this.vaultActions.createFolderWithUniqueName();
-    this.renameState.renamingPath.set(created.relPath);
+    if (created) this.renameState.renamingPath.set(created.relPath);
   }
 
   protected async saveActiveNote(): Promise<void> {

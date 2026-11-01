@@ -212,6 +212,7 @@ export class Sidebar {
         // name collision — try the next candidate
       }
     }
+    await this.dialogState.alert("Couldn't find a free name.", { title: "Couldn't Create Note", tone: 'error' });
   }
 
   /** Creates a new folder in `relDir` (vault root by default); if items are selected, moves them into it. */
@@ -231,6 +232,7 @@ export class Sidebar {
         // name collision — try the next candidate
       }
     }
+    await this.dialogState.alert("Couldn't find a free name.", { title: "Couldn't Create Folder", tone: 'error' });
   }
 
   protected recentTime(row: RecentRow): string {
