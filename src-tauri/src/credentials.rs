@@ -34,7 +34,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use mntl_core::{
     compute_verifier, derive_kek_with_params, unwrap_master_key,
-    verify_master_key, wrap_master_key, KdfParams, MasterKey,
+    verify_master_key, wrap_master_key, KdfParams, KeyEncryptionKey, MasterKey,
 };
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
@@ -389,9 +389,10 @@ pub struct ProfileInfo {
     pub kdf: KdfParams,
     pub hide_locations: bool,
     pub hide_names: bool,
+    pub has_recovery_key: bool,
 }
 
-fn to_info(profile: &CredentialProfile, unlocked: bool) -> ProfileInfo {
+fn to_info(vault_root: &str, profile: &CredentialProfile, unlocked: bool) -> ProfileInfo {
     ProfileInfo {
         id: profile.id.clone(),
         display_name: profile.display_name.clone(),
@@ -399,6 +400,7 @@ fn to_info(profile: &CredentialProfile, unlocked: bool) -> ProfileInfo {
         kdf: profile.kdf.clone(),
         hide_locations: profile.hide_locations,
         hide_names: profile.hide_names,
+        has_recovery_key: recovery_path(vault_root, &profile.id).is_ok_and(|p| p.exists()),
     }
 }
 
@@ -413,7 +415,7 @@ pub fn list_credential_profiles(
         Ok(registry
             .profiles
             .iter()
-            .map(|p| to_info(p, unlocked.iter().any(|id| id == &p.id)))
+            .map(|p| to_info(&vault_root, p, unlocked.iter().any(|id| id == &p.id)))
             .collect())
     })
 }
@@ -487,7 +489,7 @@ fn create_profile_inner(
     // typed seconds ago, so asking for it again would be pure ceremony.
     keys.insert(vault_root, &id, master_key)?;
 
-    Ok(to_info(&profile, true))
+    Ok(to_info(vault_root, &profile, true))
 }
 
 #[tauri::command]
@@ -585,7 +587,7 @@ fn rename_profile_inner(
         .find_mut(profile_id)
         .ok_or_else(|| format!("No credential profile \"{profile_id}\" in this vault"))?;
     profile.display_name = display_name.to_string();
-    let info = to_info(profile, keys.get(vault_root, profile_id)?.is_some());
+    let info = to_info(vault_root, profile, keys.get(vault_root, profile_id)?.is_some());
 
     save_registry(vault_root, &registry)?;
     Ok(info)
@@ -670,6 +672,9 @@ fn delete_profile_inner(vault_root: &str, profile_id: &str, keys: &SessionKeys) 
     }
 
     save_registry(vault_root, &registry)?;
+    if let Ok(path) = recovery_path(vault_root, profile_id) {
+        let _ = fs::remove_file(path);
+    }
     keys.lock_one(vault_root, profile_id)
 }
 
@@ -729,9 +734,236 @@ pub fn redo_create_credential_profile(
     })
 }
 
+// --- Recovery key --------------------------------------------------------
+
+/// The master key wrapped under a random recovery key, kept apart from
+/// `profiles.json` so losing that file doesn't also lose this. Holds no secret.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RecoveryRecord {
+    display_name: String,
+    wrapped_master_key: String,
+    verifier: String,
+}
+
+const RECOVERY_DIR: &str = "recovery";
+const INCORRECT_RECOVERY_KEY: &str = "Incorrect recovery key";
+
+fn recovery_path(vault_root: &str, profile_id: &str) -> Result<PathBuf, String> {
+    // The id becomes a file name, and arrives over IPC.
+    if profile_id.is_empty() || !profile_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        return Err("Invalid profile id".to_string());
+    }
+    let root = PathBuf::from(vault_root)
+        .canonicalize()
+        .map_err(|e| format!("Invalid vault root: {e}"))?;
+    Ok(root.join(STATE_DIR).join(RECOVERY_DIR).join(format!("{profile_id}.json")))
+}
+
+/// `ABCD-EF01-…`: 64 hex digits in groups of four.
+fn format_recovery_key(bytes: &[u8; 32]) -> String {
+    let hex: String = bytes.iter().map(|b| format!("{b:02X}")).collect();
+    hex.as_bytes()
+        .chunks(4)
+        .map(|c| std::str::from_utf8(c).unwrap())
+        .collect::<Vec<_>>()
+        .join("-")
+}
+
+fn parse_recovery_key(text: &str) -> Result<KeyEncryptionKey, String> {
+    let hex: String = text.chars().filter(|c| !c.is_whitespace() && *c != '-').collect();
+    let invalid = || "That isn't a valid recovery key".to_string();
+    if hex.len() != 64 || !hex.is_ascii() {
+        return Err(invalid());
+    }
+    let mut bytes = [0u8; 32];
+    for (i, byte) in bytes.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).map_err(|_| invalid())?;
+    }
+    Ok(KeyEncryptionKey::from_bytes(bytes))
+}
+
+/// Make a new recovery key for an unlocked profile, replacing any earlier one,
+/// and return it. It is shown once and never stored.
+#[tauri::command]
+pub fn create_recovery_key(
+    vault_root: String,
+    profile_id: String,
+    keys: State<SessionKeys>,
+) -> Result<String, String> {
+    logged("create_recovery_key", || create_recovery_key_inner(&vault_root, &profile_id, &keys))
+}
+
+fn create_recovery_key_inner(vault_root: &str, profile_id: &str, keys: &SessionKeys) -> Result<String, String> {
+    let master_key = keys
+        .get(vault_root, profile_id)?
+        .ok_or_else(|| format!("Unlock \"{profile_id}\" before making a recovery key"))?;
+    let registry = load_registry(vault_root)?;
+    let profile = registry
+        .find(profile_id)
+        .ok_or_else(|| format!("No credential profile \"{profile_id}\" in this vault"))?;
+
+    let mut bytes = Zeroizing::new([0u8; 32]);
+    OsRng
+        .try_fill_bytes(&mut *bytes)
+        .map_err(|e| format!("Failed to generate recovery key: {e}"))?;
+    let wrapped = wrap_master_key(&KeyEncryptionKey::from_bytes(*bytes), &master_key).map_err(|e| e.to_string())?;
+
+    let record = RecoveryRecord {
+        display_name: profile.display_name.clone(),
+        wrapped_master_key: BASE64.encode(wrapped),
+        verifier: compute_verifier(&master_key),
+    };
+    let path = recovery_path(vault_root, profile_id)?;
+    let dir = path.parent().ok_or("Invalid recovery path")?;
+    fs::create_dir_all(dir).map_err(|e| format!("Failed to create recovery folder: {e}"))?;
+    let tmp = path.with_extension("json.tmp");
+    fs::write(&tmp, serde_json::to_string_pretty(&record).map_err(|e| e.to_string())?)
+        .map_err(|e| format!("Failed to write recovery record: {e}"))?;
+    fs::rename(&tmp, &path).map_err(|e| format!("Failed to save recovery record: {e}"))?;
+
+    Ok(format_recovery_key(&bytes))
+}
+
+/// Unlock a profile with its recovery key and give it a new password. Also
+/// brings back a profile whose `profiles.json` entry was lost (it comes back
+/// without its hide settings, which can be set again).
+#[tauri::command]
+pub fn recover_credential_profile(
+    vault_root: String,
+    profile_id: String,
+    recovery_key: String,
+    new_password: String,
+    keys: State<SessionKeys>,
+) -> Result<ProfileInfo, String> {
+    let recovery_key = Zeroizing::new(recovery_key);
+    let new_password = Zeroizing::new(new_password);
+    logged("recover_credential_profile", || {
+        recover_profile_inner(&vault_root, &profile_id, &recovery_key, &new_password, &KdfParams::default(), &keys)
+    })
+}
+
+fn recover_profile_inner(
+    vault_root: &str,
+    profile_id: &str,
+    recovery_key: &str,
+    new_password: &str,
+    kdf: &KdfParams,
+    keys: &SessionKeys,
+) -> Result<ProfileInfo, String> {
+    if new_password.is_empty() {
+        return Err("Password must not be empty".to_string());
+    }
+    let rk = parse_recovery_key(recovery_key)?;
+    let raw = fs::read_to_string(recovery_path(vault_root, profile_id)?)
+        .map_err(|_| "No recovery key was set up for this profile".to_string())?;
+    let record: RecoveryRecord =
+        serde_json::from_str(&raw).map_err(|_| "Recovery record is corrupt".to_string())?;
+    let wrapped = BASE64
+        .decode(&record.wrapped_master_key)
+        .map_err(|_| "Recovery record is corrupt".to_string())?;
+    let master_key = unwrap_master_key(&rk, &wrapped).map_err(|_| INCORRECT_RECOVERY_KEY.to_string())?;
+    if !verify_master_key(&master_key, &record.verifier) {
+        return Err("Recovery record is corrupt: the stored key does not match".to_string());
+    }
+
+    let mut salt = [0u8; SALT_LEN];
+    OsRng
+        .try_fill_bytes(&mut salt)
+        .map_err(|e| format!("Failed to generate salt: {e}"))?;
+
+    let mut registry = load_registry(vault_root)?;
+    let kdf = registry.find(profile_id).map_or_else(|| kdf.clone(), |p| p.kdf.clone());
+    let kek = derive_kek_with_params(new_password, &salt, &kdf).map_err(|e| e.to_string())?;
+    let wrapped_new = BASE64.encode(wrap_master_key(&kek, &master_key).map_err(|e| e.to_string())?);
+
+    match registry.find_mut(profile_id) {
+        Some(profile) => {
+            profile.salt = BASE64.encode(salt);
+            profile.wrapped_master_key = wrapped_new;
+        }
+        None => registry.profiles.push(CredentialProfile {
+            id: profile_id.to_string(),
+            display_name: record.display_name,
+            salt: BASE64.encode(salt),
+            kdf,
+            wrapped_master_key: wrapped_new,
+            verifier: record.verifier,
+            hide_locations: false,
+            hide_names: false,
+        }),
+    }
+    save_registry(vault_root, &registry)?;
+    keys.insert(vault_root, profile_id, master_key)?;
+    let profile = registry.find(profile_id).expect("just written");
+    Ok(to_info(vault_root, profile, true))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // --- Recovery key ----------------------------------------------------
+
+    #[test]
+    fn recovery_key_resets_the_password() {
+        let root = temp_dir("recovery-reset");
+        let root_str = root_of(&root);
+        let keys = SessionKeys::default();
+
+        create_profile_inner(&root_str, "Diary", "hunter2", &test_kdf(), &keys).unwrap();
+        let before = keys.get(&root_str, "diary").unwrap().unwrap();
+        let rk = create_recovery_key_inner(&root_str, "diary", &keys).unwrap();
+        keys.lock_all().unwrap();
+
+        let flipped = if rk.starts_with('0') { "1" } else { "0" };
+        let bad = format!("{flipped}{}", &rk[1..]);
+        let err = recover_profile_inner(&root_str, "diary", &bad, "new-pass", &test_kdf(), &keys).unwrap_err();
+        assert_eq!(err, INCORRECT_RECOVERY_KEY);
+
+        recover_profile_inner(&root_str, "diary", &rk.to_lowercase(), "new-pass", &test_kdf(), &keys).unwrap();
+        assert_eq!(keys.get(&root_str, "diary").unwrap().unwrap().expose(), before.expose());
+
+        keys.lock_all().unwrap();
+        assert_eq!(unlock_profile_inner(&root_str, "diary", "hunter2", &keys).unwrap_err(), INCORRECT_PASSWORD);
+        unlock_profile_inner(&root_str, "diary", "new-pass", &keys).unwrap();
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn recovery_key_restores_a_lost_registry_entry() {
+        let root = temp_dir("recovery-lost");
+        let root_str = root_of(&root);
+        let keys = SessionKeys::default();
+
+        create_profile_inner(&root_str, "Diary", "hunter2", &test_kdf(), &keys).unwrap();
+        let rk = create_recovery_key_inner(&root_str, "diary", &keys).unwrap();
+        fs::remove_file(root.join(STATE_DIR).join(PROFILES_FILE)).unwrap();
+        keys.lock_all().unwrap();
+
+        let info = recover_profile_inner(&root_str, "diary", &rk, "new-pass", &test_kdf(), &keys).unwrap();
+        assert_eq!(info.display_name, "Diary");
+        assert!(info.has_recovery_key);
+        keys.lock_all().unwrap();
+        unlock_profile_inner(&root_str, "diary", "new-pass", &keys).unwrap();
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn recovery_key_needs_an_unlocked_profile_and_a_valid_id() {
+        let root = temp_dir("recovery-guards");
+        let root_str = root_of(&root);
+        let keys = SessionKeys::default();
+
+        assert!(create_recovery_key_inner(&root_str, "diary", &keys).is_err());
+        assert!(recovery_path(&root_str, "../x").is_err());
+        assert!(parse_recovery_key("not a key").is_err());
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
 
     /// Argon2id parameters cheap enough for a test suite; the production
     /// default is 19 MiB.

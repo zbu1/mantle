@@ -37,6 +37,21 @@
     Change Master Password…
   </button>
 </app-settings-row>
+<app-settings-row label="Recovery Key"
+  [description]="p.hasRecoveryKey ? 'A key exists. Making a new one replaces it.' : 'Lets you reset a forgotten password.'">
+  <div class="flex gap-1.5">
+    @if (!unlocked() && p.hasRecoveryKey) {
+    <button type="button" (click)="credentialsState.promptRecover(p.id)"
+      class="rounded-md border border-border px-2.5 py-1 text-xs text-foreground hover:bg-background">
+      Use Key…
+    </button>
+    }
+    <button type="button" (click)="credentialsState.showRecoveryKey(p.id)" [disabled]="!unlocked()"
+      class="rounded-md border border-border px-2.5 py-1 text-xs text-foreground hover:bg-background disabled:pointer-events-none disabled:opacity-40">
+      {{ p.hasRecoveryKey ? 'Replace…' : 'Create…' }}
+    </button>
+  </div>
+</app-settings-row>
 
 <button type="button" (click)="advancedOpen.set(!advancedOpen())"
   class="mt-2 flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">

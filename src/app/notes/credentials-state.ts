@@ -26,6 +26,8 @@ export interface CredentialProfile {
   hideLocations: boolean;
   /** Whether its notes' files get random names, their real name sealed inside them. */
   hideNames: boolean;
+  /** Whether a recovery key was made for it (the key itself is never kept). */
+  hasRecoveryKey: boolean;
 }
 
 /** Encrypted notes naming a profile that isn't in this vault's registry. */
@@ -278,12 +280,12 @@ export class CredentialsState {
 
     const profile = this.profileById(profileId);
     if (!profile) {
-      await this.dialogState.alert(
+      const useKey = await this.dialogState.confirm(
         `These notes name the credential profile "${profileId}", which doesn't exist in this vault. ` +
-          `They were most likely copied in from another vault, and can't be unlocked here.`,
-        { title: 'Unknown profile', tone: 'warning' },
+          `They were most likely copied in from another vault. If its recovery key is at hand, it can bring the profile back.`,
+        { title: 'Unknown profile', tone: 'warning', confirmLabel: 'Use Recovery Key' },
       );
-      return false;
+      return useKey && this.promptRecover(profileId);
     }
 
     // Returning a message from `submit` keeps the dialog open with the typed
@@ -372,6 +374,7 @@ export class CredentialsState {
     }
 
     logInfo(`Created credential profile "${profile.id}"`);
+    void this.offerRecoveryKey(profile.id);
     await this.refresh();
     const step = (command: string) => async () => {
       await invoke(command, { vaultRoot: root, profileId: profile.id });
@@ -383,6 +386,77 @@ export class CredentialsState {
       redo: step('redo_create_credential_profile'),
     });
     return { id: profile.id };
+  }
+
+  /** Make a recovery key and show it once. Resolves whether it was made. */
+  async showRecoveryKey(profileId: string): Promise<boolean> {
+    const root = this.vaultState.rootPath();
+    if (!root) return false;
+    let key: string;
+    try {
+      key = await invoke<string>('create_recovery_key', { vaultRoot: root, profileId });
+    } catch (err) {
+      logError(`Failed to make a recovery key for "${profileId}": ${formatError(err)}`);
+      await this.dialogState.alert(String(err), { title: "Couldn't Make Recovery Key", tone: 'error' });
+      return false;
+    }
+    await this.refresh();
+    await this.dialogState.alert(
+      `${key}
+
+Write this down or print it, and keep it somewhere safe. It is shown only once. ` +
+        `With it, a forgotten password can be reset. Making a new key replaces this one.`,
+      { title: 'Recovery Key', confirmLabel: 'I Saved It' },
+    );
+    return true;
+  }
+
+  /** A new profile's key is shown once the dialog that created it has closed. */
+  private async offerRecoveryKey(profileId: string): Promise<void> {
+    while (this.dialogState.request()) await new Promise((resolve) => setTimeout(resolve, 100));
+    await this.showRecoveryKey(profileId);
+  }
+
+  /**
+   * Ask for a recovery key, then a new password, and unlock the profile with
+   * them. Also brings back a profile missing from the registry. Resolves
+   * whether it ended up unlocked.
+   */
+  async promptRecover(profileId: string): Promise<boolean> {
+    const root = this.vaultState.rootPath();
+    if (!root) return false;
+    const key = await this.dialogState.prompt('Enter the recovery key.', {
+      title: 'Recovery Key',
+      confirmLabel: 'Continue',
+      placeholder: 'XXXX-XXXX-XXXX-…',
+    });
+    if (!key?.trim()) return false;
+
+    const done = await this.dialogState.password(
+      'Choose a new password. Existing notes stay readable.',
+      { title: 'Reset Password', confirmLabel: 'Reset Password', requireConfirm: true },
+      async ({ password }) => {
+        if (password.length < MIN_PASSWORD_LENGTH) return `Use at least ${MIN_PASSWORD_LENGTH} characters.`;
+        try {
+          await invoke('recover_credential_profile', {
+            vaultRoot: root,
+            profileId,
+            recoveryKey: key,
+            newPassword: password,
+          });
+          return null;
+        } catch (err) {
+          return String(err);
+        }
+      },
+    );
+    if (!done) return false;
+
+    logInfo(`Recovered credential profile "${profileId}"`);
+    await this.refresh();
+    for (const path of this.notePathsFor(profileId)) this.notesState.reload(path);
+    await this.vaultState.refresh();
+    return true;
   }
 
   /** Rename a profile. Works whether or not it's unlocked — renaming never touches key material. */

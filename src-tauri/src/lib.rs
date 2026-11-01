@@ -80,6 +80,8 @@ pub fn run() {
             credentials::rename_credential_profile,
             credentials::change_credential_profile_password,
             credentials::delete_credential_profile,
+            credentials::create_recovery_key,
+            credentials::recover_credential_profile,
             credentials::undo_create_credential_profile,
             credentials::redo_create_credential_profile,
             hidden::set_profile_hiding,
