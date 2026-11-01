@@ -81,16 +81,13 @@
   <app-menu-surface #panel class="absolute right-0 top-full z-50 mt-1 w-60">
     <app-menu-item label="New Encrypted Note" [disabled]="!hasVault()" [active]="hoveredItem() === 'newEncrypted'"
       (hovered)="hoveredItem.set('newEncrypted')" (selected)="onNewEncryptedNote()">
-      <svg menuItemIcon lucideLockKeyhole [size]="14"></svg>
     </app-menu-item>
     <app-menu-separator />
     <app-menu-item class="mobile:hidden" label="Reveal Vault in File Explorer" [disabled]="!hasVault()"
       [active]="hoveredItem() === 'revealVault'" (hovered)="hoveredItem.set('revealVault')" (selected)="revealVault()">
-      <svg menuItemIcon lucideFolderOpen [size]="14"></svg>
     </app-menu-item>
     <app-menu-item label="Lock All Profiles" [disabled]="credentialsState.profiles().length === 0"
       [active]="hoveredItem() === 'lockAll'" (hovered)="hoveredItem.set('lockAll')" (selected)="lockAllProfiles()">
-      <svg menuItemIcon lucideLockKeyhole [size]="14"></svg>
     </app-menu-item>
     <app-menu-separator />
     <app-menu-item label="Vault Settings…" [active]="hoveredItem() === 'vaultSettings'"

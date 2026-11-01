@@ -9,19 +9,6 @@
         <button type="button" (click)="state.selectCategory(cat.id)"
           class="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs mobile:w-auto mobile:shrink-0 mobile:py-2 mobile:text-sm"
           [class]="state.activeCategory() === cat.id ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-background hover:text-foreground'">
-          <span class="flex size-3.5 shrink-0 items-center justify-center">
-            @switch (cat.id) {
-            @case ('general') { <svg lucideSettings2 [size]="14"></svg> }
-            @case ('appearance') { <svg lucidePalette [size]="14"></svg> }
-            @case ('editor') { <svg lucideType [size]="14"></svg> }
-            @case ('sidebar') { <svg lucidePanelLeft [size]="14"></svg> }
-            @case ('files') { <svg lucideFolderOpen [size]="14"></svg> }
-            @case ('encryption') { <svg lucideShieldCheck [size]="14"></svg> }
-            @case ('shortcuts') { <svg lucideKeyboard [size]="14"></svg> }
-            @case ('advanced') { <svg lucideWrench [size]="14"></svg> }
-            @case ('about') { <svg lucideInfo [size]="14"></svg> }
-            }
-          </span>
           <span class="truncate">{{ cat.label }}</span>
         </button>
         }
@@ -53,7 +40,6 @@
         @switch (state.category()) {
 
         @case ('general') {
-        <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">General</h3>
         <app-settings-row label="Reopen Last Vault on Launch" description="Automatically open the most recently used vault when Mantle starts.">
           <app-toggle [checked]="reopenLastVault()" (changed)="reopenLastVault.set($event)" />
         </app-settings-row>
@@ -81,7 +67,6 @@
         }
 
         @case ('appearance') {
-        <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Appearance</h3>
         <app-settings-row label="Theme" description="Follows your OS setting by default.">
           <div class="flex overflow-hidden rounded-md border border-border">
             @for (mode of ['system', 'light', 'dark']; track mode) {
@@ -137,7 +122,6 @@
         }
 
         @case ('editor') {
-        <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Editor</h3>
         <app-settings-row label="Autosave Delay" description="How long to wait after you stop typing before saving.">
           <select [value]="autosaveDelay()" (change)="autosaveDelay.set($any($event.target).value)"
             class="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-ring">
@@ -328,7 +312,6 @@
         }
 
         @case ('shortcuts') {
-        <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Keyboard Shortcuts</h3>
         <div class="relative mb-2">
           <svg lucideSearch [size]="13" class="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground"></svg>
           <input type="text" placeholder="Search shortcuts…" [value]="shortcutSearch()"
@@ -376,7 +359,6 @@
         }
 
         @case ('about') {
-        <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">About Mantle</h3>
         <app-settings-row label="Version" description="0.1.0">
           <button type="button"
             class="rounded-md border border-border px-2.5 py-1 text-xs text-foreground hover:bg-background">

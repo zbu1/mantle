@@ -25,9 +25,9 @@
   <button type="button" (click)="toggleLock()"
     class="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs text-foreground hover:bg-background">
     @if (unlocked()) {
-    <svg lucideLock [size]="12"></svg> Lock
+    Lock
     } @else {
-    <svg lucideLockOpen [size]="12"></svg> Unlock
+    Unlock
     }
   </button>
 </app-settings-row>

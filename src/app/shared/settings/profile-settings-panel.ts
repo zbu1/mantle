@@ -2,8 +2,6 @@ import { Component, ElementRef, computed, effect, inject, input, signal, untrack
 import {
   LucideChevronDown,
   LucideEllipsis,
-  LucideLock,
-  LucideLockOpen,
   LucidePencil,
   LucideTrash2,
 } from '@lucide/angular';
@@ -36,8 +34,6 @@ import { VaultNoteNode } from '../../notes/vault-tree.model';
     HelpPopover,
     LucideChevronDown,
     LucideEllipsis,
-    LucideLock,
-    LucideLockOpen,
     LucidePencil,
     LucideTrash2,
   ],

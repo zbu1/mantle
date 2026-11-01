@@ -3,19 +3,11 @@ import { Component, computed, effect, inject, signal } from '@angular/core';
 import { appLogDir, join } from '@tauri-apps/api/path';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import {
-  LucideFolderOpen,
-  LucideInfo,
-  LucideKeyboard,
   LucideLock,
   LucideLockOpen,
-  LucidePalette,
-  LucidePanelLeft,
   LucideSearch,
   LucideSettings,
   LucideSettings2,
-  LucideShieldCheck,
-  LucideType,
-  LucideWrench,
 } from '@lucide/angular';
 import { DialogState } from '../dialog/dialog-state';
 import { Toggle } from '../toggle/toggle';
@@ -102,7 +94,7 @@ const SHORTCUTS: ShortcutEntry[] = [
  */
 @Component({
   selector: 'app-settings-modal',
-  imports: [Window, ProfileSettingsPanel, SettingsRow, Toggle, LucideLock, LucideLockOpen, LucideSettings, LucideSettings2, LucidePalette, LucideType, LucidePanelLeft, LucideFolderOpen, LucideShieldCheck, LucideKeyboard, LucideWrench, LucideInfo, LucideSearch],
+  imports: [Window, ProfileSettingsPanel, SettingsRow, Toggle, LucideLock, LucideLockOpen, LucideSettings, LucideSettings2, LucideSearch],
   templateUrl: './settings-modal.html',
 })
 export class SettingsModal {
