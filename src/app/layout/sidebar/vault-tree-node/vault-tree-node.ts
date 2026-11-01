@@ -1,3 +1,5 @@
+import { isMobile } from '../../../core/tauri-env';
+import { DialogState } from '../../../shared/dialog/dialog-state';
 import { Component, DestroyRef, ElementRef, computed, effect, inject, input, output, signal, untracked, viewChild } from '@angular/core';
 import { LucideChevronRight, LucideLock, LucideLockOpen } from '@lucide/angular';
 import {
@@ -92,6 +94,7 @@ export class VaultTreeNode {
   protected readonly renameState = inject(VaultRenameState);
   protected readonly credentialsState = inject(CredentialsState);
   private readonly tabsState = inject(TabsState);
+  private readonly dialogState = inject(DialogState);
   private readonly sidebarState = inject(SidebarState);
   private readonly vaultMeta = inject(VaultMetaState);
 
@@ -110,7 +113,9 @@ export class VaultTreeNode {
     return this.tabsState.tabs().find((tab) => tab.id === activeId)?.noteId ?? null;
   });
 
-  protected readonly renaming = computed(() => this.renameState.renamingPath() === this.node().relPath);
+  private readonly renameRequested = computed(() => this.renameState.renamingPath() === this.node().relPath);
+  /** Inline rename on desktop; Android asks in a bottom-sheet prompt instead. */
+  protected readonly renaming = computed(() => this.renameRequested() && !isMobile);
 
   private readonly renameInputRef = viewChild<ElementRef<HTMLInputElement>>('renameInput');
 
@@ -119,6 +124,10 @@ export class VaultTreeNode {
   private readonly folderRow = viewChild<ElementRef<HTMLElement>>('folderRow');
 
   constructor() {
+    effect(() => {
+      if (isMobile && this.renameRequested()) untracked(() => void this.promptRename());
+    });
+
     let flashTimer: ReturnType<typeof setTimeout> | undefined;
     inject(DestroyRef).onDestroy(() => clearTimeout(flashTimer));
 
@@ -301,6 +310,19 @@ export class VaultTreeNode {
   private isInvalidFolderDropTarget(draggedRelPath: string, target: VaultFolderNode): boolean {
     if (target.relPath === draggedRelPath || target.relPath.startsWith(`${draggedRelPath}/`)) return true;
     return dirOf(draggedRelPath) === target.relPath;
+  }
+
+  private async promptRename(): Promise<void> {
+    const item = this.asNote() ?? this.asFolder();
+    if (!item) return;
+    const value = await this.dialogState.prompt('', { title: 'Rename', initialValue: item.name, confirmLabel: 'OK' });
+    if (this.renameState.renamingPath() !== item.relPath) return;
+    this.renameState.renamingPath.set(null);
+    const newName = value?.trim();
+    if (!newName || newName === item.name) return;
+    const payload = { relPath: item.relPath, newName };
+    if (this.asNote()) this.noteRenamed.emit(payload);
+    else this.folderRenamed.emit(payload);
   }
 
   protected onRenameKeydown(event: KeyboardEvent): void {
