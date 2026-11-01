@@ -7,6 +7,9 @@ export interface FolderPickRequest {
   confirmLabel: string;
   /** Set when picking where something new goes: the name field's starting value. */
   name?: string;
+  /** Limits browsing to this folder and below, which then reads as `rootLabel`. */
+  root?: string;
+  rootLabel?: string;
   resolve: (path: string | null) => void;
 }
 
@@ -33,6 +36,12 @@ export class FolderPickerState {
   pickNewPath(title: string, defaultPath: string): Promise<string | null> {
     if (isMobile) return this.ask({ title, confirmLabel: 'Save Here', name: defaultPath.split(/[/\\]/).pop() ?? '' });
     return save({ title, defaultPath });
+  }
+
+  /** A folder inside `root` (Android only), as a path relative to it; '' is `root` itself. */
+  async pickFolderIn(title: string, root: string, rootLabel: string): Promise<string | null> {
+    const picked = await this.ask({ title, confirmLabel: 'Move Here', root, rootLabel });
+    return picked === null ? null : picked.slice(root.length).replace(/^\//, '');
   }
 
   finish(path: string | null): void {

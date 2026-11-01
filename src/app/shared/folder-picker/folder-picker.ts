@@ -128,7 +128,7 @@ export class FolderPicker {
     const root = this.root();
     const parts = this.dir().slice(root.length).split('/').filter(Boolean);
     return [
-      { name: 'Phone', path: root },
+      { name: this.state.request()?.rootLabel ?? 'Phone', path: root },
       ...parts.map((name, i) => ({ name, path: `${root}/${parts.slice(0, i + 1).join('/')}` })),
     ];
   });
@@ -149,10 +149,10 @@ export class FolderPicker {
       const request = this.state.request();
       if (!request) return;
       untracked(() => {
-        const root = androidBridge()?.storageRoot() ?? this.root();
+        const root = request.root ?? androidBridge()?.storageRoot() ?? this.root();
         this.root.set(root);
         this.name.set(request.name ?? '');
-        void this.go(this.state.lastDir() ?? `${root}/Documents`, root);
+        void this.go(request.root ?? this.state.lastDir() ?? `${root}/Documents`, root);
       });
     });
   }
@@ -164,7 +164,7 @@ export class FolderPicker {
       this.folders.set(await invoke<FolderEntry[]>('list_folders', { path }));
       this.dir.set(path);
       this.error.set(null);
-      this.state.lastDir.set(path);
+      if (!this.state.request()?.root) this.state.lastDir.set(path);
     } catch (err) {
       if (fallback && fallback !== path) return this.go(fallback);
       this.dir.set(path);

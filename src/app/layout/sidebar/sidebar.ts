@@ -16,6 +16,7 @@ import { TagGroup } from '../../notes/tags';
 import { VaultActions } from '../../notes/vault-actions';
 import { OutlineState } from '../../notes/editor/outline-state';
 import { OutlineHeading } from '../../notes/editor/prosemirror/outline';
+import { FolderPickerState } from '../../shared/folder-picker/folder-picker-state';
 import { ToastState } from '../../shared/toast/toast-state';
 import { canUndoDelete } from '../../notes/vault-history-state';
 import { isMobile } from '../../core/tauri-env';
@@ -24,7 +25,7 @@ import { TagActions } from '../../notes/tag-actions';
 import { TagsState } from '../../notes/tags-state';
 import { COLLAPSE_THRESHOLD, SIDEBAR_SECTIONS, SidebarState } from './sidebar-state';
 import { TabsState } from '../../notes/tabs-state';
-import { VaultState } from '../../notes/vault-state';
+import { VaultState, vaultNameFromPath } from '../../notes/vault-state';
 import { FavoritesState } from '../../notes/favorites-state';
 import { ItemStyleState } from '../../notes/item-style-state';
 import { ItemStylePickerState } from '../../shared/item-style/item-style-picker-state';
@@ -85,6 +86,7 @@ export class Sidebar {
   protected readonly shown = computed(() => isMobile || !this.state.collapsed());
   protected readonly vaultState = inject(VaultState);
   private readonly tabsState = inject(TabsState);
+  private readonly folderPicker = inject(FolderPickerState);
   private readonly toast = inject(ToastState);
   private readonly contextMenuState = inject(ContextMenuState);
   private readonly clipboardState = inject(VaultClipboardState);
@@ -405,6 +407,7 @@ export class Sidebar {
           ]),
       { kind: 'separator' },
       { kind: 'item', label: 'Rename', icon: 'rename', action: () => this.renameState.renamingPath.set(note.relPath) },
+      ...this.moveToItems([note.relPath]),
       this.favoriteMenuItem(note.relPath),
       ...this.styleMenuItems([note.relPath]),
       { kind: 'separator' },
@@ -448,6 +451,7 @@ export class Sidebar {
       { kind: 'item', label: 'Cut', icon: 'cut', shortcut: 'Ctrl+X', action: () => this.runTreeCommand('cut') },
       { kind: 'separator' },
     ];
+    items.push(...this.moveToItems(selected));
     if (selected.some((path) => path.includes('/'))) {
       items.push({
         kind: 'item',
@@ -532,6 +536,7 @@ export class Sidebar {
       },
       { kind: 'separator' },
       { kind: 'item', label: 'Rename', icon: 'rename', action: () => this.renameState.renamingPath.set(folder.relPath) },
+      ...this.moveToItems([folder.relPath]),
       ...this.styleMenuItems([folder.relPath]),
       this.folderSortMenu(folder.relPath),
       { kind: 'separator' },
@@ -756,6 +761,23 @@ export class Sidebar {
     } finally {
       this.selectionState.clear();
     }
+  }
+
+  /** Android's stand-in for dragging: pick the destination folder in the vault. */
+  private moveToItems(relPaths: string[]): ContextMenuItem[] {
+    const root = this.vaultState.rootPath();
+    if (!isMobile || !root) return [];
+    return [
+      {
+        kind: 'item',
+        label: 'Move to…',
+        icon: 'move-to-root',
+        action: () =>
+          void this.folderPicker.pickFolderIn('Move to…', root, vaultNameFromPath(root)).then((dest) =>
+            dest === null ? undefined : this.onNotesDropped({ relPaths, destRelDir: dest }),
+          ),
+      },
+    ];
   }
 
   protected async onFolderDropped(payload: { relPath: string; destRelDir: string }): Promise<void> {
