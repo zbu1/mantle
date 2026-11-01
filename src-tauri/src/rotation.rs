@@ -62,6 +62,9 @@ fn rotate_inner(vault_root: &str, profile_id: &str, password: &str, keys: &Sessi
     // Same check as unlocking, so a typo can't become the profile's password.
     unlock_profile_inner(vault_root, profile_id, password, keys)?;
 
+    // No save may land between the sweep and the switch: it would seal a note
+    // under the key that is about to be retired.
+    let _reseal = crate::vault::reseal_guard();
     let pending = state_file(vault_root, PENDING_DIR, profile_id)?;
     let new = resume_or_start(&pending, &old)?;
     sweep(vault_root, profile_id, &old, &new, keys)?;

@@ -240,6 +240,7 @@ pub(crate) fn seal_at(
     current: Option<(&str, &str)>,
 ) -> Result<String, String> {
     check_components(virtual_rel)?;
+    let _reseal = crate::vault::reseal_guard();
     let hiding = profile_hiding(vault_root, profile_id)?;
     let (mut frontmatter, body) =
         mntl_core::decode_note(document).map_err(|e| format!("Not a valid note: {e}"))?;
@@ -472,6 +473,7 @@ pub(crate) fn set_profile_hiding_inner(
     let mk = keys
         .get(vault_root, profile_id)?
         .ok_or_else(|| format!("Unlock \"{profile_id}\" before changing what it hides"))?;
+    let registry_lock = crate::credentials::registry_guard();
     let mut registry = load_registry(vault_root)?;
     let profile = registry
         .find_mut(profile_id)
@@ -479,6 +481,7 @@ pub(crate) fn set_profile_hiding_inner(
     profile.hide_locations = hiding.locations;
     profile.hide_names = hiding.names;
     save_registry(vault_root, &registry)?;
+    drop(registry_lock);
 
     let mut report = HidingReport::default();
     for (id, disk) in note_paths(vault_root, keys)? {

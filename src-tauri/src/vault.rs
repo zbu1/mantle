@@ -70,6 +70,22 @@ pub(crate) fn is_note_file(filename: &str) -> bool {
     classify_note_file(filename).is_some()
 }
 
+/// Whether `name` is fit for a new note or folder: no path separators, no
+/// characters or device names that Windows (or a sync service) refuses, and no
+/// leading dot, which the tree would hide. Existing names aren't held to this.
+pub(crate) fn is_valid_name(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or("").trim_end().to_ascii_uppercase();
+    let device = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || (stem.len() == 4 && (stem.starts_with("COM") || stem.starts_with("LPT")) && stem.ends_with(|c: char| ('1'..='9').contains(&c)));
+    !name.is_empty()
+        && name.len() <= 200
+        && !name.starts_with('.')
+        && !name.ends_with([' ', '.'])
+        && !name.contains(['/', '\\', ':', '*', '?', '"', '<', '>', '|'])
+        && !name.chars().any(char::is_control)
+        && !device
+}
+
 /// Prefix of the error returned when a note's credential profile is locked,
 /// followed by the profile's id (e.g. `mantle:locked:my-diary`).
 ///
@@ -865,7 +881,7 @@ pub(crate) fn write_note_inner(
         // changed it since, and the editor never shows it. Only the tags are
         // Mantle's to change, and only when they actually differ, so saving
         // an untouched file never reformats its `tags:` lines.
-        let existing = fs::read_to_string(&path).unwrap_or_default();
+        let existing = read_existing(&path)?;
         let (frontmatter, _) = mntl_core::split_markdown_frontmatter(&existing);
         let mut updated = format!("{frontmatter}{content}");
         if mntl_core::markdown_tags(&existing) != tags {
@@ -884,32 +900,44 @@ pub(crate) fn write_note_inner(
                 }
             }
         }
-        crate::watcher::suppress(&path);
-        fs::write(&path, updated).map_err(|e| format!("Failed to write note: {e}"))?;
+        write_atomic(&path, updated.as_bytes())?;
         crate::history::record_quietly(vault_root, rel_path, content, None);
         return Ok(relinked);
     }
 
     let properties = match &properties {
         Some(properties) => properties_mapping(properties),
-        None => fs::read_to_string(&path)
-            .ok()
-            .and_then(|raw| mntl_core::extract_unencrypted_header(&raw).ok())
+        None => mntl_core::extract_unencrypted_header(&read_existing(&path)?)
             .map(|header| header.properties)
             .unwrap_or_default(),
     };
     let frontmatter = mntl_core::NoteFrontmatter { tags, properties, ..Default::default() };
     let encoded = mntl_core::encode_note(&frontmatter, content).map_err(|e| e.to_string())?;
-    crate::watcher::suppress(&path);
-    fs::write(&path, encoded).map_err(|e| format!("Failed to write note: {e}"))?;
+    write_atomic(&path, encoded.as_bytes())?;
     crate::history::record_quietly(vault_root, rel_path, content, None);
     Ok(relinked)
 }
 
-/// Serializes read-modify-write cycles on encrypted notes, so a save and a
-/// favorite toggle on the same note can't each overwrite the other's change.
+/// The note at `path` as it is on disk now, or empty if it's not there yet.
+/// Any other failure is an error: treating it as empty would write the note
+/// back without the frontmatter (and properties) it still has.
+fn read_existing(path: &Path) -> Result<String, String> {
+    match fs::read_to_string(path) {
+        Ok(text) => Ok(text),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(e) => Err(format!("Failed to read note: {e}")),
+    }
+}
+
+/// Serializes every rewrite of an encrypted note (a save, a favorite toggle, a
+/// vault-wide tag edit, resealing it elsewhere, a key rotation), so none
+/// overwrites another's change or leaves a note under a retired key.
 // ponytail: one vault-wide lock; per-note locks if saves ever contend.
 static RESEAL_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+pub(crate) fn reseal_guard() -> std::sync::MutexGuard<'static, ()> {
+    RESEAL_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 /// Decrypt the encrypted note at `path`, let `edit` change its frontmatter
 /// and body, and seal the result again under the profile the file already
@@ -924,7 +952,7 @@ fn reseal_note(
     keys: &SessionKeys,
     edit: impl FnOnce(&mut mntl_core::NoteFrontmatter, &mut String),
 ) -> Result<(), String> {
-    let _guard = RESEAL_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _guard = reseal_guard();
     let blob = fs::read(path).map_err(|e| format!("Failed to read note: {e}"))?;
     let (profile_id, mk) = master_key_for(vault_root, &blob, keys)?;
     let hidden = sealed_hidden(&blob);
@@ -1072,17 +1100,22 @@ pub fn create_note(
     keys: State<SessionKeys>,
 ) -> Result<CreatedNote, String> {
     logged("create_note", || {
-        if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains(':') {
+        if !is_valid_name(&name) {
             return Err("Invalid note name".to_string());
         }
         hidden::ensure_rel_dir(&vault_root, &rel_dir, &keys)?;
         let rel_path = join_rel_note_path(&rel_dir, &name, EXT_PLAIN);
         let path = resolve_rel_path(&vault_root, &rel_path)?;
-        if path.exists() {
-            return Err(format!("A note named \"{name}\" already exists in this folder"));
+        let exists = || format!("A note named \"{name}\" already exists in this folder");
+        if hidden::taken(&vault_root, &rel_path, &keys)? {
+            return Err(exists());
         }
         let encoded = mntl_core::encode_unencrypted_note("").map_err(|e| e.to_string())?;
-        fs::write(&path, encoded).map_err(|e| format!("Failed to create note: {e}"))?;
+        // `create_new` so a note made in the meantime is never overwritten.
+        let mut file = fs::OpenOptions::new().write(true).create_new(true).open(&path).map_err(|e| {
+            if e.kind() == std::io::ErrorKind::AlreadyExists { exists() } else { format!("Failed to create note: {e}") }
+        })?;
+        std::io::Write::write_all(&mut file, encoded.as_bytes()).map_err(|e| format!("Failed to create note: {e}"))?;
         Ok(CreatedNote {
             name,
             rel_path,
@@ -1106,7 +1139,7 @@ pub(crate) fn rename_note_inner(
     new_name: &str,
     keys: &SessionKeys,
 ) -> Result<CreatedNote, String> {
-    if new_name.is_empty() || new_name.contains('/') || new_name.contains('\\') || new_name.contains(':') {
+    if !is_valid_name(new_name) {
         return Err("Invalid note name".to_string());
     }
     // Preserve the note's own extension: renaming an encrypted note must
@@ -1129,7 +1162,10 @@ pub(crate) fn rename_note_inner(
     // `fs::rename` that never inspects content, so it needs no key.
     let source = resolve_rel_path(vault_root, rel_path)?;
     let dest = resolve_rel_path(vault_root, &dest_rel)?;
-    if dest != source && (dest.exists() || keys.hidden_note(vault_root, &dest_rel)?.is_some()) {
+    // On a case-insensitive disk "a" and "A" are one file: renaming to the
+    // other's case isn't a collision.
+    let same_file = dest == source || dest.canonicalize().ok().is_some_and(|d| source.canonicalize().ok() == Some(d));
+    if !same_file && (dest.exists() || keys.hidden_note(vault_root, &dest_rel)?.is_some()) {
         return Err(exists());
     }
     fs::rename(&source, &dest).map_err(|e| format!("Failed to rename note: {e}"))?;
@@ -1155,6 +1191,12 @@ pub fn delete_note(vault_root: String, rel_path: String, keys: State<SessionKeys
     })
 }
 
+/// Extensions the OS would run rather than show.
+const EXECUTABLE_EXTS: [&str; 30] = [
+    "exe", "com", "bat", "cmd", "msi", "msp", "scr", "pif", "lnk", "url", "ps1", "psm1", "vbs", "vbe", "js", "jse",
+    "wsf", "wsh", "hta", "cpl", "msc", "reg", "jar", "dll", "sh", "command", "app", "desktop", "appimage", "apk",
+];
+
 /// Open a file in the vault with the OS's default app for it. Never a sealed
 /// `.enc` file: that is ciphertext to any other app, and decrypting it to
 /// disk for one would defeat the point.
@@ -1164,6 +1206,11 @@ pub fn open_vault_file(app: tauri::AppHandle, vault_root: String, rel_path: Stri
     logged("open_vault_file", || {
         if rel_path.ends_with(".enc") {
             return Err("An encrypted file can only be viewed in Mantle".to_string());
+        }
+        // A vault can arrive from elsewhere (sync, a download); never launch a program from it.
+        let ext = rel_path.rsplit_once('.').map_or(String::new(), |(_, ext)| ext.to_ascii_lowercase());
+        if EXECUTABLE_EXTS.contains(&ext.as_str()) {
+            return Err("Mantle won't open a program or script".to_string());
         }
         let path = resolve_rel_path(&vault_root, &rel_path)?;
         app.opener()
@@ -1423,7 +1470,7 @@ pub(crate) fn create_folder_inner(
     name: &str,
     keys: &SessionKeys,
 ) -> Result<CreatedFolder, String> {
-    if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains(':') {
+    if !is_valid_name(name) {
         return Err("Invalid folder name".to_string());
     }
     let dest_dir_abs = hidden::ensure_rel_dir(vault_root, rel_dir, keys)?;
@@ -1453,7 +1500,7 @@ pub(crate) fn rename_folder_inner(
     new_name: &str,
     keys: &SessionKeys,
 ) -> Result<CreatedFolder, String> {
-    if new_name.is_empty() || new_name.contains('/') || new_name.contains('\\') || new_name.contains(':') {
+    if !is_valid_name(new_name) {
         return Err("Invalid folder name".to_string());
     }
     hidden::check_components(rel_path)?;
@@ -2261,6 +2308,30 @@ tags: [x]
             .collect();
         assert!(leftovers.is_empty(), "left temp files: {leftovers:?}");
 
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn is_valid_name_rejects_what_windows_or_the_tree_cannot_hold() {
+        for ok in ["Plan", "v1.2 plan", "日本語", "a-b_c"] {
+            assert!(is_valid_name(ok), "{ok:?}");
+        }
+        for bad in ["", ".hidden", "trailing.", "trailing ", "a/b", "a\\b", "a:b", "what?", "a|b", "CON", "nul.txt", "com1", "LPT9", "tab\there"] {
+            assert!(!is_valid_name(bad), "{bad:?}");
+        }
+        assert!(is_valid_name("console") && is_valid_name("com10"));
+        assert!(!is_valid_name(&"x".repeat(201)));
+    }
+
+    #[test]
+    fn rename_note_allows_a_change_of_case_only() {
+        let root = temp_dir("rename-case");
+        fs::write(root.join("todo.mntl"), "---\nv: 2\n---\n").unwrap();
+        let root_str = root.to_string_lossy().into_owned();
+        let renamed = rename_note_inner(&root_str, "todo.mntl", "Todo", &SessionKeys::default()).unwrap();
+        assert_eq!(renamed.rel_path, "Todo.mntl");
+        let names: Vec<_> = fs::read_dir(&root).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+        assert_eq!(names, ["Todo.mntl"]);
         let _ = fs::remove_dir_all(&root);
     }
 }

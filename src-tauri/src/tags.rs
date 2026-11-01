@@ -168,6 +168,7 @@ pub(crate) fn edit_note(
     edit: impl FnOnce(&mut Vec<String>, &mut String) -> bool,
 ) -> Result<bool, NoteEditError> {
     if rel_path.ends_with(EXT_ENCRYPTED) {
+        let _reseal = crate::vault::reseal_guard();
         let blob = fs::read(path).map_err(|e| e.to_string())?;
         let (profile_id, mk) = match master_key_for(vault_root, &blob, keys) {
             Ok(found) => found,
@@ -204,7 +205,7 @@ pub(crate) fn edit_note(
         if tags != old_tags {
             updated = mntl_core::set_markdown_tags(&updated, &tags);
         }
-        fs::write(path, updated).map_err(|e| e.to_string())?;
+        write_atomic(path, updated.as_bytes())?;
         return Ok(true);
     }
 
@@ -217,7 +218,7 @@ pub(crate) fn edit_note(
         return Ok(false);
     }
     let encoded = mntl_core::encode_note(&frontmatter, &body).map_err(|e| e.to_string())?;
-    fs::write(path, encoded).map_err(|e| e.to_string())?;
+    write_atomic(path, encoded.as_bytes())?;
     Ok(true)
 }
 

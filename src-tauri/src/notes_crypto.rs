@@ -39,7 +39,7 @@ use zeroize::Zeroizing;
 /// indexes, editor swap files, and File History or Time Machine backups may
 /// also retain copies. What it does reliably remove is the trivially
 /// recoverable copy.
-fn shred(path: &Path) -> Result<(), String> {
+pub(crate) fn shred(path: &Path) -> Result<(), String> {
     let len = fs::metadata(path)
         .map_err(|e| format!("Failed to inspect the original note: {e}"))?
         .len();
@@ -508,7 +508,7 @@ fn create_encrypted_note_inner(
     keys: &SessionKeys,
 ) -> Result<CreatedNote, String> {
     {
-        if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains(':') {
+        if !crate::vault::is_valid_name(name) {
             return Err("Invalid note name".to_string());
         }
 

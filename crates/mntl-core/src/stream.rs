@@ -125,7 +125,7 @@ impl SealedStream {
             return Err(MntlError::InvalidMagicBytes);
         }
         let header_len = u32::from_le_bytes(head[4..8].try_into().map_err(|_| MntlError::InvalidHeaderSize)?) as usize;
-        let header_end = HEADER_OFFSET + header_len;
+        let header_end = HEADER_OFFSET.checked_add(header_len).ok_or(MntlError::InvalidHeaderSize)?;
         let aad = head.get(HEADER_OFFSET..header_end).ok_or(MntlError::InvalidHeaderSize)?.to_vec();
         let header: EncryptedHeader = serde_json::from_slice(&aad)?;
         let chunk = match (header.v, header.chunk) {
@@ -172,7 +172,7 @@ impl SealedStream {
     /// The chunks holding plaintext bytes `start..end` (`end` clamped to the
     /// plaintext's length).
     pub fn chunks_for(&self, start: u64, end: u64) -> ChunkSpan {
-        let end = end.min(self.len).max(start + 1);
+        let end = end.min(self.len).max(start.saturating_add(1));
         let first = (start / self.chunk).min(self.chunks - 1);
         let last = ((end - 1) / self.chunk).min(self.chunks - 1);
         let offset = self.data_offset + first * (self.chunk + TAG_LEN);

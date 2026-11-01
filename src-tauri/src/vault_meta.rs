@@ -176,9 +176,7 @@ pub(crate) fn write_vault_meta(vault_root: &str, state: &VaultMeta) -> Result<()
     fs::create_dir_all(dir).map_err(|e| format!("Failed to create {STATE_DIR}: {e}"))?;
 
     let json = serde_json::to_string_pretty(state).map_err(|e| e.to_string())?;
-    let tmp_path = dir.join(format!("{STATE_FILE}.tmp"));
-    fs::write(&tmp_path, json).map_err(|e| format!("Failed to write vault state: {e}"))?;
-    fs::rename(&tmp_path, &path).map_err(|e| format!("Failed to save vault state: {e}"))
+    crate::vault::write_atomic(&path, json.as_bytes())
 }
 
 #[cfg(test)]

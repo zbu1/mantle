@@ -690,3 +690,20 @@ fn test_rotate_envelope_reseals_every_envelope_kind_and_is_resumable() {
     let stranger = mntl_core::MasterKey::generate().unwrap();
     assert!(mntl_core::rotate_envelope(&old, &new, &mntl_core::encrypt_note(&stranger, "p", b"x").unwrap()).is_err());
 }
+
+#[test]
+fn test_derive_kek_rejects_absurd_cost_parameters() {
+    use mntl_core::{derive_kek_with_params, KdfParams};
+    let huge = KdfParams { m_cost: u32::MAX, t_cost: 1, p_cost: 1 };
+    assert!(derive_kek_with_params("pw", b"saltsaltsalt", &huge).is_err());
+    let slow = KdfParams { m_cost: 8, t_cost: 1000, p_cost: 1 };
+    assert!(derive_kek_with_params("pw", b"saltsaltsalt", &slow).is_err());
+}
+
+#[test]
+fn test_oversized_header_length_is_rejected_not_wrapped() {
+    let mut blob = b"MENC".to_vec();
+    blob.extend_from_slice(&u32::MAX.to_le_bytes());
+    blob.extend_from_slice(b"{}");
+    assert!(mntl_core::extract_encrypted_header(&blob).is_err());
+}

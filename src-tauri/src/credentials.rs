@@ -19,6 +19,7 @@
 //!    even with the correct password. Hence the `.bak` written on every save.
 
 use crate::logging::logged;
+use crate::vault::write_atomic;
 use crate::vault_meta::STATE_DIR;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
@@ -31,7 +32,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 use tauri::State;
 use zeroize::Zeroizing;
 
@@ -143,11 +144,18 @@ fn read_registry_at(path: &Path) -> Result<ProfileRegistry, String> {
     serde_json::from_str(&raw).map_err(|e| format!("Failed to parse profiles: {e}"))
 }
 
+/// Held across every load-modify-save of the registry, so two commands can't
+/// each save over the other's change.
+static REGISTRY_LOCK: Mutex<()> = Mutex::new(());
+
+pub(crate) fn registry_guard() -> MutexGuard<'static, ()> {
+    REGISTRY_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 /// Write the profile registry atomically, keeping a `.bak` of what was there
 /// before.
 ///
-/// The temp-file-and-rename is the same pattern as `vault_meta::save_vault_meta`.
-/// The extra backup is not: losing `state.json` costs a user their collapsed
+/// The backup is the extra: losing `state.json` costs a user their collapsed
 /// folders, whereas losing `profiles.json` costs them every encrypted note in
 /// the vault.
 pub(crate) fn save_registry(vault_root: &str, registry: &ProfileRegistry) -> Result<(), String> {
@@ -161,9 +169,7 @@ pub(crate) fn save_registry(vault_root: &str, registry: &ProfileRegistry) -> Res
     }
 
     let json = serde_json::to_string_pretty(registry).map_err(|e| e.to_string())?;
-    let tmp = dir.join(format!("{PROFILES_FILE}.tmp"));
-    fs::write(&tmp, json).map_err(|e| format!("Failed to write profiles: {e}"))?;
-    fs::rename(&tmp, &path).map_err(|e| format!("Failed to save profiles: {e}"))
+    write_atomic(&path, json.as_bytes())
 }
 
 // --- Session keys --------------------------------------------------------
@@ -179,6 +185,9 @@ pub struct SessionKeys(Mutex<SessionKeysInner>);
 struct SessionKeysInner {
     /// Which vault these keys belong to. Opening a different vault clears them.
     vault_root: Option<PathBuf>,
+    /// The path as the frontend last spelled it, so a run of calls for the
+    /// same vault (a scan asks per note) canonicalizes once.
+    raw_root: String,
     /// Boxed so that a `HashMap` resize, which relocates values byte-wise,
     /// moves only a pointer and leaves no un-zeroized copy of a key behind.
     keys: HashMap<String, Box<MasterKey>>,
@@ -208,17 +217,19 @@ impl SessionKeys {
         vault_root: &str,
         f: impl FnOnce(&mut SessionKeysInner) -> T,
     ) -> Result<T, String> {
-        let canonical = PathBuf::from(vault_root)
-            .canonicalize()
-            .map_err(|e| format!("Invalid vault root: {e}"))?;
-
         let mut inner = self.0.lock().map_err(|e| e.to_string())?;
-        if inner.vault_root.as_deref() != Some(canonical.as_path()) {
-            inner.keys.clear();
-            inner.removed.clear();
-            inner.hidden.clear();
-            inner.trashed.clear();
-            inner.vault_root = Some(canonical);
+        if inner.vault_root.is_none() || inner.raw_root != vault_root {
+            let canonical = PathBuf::from(vault_root)
+                .canonicalize()
+                .map_err(|e| format!("Invalid vault root: {e}"))?;
+            if inner.vault_root.as_deref() != Some(canonical.as_path()) {
+                inner.keys.clear();
+                inner.removed.clear();
+                inner.hidden.clear();
+                inner.trashed.clear();
+                inner.vault_root = Some(canonical);
+            }
+            inner.raw_root = vault_root.to_string();
         }
         Ok(f(&mut inner))
     }
@@ -449,6 +460,7 @@ pub(crate) fn create_profile_inner(
     let base = slugify(display_name)
         .ok_or("Profile name must contain at least one letter or number")?;
 
+    let _registry = registry_guard();
     let mut registry = load_registry(vault_root)?;
     let id = unique_slug(&registry, &base);
 
@@ -572,6 +584,7 @@ fn rename_profile_inner(
         return Err("Profile name must not be empty".to_string());
     }
 
+    let _registry = registry_guard();
     let mut registry = load_registry(vault_root)?;
     let profile = registry
         .find_mut(profile_id)
@@ -619,6 +632,7 @@ fn change_password_inner(
         .get(vault_root, profile_id)?
         .ok_or_else(|| format!("Unlock \"{profile_id}\" before changing its password"))?;
 
+    let _registry = registry_guard();
     let mut registry = load_registry(vault_root)?;
     let profile = registry
         .find_mut(profile_id)
@@ -647,16 +661,37 @@ fn change_password_inner(
 /// same state as copying `.mntl.enc` files in from another vault).
 #[tauri::command(async)]
 pub fn delete_credential_profile(
+    app: tauri::AppHandle,
     vault_root: String,
     profile_id: String,
     keys: State<SessionKeys>,
 ) -> Result<(), String> {
     logged("delete_credential_profile", || {
-        delete_profile_inner(&vault_root, &profile_id, &keys)
+        delete_profile_inner(&vault_root, &profile_id, &keys)?;
+        crate::biometric::forget(&app, &vault_root, &profile_id);
+        Ok(())
     })
 }
 
+/// Whether any note or attachment is still encrypted under `profile_id`, which
+/// only its registry entry can open.
+pub(crate) fn profile_in_use(vault_root: &str, profile_id: &str, keys: &SessionKeys) -> Result<bool, String> {
+    let in_note = crate::vault::note_paths(vault_root, keys)?.iter().any(|(_, disk)| {
+        disk.ends_with(crate::vault::EXT_ENCRYPTED)
+            && crate::vault::resolve_rel_path(vault_root, disk)
+                .ok()
+                .and_then(|path| crate::vault::read_profile_id(&path))
+                .as_deref()
+                == Some(profile_id)
+    });
+    Ok(in_note || !crate::attachments::profile_attachments(vault_root.to_string(), profile_id.to_string())?.is_empty())
+}
+
 fn delete_profile_inner(vault_root: &str, profile_id: &str, keys: &SessionKeys) -> Result<(), String> {
+    if profile_in_use(vault_root, profile_id, keys)? {
+        return Err("Decrypt everything encrypted under this profile before deleting it".to_string());
+    }
+    let _registry = registry_guard();
     let mut registry = load_registry(vault_root)?;
     let before = registry.profiles.len();
     registry.profiles.retain(|p| p.id != profile_id);
@@ -681,17 +716,10 @@ pub fn undo_create_credential_profile(
     keys: State<SessionKeys>,
 ) -> Result<(), String> {
     logged("undo_create_credential_profile", || {
-        let in_use = crate::vault::note_paths(&vault_root, &keys)?.iter().any(|(_, disk)| {
-            disk.ends_with(crate::vault::EXT_ENCRYPTED)
-                && crate::vault::resolve_rel_path(&vault_root, disk)
-                    .ok()
-                    .and_then(|path| crate::vault::read_profile_id(&path))
-                    .as_deref()
-                    == Some(profile_id.as_str())
-        });
-        if in_use || !crate::attachments::profile_attachments(vault_root.clone(), profile_id.clone())?.is_empty() {
+        if profile_in_use(&vault_root, &profile_id, &keys)? {
             return Err("Something is encrypted under this profile now".to_string());
         }
+        let _registry = registry_guard();
         let mut registry = load_registry(&vault_root)?;
         let profile = registry
             .find(&profile_id)
@@ -718,6 +746,7 @@ pub fn redo_create_credential_profile(
         let profile = keys
             .with_vault(&vault_root, |inner| inner.removed.remove(&profile_id))?
             .ok_or("This profile can't be restored any more")?;
+        let _registry = registry_guard();
         let mut registry = load_registry(&vault_root)?;
         if registry.find(&profile_id).is_some() {
             return Err(format!("A profile \"{profile_id}\" already exists"));
@@ -826,10 +855,7 @@ fn write_recovery_record(
     let path = recovery_path(vault_root, profile_id)?;
     let dir = path.parent().ok_or("Invalid recovery path")?;
     fs::create_dir_all(dir).map_err(|e| format!("Failed to create recovery folder: {e}"))?;
-    let tmp = path.with_extension("json.tmp");
-    fs::write(&tmp, serde_json::to_string_pretty(&record).map_err(|e| e.to_string())?)
-        .map_err(|e| format!("Failed to write recovery record: {e}"))?;
-    fs::rename(&tmp, &path).map_err(|e| format!("Failed to save recovery record: {e}"))?;
+    write_atomic(&path, serde_json::to_string_pretty(&record).map_err(|e| e.to_string())?.as_bytes())?;
 
     Ok(format_recovery_key(&bytes))
 }
@@ -846,6 +872,7 @@ pub(crate) fn install_rotated_key(
     new_key: MasterKey,
     keys: &SessionKeys,
 ) -> Result<String, String> {
+    let _registry = registry_guard();
     let mut registry = load_registry(vault_root)?;
     let profile = registry
         .find_mut(profile_id)
@@ -914,6 +941,7 @@ pub(crate) fn recover_profile_inner(
         .try_fill_bytes(&mut salt)
         .map_err(|e| format!("Failed to generate salt: {e}"))?;
 
+    let _registry = registry_guard();
     let mut registry = load_registry(vault_root)?;
     let kdf = registry.find(profile_id).map_or_else(|| kdf.clone(), |p| p.kdf.clone());
     let kek = derive_kek_with_params(new_password, &salt, &kdf).map_err(|e| e.to_string())?;
@@ -1429,6 +1457,38 @@ mod tests {
         let err = delete_profile_inner(&root_of(&root), "nope", &keys).unwrap_err();
         assert!(err.contains("nope"));
 
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn deleting_a_profile_is_refused_while_a_note_is_encrypted_under_it() {
+        let root = temp_dir("delete-in-use");
+        let root_str = root_of(&root);
+        let keys = SessionKeys::default();
+        create_profile_inner(&root_str, "Diary", "hunter2", &test_kdf(), &keys).unwrap();
+        let mk = keys.get(&root_str, "diary").unwrap().unwrap();
+        fs::write(root.join("n.mntl.enc"), mntl_core::encrypt_note(&mk, "diary", b"x").unwrap()).unwrap();
+
+        assert!(delete_profile_inner(&root_str, "diary", &keys).is_err());
+        assert!(load_registry(&root_str).unwrap().find("diary").is_some());
+
+        fs::remove_file(root.join("n.mntl.enc")).unwrap();
+        delete_profile_inner(&root_str, "diary", &keys).unwrap();
+        assert!(load_registry(&root_str).unwrap().profiles.is_empty());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_registry_asking_for_absurd_kdf_cost_cannot_be_unlocked() {
+        let root = temp_dir("hostile-kdf");
+        let root_str = root_of(&root);
+        let keys = SessionKeys::default();
+        create_profile_inner(&root_str, "Diary", "hunter2", &test_kdf(), &keys).unwrap();
+        let mut registry = load_registry(&root_str).unwrap();
+        registry.find_mut("diary").unwrap().kdf.m_cost = u32::MAX;
+        save_registry(&root_str, &registry).unwrap();
+        keys.lock_all().unwrap();
+        assert!(unlock_profile_inner(&root_str, "diary", "hunter2", &keys).is_err());
         let _ = fs::remove_dir_all(&root);
     }
 }

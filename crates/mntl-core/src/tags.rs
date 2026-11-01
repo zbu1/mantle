@@ -269,6 +269,13 @@ mod tests {
     }
 
     #[test]
+    fn frontmatter_closed_by_the_last_line_still_counts() {
+        let file = "---\ntags: [a]\n---";
+        assert_eq!(markdown_tags(file), tags(&["a"]));
+        assert_eq!(set_markdown_tags(file, &tags(&["b"])), "---\ntags: [b]\n---");
+    }
+
+    #[test]
     fn a_key_merely_starting_with_tags_is_left_alone() {
         let file = "---\ntagsline: keep\n---\n";
         assert_eq!(

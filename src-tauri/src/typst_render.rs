@@ -111,8 +111,15 @@ fn describe(world: &Snippet, diag: &SourceDiagnostic) -> String {
     text
 }
 
+/// Longest snippet rendered. Compiling can't be interrupted, so a note (which
+/// may come from a synced vault) mustn't be able to hand it an enormous one.
+const MAX_CODE_LEN: usize = 100_000;
+
 #[tauri::command]
 pub async fn render_typst(code: String) -> Result<TypstOutput, String> {
+    if code.len() > MAX_CODE_LEN {
+        return Ok(TypstOutput::Error { errors: vec!["This snippet is too long to render".to_string()] });
+    }
     static CACHE: OnceLock<Mutex<HashMap<[u8; 32], TypstOutput>>> = OnceLock::new();
     let cache = CACHE.get_or_init(Default::default);
     let key: [u8; 32] = Sha256::digest(code.as_bytes()).into();

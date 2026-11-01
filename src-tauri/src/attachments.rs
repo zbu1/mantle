@@ -204,6 +204,17 @@ fn find_by_name(dir: &Path, rel_dir: &str, name: &str) -> Option<String> {
     subdirs.into_iter().find_map(|(path, rel)| find_by_name(&path, &rel, name))
 }
 
+/// Whether `name` ends like a file name (`photo.png`), not like a note title
+/// that happens to hold a dot (`v1.2 plan`, `Dr. Smith`): those would each
+/// cost a walk of the whole vault on every save.
+fn has_file_extension(name: &str) -> bool {
+    name.rsplit_once('.').is_some_and(|(_, ext)| {
+        (1..=8).contains(&ext.len())
+            && ext.chars().all(|c| c.is_ascii_alphanumeric())
+            && !ext.chars().all(|c| c.is_ascii_digit())
+    })
+}
+
 /// The vault-relative path of the file a link or embed `src` in the note at
 /// `note_rel` points to, or `None` for a remote URL, a missing file or a note.
 ///
@@ -226,7 +237,7 @@ pub(crate) fn resolve_attachment(vault_root: &str, note_rel: &str, src: &str) ->
         .find(is_attachment)
         .or_else(|| {
             // Without an extension it names a note (`[[Plans]]`), so spare the walk.
-            if src.contains(['/', '\\']) || !src.contains('.') {
+            if src.contains(['/', '\\']) || !has_file_extension(&src) {
                 return None;
             }
             let root = resolve_rel_dir(vault_root, "").ok()?;
@@ -606,6 +617,20 @@ pub(crate) fn unreferenced(
             Err(e) => {
                 if let Some(profile) = e.strip_prefix(LOCKED_ERR_PREFIX) {
                     found.retain(|rel| is_managed(rel) && profiles[rel].as_deref() != Some(profile));
+                } else {
+                    // Unreadable for another reason (corrupt, not valid UTF-8): its links are
+                    // unknown, so go by its raw text if it's plaintext, and keep everything if not.
+                    let raw = (!note.ends_with(EXT_ENCRYPTED))
+                        .then(|| crate::hidden::resolve_note(vault_root, &note, keys).ok())
+                        .flatten()
+                        .and_then(|path| fs::read_to_string(path).ok());
+                    match raw {
+                        Some(raw) => {
+                            let used = referenced(vault_root, &note, &raw, Some(&found));
+                            found.retain(|rel| !used.contains(rel));
+                        }
+                        None => found.clear(),
+                    }
                 }
             }
         }
@@ -817,6 +842,9 @@ fn serve(keys: &SessionKeys, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
             // pdf.js fetches from the app's own origin, which isn't this scheme's.
             .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
             .header(header::ACCEPT_RANGES, "bytes")
+            // An SVG opened as a page (not in an `<img>`) could run script.
+            .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
+            .header(header::CONTENT_SECURITY_POLICY, "sandbox; default-src 'none'; style-src 'unsafe-inline'")
             .body(body)
             .unwrap_or_default()
     };
@@ -1064,5 +1092,38 @@ mod tests {
         let sealed_body = format!("![]({copy})");
         assert!(crate::vault::write_note_inner(&root_str, "p.mntl", &sealed_body, &[], None, &locked).unwrap().is_empty());
         assert_eq!(read_note_inner(&root_str, "p.mntl", &locked).unwrap().content, sealed_body);
+    }
+
+    #[test]
+    fn unused_attachments_keeps_what_a_note_it_cannot_parse_may_use() {
+        let root = temp_dir("unused-unreadable");
+        let root_str = root.to_string_lossy().into_owned();
+        let mk = mntl_core::MasterKey::generate().unwrap();
+        let keys = SessionKeys::default();
+        keys.unlock_for_test(&root_str, "diary", mk.clone()).unwrap();
+
+        let shared = store(&root_str, PNG, "png", None).unwrap();
+        // No frontmatter: `read_note` refuses it, but it does link the image.
+        fs::write(root.join("broken.mntl"), format!("![]({shared})")).unwrap();
+        let unused = |keys: &SessionKeys| unused_attachments_inner(&root_str, &[], &[shared.clone()], keys).unwrap().paths;
+        assert!(unused(&keys).is_empty());
+
+        fs::remove_file(root.join("broken.mntl")).unwrap();
+        assert_eq!(unused(&keys), [shared.clone()]);
+
+        // An encrypted note that won't open can't be searched at all.
+        fs::write(root.join("bad.mntl.enc"), b"MENC garbage").unwrap();
+        assert!(unused(&keys).is_empty());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn only_names_that_end_like_files_are_searched_for_in_the_vault() {
+        for yes in ["photo.png", "a b.PDF", "x.docx"] {
+            assert!(has_file_extension(yes), "{yes}");
+        }
+        for no in ["v1.2", "Dr. Smith", "plain", "notes.", "a.verylongext"] {
+            assert!(!has_file_extension(no), "{no}");
+        }
     }
 }

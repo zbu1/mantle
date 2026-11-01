@@ -83,6 +83,13 @@ pub use properties::{markdown_properties, set_markdown_property};
 pub use stream::{decrypt_stream, encrypt_stream, ChunkSpan, SealedStream, STREAM_CHUNK, STREAM_VERSION};
 pub use tags::{dedupe_tags, markdown_tags, normalize_tag, same_tag, set_markdown_tags};
 
+/// Ceilings on the cost parameters read back from a profile record. The
+/// registry travels with the vault, so a hostile one mustn't be able to make
+/// an unlock allocate gigabytes (`m_cost` is in KiB: this is 1 GiB).
+const MAX_M_COST: u32 = 1 << 20;
+const MAX_T_COST: u32 = 64;
+const MAX_P_COST: u32 = 16;
+
 /// Derive a 256-bit Key Encryption Key (KEK) using Argon2id with explicit KDF parameters.
 ///
 /// The returned key zeroizes itself when dropped. It is only ever used to
@@ -96,6 +103,9 @@ pub fn derive_kek_with_params(
     salt: &[u8],
     params: &KdfParams,
 ) -> Result<KeyEncryptionKey, MntlError> {
+    if params.m_cost > MAX_M_COST || params.t_cost > MAX_T_COST || params.p_cost > MAX_P_COST {
+        return Err(MntlError::KdfError("KDF cost parameters are out of range".into()));
+    }
     let argon2_params = Params::new(params.m_cost, params.t_cost, params.p_cost, Some(32))
         .map_err(|e| MntlError::KdfError(e.to_string()))?;
 
@@ -242,7 +252,8 @@ pub fn decrypt_note(
             .map_err(|_| MntlError::InvalidHeaderSize)?,
     ) as usize;
 
-    let header_end = HEADER_OFFSET + header_len;
+    // Checked: on a 32-bit target (Android) a hostile length would wrap.
+    let header_end = HEADER_OFFSET.checked_add(header_len).ok_or(MntlError::InvalidHeaderSize)?;
     if mntl_enc_bytes.len() < header_end {
         return Err(MntlError::InvalidHeaderSize);
     }
@@ -344,13 +355,18 @@ pub(crate) fn split_frontmatter(note: &str) -> Result<(&str, &str), MntlError> {
     let mut offset = frontmatter_start;
 
     loop {
-        let line_len = note[offset..].find('\n').ok_or(MntlError::MissingFrontmatter)?;
-        let line = note[offset..offset + line_len].trim_end_matches('\r');
+        let rest = &note[offset..];
+        let line_len = rest.find('\n').unwrap_or(rest.len());
+        let line = rest[..line_len].trim_end_matches('\r');
 
         if line == FRONTMATTER_DELIM {
             let frontmatter = &note[frontmatter_start..offset];
-            let body = &note[offset + line_len + 1..];
+            // The closing line may be the file's last, with no newline after it.
+            let body = note.get(offset + line_len + 1..).unwrap_or("");
             return Ok((frontmatter, body));
+        }
+        if line_len == rest.len() {
+            return Err(MntlError::MissingFrontmatter);
         }
 
         offset += line_len + 1;
@@ -502,7 +518,8 @@ pub fn extract_encrypted_header(mntl_enc_bytes: &[u8]) -> Result<EncryptedHeader
             .map_err(|_| MntlError::InvalidHeaderSize)?,
     ) as usize;
 
-    let header_end = HEADER_OFFSET + header_len;
+    // Checked: on a 32-bit target (Android) a hostile length would wrap.
+    let header_end = HEADER_OFFSET.checked_add(header_len).ok_or(MntlError::InvalidHeaderSize)?;
     if mntl_enc_bytes.len() < header_end {
         return Err(MntlError::InvalidHeaderSize);
     }

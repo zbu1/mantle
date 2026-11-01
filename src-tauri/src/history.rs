@@ -102,7 +102,14 @@ fn valid_id(id: &str) -> bool {
 
 fn read_index(vault_root: &str) -> Result<Vec<Entry>, String> {
     match fs::read_to_string(dir(vault_root).join(INDEX)) {
-        Ok(raw) => serde_json::from_str(&raw).map_err(|e| format!("Failed to read the history index: {e}")),
+        // The index travels with the vault and its ids become file names, so a
+        // hostile one mustn't name anything but a snapshot.
+        Ok(raw) => serde_json::from_str::<Vec<Entry>>(&raw)
+            .map(|mut entries| {
+                entries.retain(|e| valid_id(&e.id));
+                entries
+            })
+            .map_err(|e| format!("Failed to read the history index: {e}")),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
         Err(e) => Err(format!("Failed to read the history index: {e}")),
     }
@@ -159,22 +166,24 @@ fn sealed_snaps(vault_root: &str, keys: &SessionKeys) -> Vec<Snap> {
             continue;
         }
         let Some(id) = path.file_stem().and_then(|s| s.to_str()).map(str::to_string) else { continue };
-        let opened = (|| {
-            let head = read_header_prefix(&path).ok()?;
-            let profile = mntl_core::extract_encrypted_header(&head).ok()?.credential_profile;
-            let mk = keys.get(vault_root, &profile).ok()??;
-            let blob = fs::read(&path).ok()?;
-            let plain = mntl_core::decrypt_stream(&mk, &blob).ok()?;
-            let sealed: Sealed = serde_json::from_slice(&plain).ok()?;
-            Some(Snap {
-                entry: Entry { id: id.clone(), path: sealed.path, time: sealed.time },
-                content: sealed.content,
-                profile: Some(profile),
-            })
-        })();
-        out.extend(opened);
+        out.extend(open_sealed(vault_root, keys, &path, id));
     }
     out
+}
+
+/// The sealed snapshot `id` at `path`, if its profile is unlocked.
+fn open_sealed(vault_root: &str, keys: &SessionKeys, path: &std::path::Path, id: String) -> Option<Snap> {
+    let head = read_header_prefix(path).ok()?;
+    let profile = mntl_core::extract_encrypted_header(&head).ok()?.credential_profile;
+    let mk = keys.get(vault_root, &profile).ok()??;
+    let blob = fs::read(path).ok()?;
+    let plain = mntl_core::decrypt_stream(&mk, &blob).ok()?;
+    let sealed: Sealed = serde_json::from_slice(&plain).ok()?;
+    Some(Snap {
+        entry: Entry { id, path: sealed.path, time: sealed.time },
+        content: sealed.content,
+        profile: Some(profile),
+    })
 }
 
 /// Every snapshot this session can read.
@@ -268,9 +277,14 @@ fn follow_inner(vault_root: &str, from: &str, to: &str, scope: Scope, keys: &Ses
         let entry = Entry { path, ..snap.entry.clone() };
         match (&scope, &snap.profile) {
             (Scope::Profile(profile, mk), _) => {
-                write_sealed(vault_root, &entry, &snap.content, profile, mk)?;
+                // One snapshot failing mustn't leave the rest in plaintext.
+                if let Err(e) = write_sealed(vault_root, &entry, &snap.content, profile, mk) {
+                    log::warn!("sealing a snapshot failed: {e}");
+                    continue;
+                }
                 if snap.profile.is_none() {
-                    fs::remove_file(dir(vault_root).join(format!("{}.{EXT_PLAIN}", entry.id))).ok();
+                    // The snapshot was readable text: overwrite it, as the note itself was.
+                    let _ = crate::notes_crypto::shred(&dir(vault_root).join(format!("{}.{EXT_PLAIN}", entry.id)));
                     index.retain(|e| e.id != entry.id);
                     changed = true;
                 }
@@ -321,9 +335,12 @@ fn find(vault_root: &str, id: &str, keys: &SessionKeys) -> Result<Snap, String> 
     if !valid_id(id) {
         return Err("Invalid snapshot".to_string());
     }
-    all(vault_root, keys)?
-        .into_iter()
-        .find(|s| s.entry.id == id)
+    let plain = read_index(vault_root)?.into_iter().find(|e| e.id == id).and_then(|entry| {
+        let content = fs::read_to_string(dir(vault_root).join(format!("{id}.{EXT_PLAIN}"))).ok()?;
+        Some(Snap { entry, content, profile: None })
+    });
+    plain
+        .or_else(|| open_sealed(vault_root, keys, &dir(vault_root).join(format!("{id}.{EXT_SEALED}")), id.to_string()))
         .ok_or_else(|| "That snapshot no longer exists, or its profile is locked".to_string())
 }
 
@@ -361,8 +378,12 @@ pub fn restore_deleted_note(vault_root: String, id: String, keys: State<SessionK
         let snap = find(&vault_root, &id, &keys)?;
         let (dir_rel, stem, ext) = split_rel_note_path(&snap.entry.path);
         let rel = crate::hidden::unique_note_path(&vault_root, &keys, &dir_rel, &stem, ext, false)?;
-        let document = mntl_core::encode_note(&mntl_core::NoteFrontmatter::default(), &snap.content)
-            .map_err(|e| e.to_string())?;
+        // A Markdown file has no Mantle frontmatter to restore.
+        let document = if crate::vault::is_markdown_note(&rel) {
+            snap.content.clone()
+        } else {
+            mntl_core::encode_note(&mntl_core::NoteFrontmatter::default(), &snap.content).map_err(|e| e.to_string())?
+        };
         match &snap.profile {
             Some(profile) => {
                 let mk = keys.get(&vault_root, profile)?.ok_or("Unlock the note's profile first")?;
@@ -463,5 +484,30 @@ mod tests {
         crate::vault_meta::write_vault_meta(&vault, &meta).unwrap();
         record(&vault, "a.mntl", "x", None).unwrap();
         assert!(!dir(&vault).exists());
+    }
+
+    #[test]
+    fn a_hostile_index_cannot_name_files_outside_history() {
+        let vault = root("hostile");
+        fs::create_dir_all(dir(&vault)).unwrap();
+        let index = r#"[{"id":"../../x","path":"a.mntl","time":1},{"id":"ab12","path":"b.mntl","time":2}]"#;
+        fs::write(dir(&vault).join(INDEX), index).unwrap();
+        let ids: Vec<_> = read_index(&vault).unwrap().into_iter().map(|e| e.id).collect();
+        assert_eq!(ids, ["ab12"]);
+    }
+
+    #[test]
+    fn find_opens_a_plain_and_a_sealed_snapshot_by_id() {
+        let vault = root("find");
+        let keys = SessionKeys::default();
+        let mk = mntl_core::MasterKey::from_bytes([9; 32]);
+        keys.unlock_for_test(&vault, "p", mntl_core::MasterKey::from_bytes([9; 32])).unwrap();
+        record(&vault, "a.mntl", "plain", None).unwrap();
+        record(&vault, "b.mntl.enc", "secret", Some(("p", &mk))).unwrap();
+        for snap in all(&vault, &keys).unwrap() {
+            assert_eq!(find(&vault, &snap.entry.id, &keys).unwrap().content, snap.content);
+        }
+        assert!(find(&vault, "../x", &keys).is_err());
+        assert!(find(&vault, "abcd", &keys).is_err());
     }
 }
