@@ -320,7 +320,7 @@ export class MobileToolbar {
       if (stats) {
         items.push(
           { kind: 'separator' },
-          { kind: 'item', label: `${stats.words} ${stats.words === 1 ? 'word' : 'words'} · ${stats.characters} characters`, disabled: true, action: () => undefined },
+          { kind: 'item', label: `${stats.words} ${stats.words === 1 ? 'word' : 'words'} · ${stats.characters} characters · ${this.notesState.saving() ? 'Saving' : 'Saved'}`, disabled: true, action: () => undefined },
         );
       }
     }

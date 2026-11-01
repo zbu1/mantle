@@ -1,6 +1,7 @@
 <div #contentRoot class="scrollbar-thin mr-1 flex h-full flex-col overflow-y-auto overscroll-contain"
-  (contextmenu)="onContentContextMenu($event)">
-  <div class="sticky top-0 z-10 flex shrink-0 items-center gap-1 bg-background px-4 py-2 mobile:min-h-12 mobile:px-1.5 mobile:py-1">
+  (contextmenu)="onContentContextMenu($event)" (scroll)="onScroll(contentRoot)">
+  <div class="sticky top-0 z-10 flex shrink-0 items-center gap-1 bg-background px-4 py-2 transition-transform duration-200 mobile:min-h-12 mobile:px-1.5 mobile:py-1"
+    [class.-translate-y-full]="headerHidden()">
     @if (isMobile) {
     <!-- Android: the vault drawer. Back and forward are in the bottom bar. -->
     <button type="button" aria-label="Vault" (click)="sidebarState.setCollapsed(false)"

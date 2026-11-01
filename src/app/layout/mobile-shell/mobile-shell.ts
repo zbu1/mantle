@@ -95,6 +95,19 @@ export class MobileShell {
     this.edgeSwipe = null;
   }
 
+  private sheetSwipe: Touch | null = null;
+
+  protected sheetSwipeStart(event: TouchEvent): void {
+    this.sheetSwipe = event.touches.length === 1 ? event.touches[0] : null;
+  }
+
+  /** A downward swipe on the tab sheet's header dismisses it. */
+  protected sheetSwipeEnd(event: TouchEvent): void {
+    const touch = event.changedTouches[0];
+    if (this.sheetSwipe && touch.clientY - this.sheetSwipe.clientY > 50) this.tabsOpen.set(false);
+    this.sheetSwipe = null;
+  }
+
   protected openDrawer(): void {
     this.sidebarState.setCollapsed(false);
   }

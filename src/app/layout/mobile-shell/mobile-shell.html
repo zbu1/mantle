@@ -46,14 +46,18 @@
   </div>
 </nav>
 
-@if (tabsOpen()) {
-<div aria-hidden="true" class="fixed inset-0 z-40 bg-black/40" (click)="tabsOpen.set(false)"></div>
-<section aria-labelledby="mobile-tabs-heading"
-  class="animate-pop-in shadow-window fixed inset-x-0 bottom-0 z-40 flex max-h-[75%] flex-col rounded-t-2xl border-t border-border bg-surface text-surface-foreground">
-  <div class="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-input"></div>
-  <header class="flex shrink-0 items-center gap-2 px-4 pb-2 pt-3">
+<div aria-hidden="true" (click)="tabsOpen.set(false)"
+  class="fixed inset-0 z-40 bg-black/40 transition-opacity duration-200"
+  [class.opacity-0]="!tabsOpen()" [class.pointer-events-none]="!tabsOpen()"></div>
+<section aria-labelledby="mobile-tabs-heading" [attr.inert]="tabsOpen() ? null : ''"
+  class="shadow-window fixed inset-x-0 bottom-0 z-40 flex max-h-[75%] flex-col rounded-t-2xl border-t border-border bg-surface text-surface-foreground transition-transform duration-200 ease-out"
+  [class.translate-y-full]="!tabsOpen()">
+  <button type="button" aria-label="Close open notes" (click)="tabsOpen.set(false)" class="flex h-6 w-full shrink-0 items-center justify-center">
+    <span class="h-1 w-10 rounded-full bg-input"></span>
+  </button>
+  <header class="flex shrink-0 items-center gap-2 px-4 pb-2 pt-1" (touchstart)="sheetSwipeStart($event)" (touchend)="sheetSwipeEnd($event)">
     <h2 id="mobile-tabs-heading" class="flex-1 text-base font-semibold tracking-tight">
-      Open tabs <span class="ml-1 font-medium tabular-nums text-muted-foreground">{{ tabRows().length }}</span>
+      Open notes <span class="ml-1 font-medium tabular-nums text-muted-foreground">{{ tabRows().length }}</span>
     </h2>
     @if (tabRows().length > 0) {
     <button type="button" (click)="closeAllTabs()"
@@ -87,7 +91,6 @@
     </button>
   </footer>
 </section>
-}
 } @else {
 <app-welcome />
 }

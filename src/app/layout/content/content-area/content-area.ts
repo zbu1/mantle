@@ -91,6 +91,17 @@ export class ContentArea {
   protected readonly tabMenu = inject(TabMenu);
   protected readonly isMobile = isMobile;
 
+  /** Mobile: the header slides away while reading down and returns on scrolling up. */
+  protected readonly headerHidden = signal(false);
+  private lastScroll = 0;
+
+  protected onScroll(el: HTMLElement): void {
+    const top = el.scrollTop;
+    if (Math.abs(top - this.lastScroll) < 8) return;
+    this.headerHidden.set(isMobile && top > this.lastScroll && top > 48);
+    this.lastScroll = top;
+  }
+
   private readonly contentRoot = viewChild<ElementRef<HTMLElement>>('contentRoot');
   protected readonly noteEditor = viewChild(NoteEditor);
   private readonly encryptionButton = viewChild<ElementRef<HTMLButtonElement>>('encryptionButton');

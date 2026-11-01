@@ -63,6 +63,14 @@ export class NotesState {
    */
   readonly relinked = signal<Relinked | null>(null);
 
+  /** An edit is waiting out its debounce or being written. */
+  readonly saving = signal(false);
+  private inflight = 0;
+
+  private updateSaving(): void {
+    this.saving.set(this.pendingWrites.size > 0 || this.inflight > 0);
+  }
+
   constructor() {
     // Files the vault watcher saw change on disk, e.g. edited in another app.
     void listen<string[]>('notes-changed', ({ payload }) => {
@@ -276,9 +284,21 @@ export class NotesState {
         void this.flush(id);
       }, DEBOUNCE_MS),
     );
+    this.updateSaving();
   }
 
   private async flush(id: string): Promise<void> {
+    this.inflight++;
+    this.updateSaving();
+    try {
+      await this.write(id);
+    } finally {
+      this.inflight--;
+      this.updateSaving();
+    }
+  }
+
+  private async write(id: string): Promise<void> {
     const root = this.vaultState.rootPath();
     const entry = this.entries()[id];
     if (!root || !entry || entry.status !== 'loaded') return;
