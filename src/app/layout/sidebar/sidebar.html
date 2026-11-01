@@ -33,7 +33,7 @@
     @if (filterQuery().trim()) {
     <div class="px-2 py-1 text-xs text-muted-foreground">No notes match “{{ filterQuery().trim() }}”.</div>
     } @else {
-    <div class="px-2 py-1 text-xs text-muted-foreground">No notes yet. Press + to create one.</div>
+    <div class="px-2 py-1 text-xs text-muted-foreground">No notes yet. {{ isMobile ? 'Tap New Note below.' : 'Press + to create one.' }}</div>
     }
     }
     } @else if (vaultState.loading()) {

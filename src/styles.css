@@ -219,6 +219,10 @@ button.focus-ring-inset:focus-visible,
   background-color: var(--muted-foreground);
 }
 
+.mobile .ProseMirror {
+  padding-bottom: 8rem;
+}
+
 .ProseMirror {
   outline: none;
   width: 100%;

@@ -36,7 +36,7 @@
 
   @if (selected && !profile.unlocked) {
   <div class="mb-1 ml-6 flex items-center gap-2">
-    <input #unlockInput type="password" spellcheck="false" autocomplete="off" placeholder="Password"
+    <input #unlockInput type="password" spellcheck="false" autocomplete="current-password" placeholder="Password"
       [attr.aria-label]="'Password for ' + profile.displayName" (keydown.enter)="unlock()"
       class="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none focus:border-ring" />
     <button type="button" [disabled]="busy()" (click)="unlock()"

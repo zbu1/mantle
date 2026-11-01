@@ -20,14 +20,14 @@ import { findNext, queryRegExp, replaceAll, replaceCurrent, setFindQuery } from 
   host: { class: 'block' },
   template: `
     <div class="flex flex-col gap-1 rounded-md border border-border bg-background p-1 text-xs shadow-card" (keydown.escape)="close($event)">
-      <div class="flex items-center gap-1">
+      <div class="flex items-center gap-1 mobile:flex-wrap">
         <input #findInput type="text" placeholder="Find" spellcheck="false" aria-label="Find" [value]="text()"
           (input)="text.set(findInput.value)" (keydown.enter)="next($event)"
           [class.text-destructive]="invalid()"
-          class="h-7 min-w-0 flex-1 rounded border border-input bg-transparent px-2 text-foreground outline-none focus:border-ring" />
+          class="h-7 min-w-0 flex-1 rounded border border-input bg-transparent px-2 text-foreground outline-none focus:border-ring mobile:order-1 mobile:h-10 mobile:w-[calc(100%-2.75rem)] mobile:flex-none mobile:text-base" />
         @for (toggle of toggles; track toggle.key) {
           <button type="button" [title]="toggle.title" [attr.aria-pressed]="toggle.value()" (click)="toggle.value.set(!toggle.value())"
-            class="inline-flex size-7 shrink-0 items-center justify-center rounded hover:bg-surface"
+            class="inline-flex size-7 shrink-0 items-center justify-center rounded hover:bg-surface mobile:order-2 mobile:size-10"
             [class.text-primary]="toggle.value()" [class.bg-accent]="toggle.value()" [class.text-muted-foreground]="!toggle.value()">
             @switch (toggle.key) {
               @case ('case') { <svg lucideCaseSensitive [size]="15"></svg> }
@@ -36,31 +36,31 @@ import { findNext, queryRegExp, replaceAll, replaceCurrent, setFindQuery } from 
             }
           </button>
         }
-        <span class="w-16 shrink-0 text-center text-muted-foreground tabular-nums">
+        <span class="w-16 shrink-0 text-center mobile:order-2 mobile:flex-1 text-muted-foreground tabular-nums">
           {{ status().total ? status().current + ' of ' + status().total : text() ? 'No results' : '' }}
         </span>
         <button type="button" title="Previous match (Shift+Enter)" (click)="go(true)" [disabled]="!status().total"
-          class="inline-flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-surface hover:text-foreground disabled:opacity-40">
+          class="inline-flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-surface hover:text-foreground disabled:opacity-40 mobile:order-2 mobile:size-10">
           <svg lucideChevronUp [size]="15"></svg>
         </button>
         <button type="button" title="Next match (Enter)" (click)="go(false)" [disabled]="!status().total"
-          class="inline-flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-surface hover:text-foreground disabled:opacity-40">
+          class="inline-flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-surface hover:text-foreground disabled:opacity-40 mobile:order-2 mobile:size-10">
           <svg lucideChevronDown [size]="15"></svg>
         </button>
         <button type="button" title="Close (Esc)" (click)="close()"
-          class="inline-flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-surface hover:text-foreground">
+          class="inline-flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-surface hover:text-foreground mobile:order-1 mobile:size-10">
           <svg lucideX [size]="14"></svg>
         </button>
       </div>
       @if (replace()) {
-        <div class="flex items-center gap-1">
+        <div class="flex items-center gap-1 mobile:flex-wrap">
           <input #replaceInput type="text" placeholder="Replace" spellcheck="false" aria-label="Replace" [value]="replacement()"
             (input)="replacement.set(replaceInput.value)" (keydown.enter)="replaceOne($event)"
-            class="h-7 min-w-0 flex-1 rounded border border-input bg-transparent px-2 text-foreground outline-none focus:border-ring" />
+            class="h-7 min-w-0 flex-1 rounded border border-input bg-transparent px-2 text-foreground outline-none focus:border-ring mobile:h-10 mobile:w-full mobile:flex-none mobile:text-base" />
           <button type="button" (click)="replaceOne()" [disabled]="!status().total"
-            class="h-7 shrink-0 rounded px-2 text-foreground hover:bg-surface disabled:opacity-40">Replace</button>
+            class="h-7 shrink-0 rounded px-2 mobile:h-10 mobile:flex-1 text-foreground hover:bg-surface disabled:opacity-40">Replace</button>
           <button type="button" (click)="replaceEvery()" [disabled]="!status().total"
-            class="h-7 shrink-0 rounded px-2 text-foreground hover:bg-surface disabled:opacity-40">Replace All</button>
+            class="h-7 shrink-0 rounded px-2 mobile:h-10 mobile:flex-1 text-foreground hover:bg-surface disabled:opacity-40">Replace All</button>
         </div>
       }
     </div>
