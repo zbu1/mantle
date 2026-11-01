@@ -52,6 +52,12 @@
     </button>
   </div>
 </app-settings-row>
+<app-settings-row label="Master Key" description="Re-encrypts every note, attachment and snapshot under a new key.">
+  <button type="button" (click)="credentialsState.promptRotateKey(p.id)" [disabled]="!unlocked()"
+    class="rounded-md border border-border px-2.5 py-1 text-xs text-foreground hover:bg-background disabled:pointer-events-none disabled:opacity-40">
+    Rotate…
+  </button>
+</app-settings-row>
 
 <button type="button" (click)="advancedOpen.set(!advancedOpen())"
   class="mt-2 flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">

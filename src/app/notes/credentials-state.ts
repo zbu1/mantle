@@ -523,6 +523,47 @@ Write this down or print it, and keep it somewhere safe. It is shown only once. 
   }
 
   /**
+   * Re-encrypt everything under a profile with a new master key, after asking
+   * for its password, and show the new recovery key (the old one stops
+   * working). Resolves whether it was rotated.
+   */
+  async promptRotateKey(profileId: string): Promise<boolean> {
+    const root = this.vaultState.rootPath();
+    const profile = this.profileById(profileId);
+    if (!root || !profile) return false;
+
+    let recoveryKey = '';
+    const submitted = await this.dialogState.password(
+      `Every note, attachment and history snapshot in "${profile.displayName}" will be re-encrypted ` +
+        `under a new key. This can take a while; keep Mantle open. Enter its password to continue.`,
+      { title: 'Rotate Master Key', confirmLabel: 'Rotate Key' },
+      async ({ password }) => {
+        try {
+          // A save racing the rotation could leave a note under the old key.
+          await this.notesState.flushPending(this.notePathsFor(profileId));
+          recoveryKey = await invoke<string>('rotate_master_key', { vaultRoot: root, profileId, password });
+          return null;
+        } catch (err) {
+          logError(`Failed to rotate the key of "${profileId}": ${formatError(err)}`);
+          return String(err);
+        }
+      },
+    );
+    if (!submitted) return false;
+
+    logInfo(`Rotated the master key of credential profile "${profileId}"`);
+    await this.refresh();
+    await this.dialogState.alert(
+      `${recoveryKey}
+
+Your previous recovery key no longer works. Write this one down or print it, and keep it somewhere safe. ` +
+        `It is shown only once.`,
+      { title: 'New Recovery Key', confirmLabel: 'I Saved It' },
+    );
+    return true;
+  }
+
+  /**
    * Turn hiding note locations and/or names on or off for a profile, which
    * converts every one of its notes, as one undo step. The profile has to be
    * unlocked. Un-hiding a note whose real path is taken asks, per note,

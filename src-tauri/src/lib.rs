@@ -7,6 +7,7 @@ mod links;
 mod migrate;
 mod logging;
 mod notes_crypto;
+mod rotation;
 mod spelling;
 mod tags;
 mod typst_render;
@@ -82,6 +83,7 @@ pub fn run() {
             credentials::delete_credential_profile,
             credentials::create_recovery_key,
             credentials::recover_credential_profile,
+            rotation::rotate_master_key,
             credentials::undo_create_credential_profile,
             credentials::redo_create_credential_profile,
             hidden::set_profile_hiding,

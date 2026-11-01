@@ -328,6 +328,31 @@ pub fn decrypt_note(
     Ok(Zeroizing::new(plaintext))
 }
 
+/// Re-seal an envelope (note, attachment or chunked file) from master key
+/// `old` to `new`, keeping its profile, hidden flag and chunking.
+///
+/// Returns `None` if the envelope already opens under `new`, so an interrupted
+/// rotation can simply be run again. The header is AAD and holds the wrapped
+/// content key, so the body is re-encrypted, not just rewrapped.
+///
+/// # Errors
+///
+/// As [`decrypt_note`] when `old` and `new` both fail to open it.
+pub fn rotate_envelope(old: &MasterKey, new: &MasterKey, blob: &[u8]) -> Result<Option<Vec<u8>>, MntlError> {
+    let plaintext = match decrypt_note(old, blob) {
+        Ok(plaintext) => plaintext,
+        Err(MntlError::KeyWrapError) => return decrypt_note(new, blob).map(|_| None),
+        Err(e) => return Err(e),
+    };
+    let header = extract_encrypted_header(blob)?;
+    let id = &header.credential_profile;
+    let sealed = match header.chunk {
+        Some(chunk) if header.v == STREAM_VERSION => encrypt_stream(new, id, &plaintext, chunk)?,
+        _ => encrypt_note_as(new, id, header.hidden, &plaintext)?,
+    };
+    Ok(Some(sealed))
+}
+
 /// The `---\n` delimiter line that opens and closes a `.mntl` frontmatter block.
 const FRONTMATTER_DELIM: &str = "---";
 

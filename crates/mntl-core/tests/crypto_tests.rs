@@ -669,3 +669,24 @@ fn test_chunked_envelopes_refuse_reordering_truncation_and_tampering() {
     *flipped.last_mut().unwrap() ^= 1;
     assert!(matches!(decrypt_note(&mk, &flipped), Err(MntlError::DecryptionFailed)));
 }
+
+#[test]
+fn test_rotate_envelope_reseals_every_envelope_kind_and_is_resumable() {
+    let (old, new) = (test_mk(), mntl_core::MasterKey::generate().unwrap());
+    let plain = b"secret body".to_vec();
+    let blobs = [
+        mntl_core::encrypt_note(&old, "p", &plain).unwrap(),
+        mntl_core::encrypt_note_as(&old, "p", true, &plain).unwrap(),
+        mntl_core::encrypt_stream(&old, "p", &plain, 4).unwrap(),
+    ];
+    for blob in &blobs {
+        let rotated = mntl_core::rotate_envelope(&old, &new, blob).unwrap().unwrap();
+        assert_eq!(&decrypt_note(&new, &rotated).unwrap()[..], &plain[..]);
+        assert!(decrypt_note(&old, &rotated).is_err());
+        let (before, after) = (mntl_core::extract_encrypted_header(blob).unwrap(), mntl_core::extract_encrypted_header(&rotated).unwrap());
+        assert_eq!((before.hidden, before.chunk, before.v), (after.hidden, after.chunk, after.v));
+        assert!(mntl_core::rotate_envelope(&old, &new, &rotated).unwrap().is_none());
+    }
+    let stranger = mntl_core::MasterKey::generate().unwrap();
+    assert!(mntl_core::rotate_envelope(&old, &new, &mntl_core::encrypt_note(&stranger, "p", b"x").unwrap()).is_err());
+}

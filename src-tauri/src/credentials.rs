@@ -441,7 +441,7 @@ pub fn create_credential_profile(
 
 /// The body of [`create_credential_profile`], with the Argon2id cost as a
 /// parameter so tests can use something cheaper than the 19 MiB default.
-fn create_profile_inner(
+pub(crate) fn create_profile_inner(
     vault_root: &str,
     display_name: &str,
     password: &str,
@@ -505,7 +505,7 @@ pub fn unlock_credential_profile(
     })
 }
 
-fn unlock_profile_inner(
+pub(crate) fn unlock_profile_inner(
     vault_root: &str,
     profile_id: &str,
     password: &str,
@@ -750,6 +750,11 @@ const RECOVERY_DIR: &str = "recovery";
 const INCORRECT_RECOVERY_KEY: &str = "Incorrect recovery key";
 
 fn recovery_path(vault_root: &str, profile_id: &str) -> Result<PathBuf, String> {
+    state_file(vault_root, RECOVERY_DIR, profile_id)
+}
+
+/// `.mantle/<dir>/<profile_id>.json`.
+pub(crate) fn state_file(vault_root: &str, dir: &str, profile_id: &str) -> Result<PathBuf, String> {
     // The id becomes a file name, and arrives over IPC.
     if profile_id.is_empty() || !profile_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
         return Err("Invalid profile id".to_string());
@@ -757,7 +762,7 @@ fn recovery_path(vault_root: &str, profile_id: &str) -> Result<PathBuf, String> 
     let root = PathBuf::from(vault_root)
         .canonicalize()
         .map_err(|e| format!("Invalid vault root: {e}"))?;
-    Ok(root.join(STATE_DIR).join(RECOVERY_DIR).join(format!("{profile_id}.json")))
+    Ok(root.join(STATE_DIR).join(dir).join(format!("{profile_id}.json")))
 }
 
 /// `ABCD-EF01-…`: 64 hex digits in groups of four.
@@ -803,16 +808,27 @@ fn create_recovery_key_inner(vault_root: &str, profile_id: &str, keys: &SessionK
         .find(profile_id)
         .ok_or_else(|| format!("No credential profile \"{profile_id}\" in this vault"))?;
 
+    write_recovery_record(vault_root, profile_id, &profile.display_name, &master_key)
+}
+
+/// Seal `master_key` under a fresh recovery key, replacing the profile's
+/// record, and return the key.
+fn write_recovery_record(
+    vault_root: &str,
+    profile_id: &str,
+    display_name: &str,
+    master_key: &MasterKey,
+) -> Result<String, String> {
     let mut bytes = Zeroizing::new([0u8; 32]);
     OsRng
         .try_fill_bytes(&mut *bytes)
         .map_err(|e| format!("Failed to generate recovery key: {e}"))?;
-    let wrapped = wrap_master_key(&KeyEncryptionKey::from_bytes(*bytes), &master_key).map_err(|e| e.to_string())?;
+    let wrapped = wrap_master_key(&KeyEncryptionKey::from_bytes(*bytes), master_key).map_err(|e| e.to_string())?;
 
     let record = RecoveryRecord {
-        display_name: profile.display_name.clone(),
+        display_name: display_name.to_string(),
         wrapped_master_key: BASE64.encode(wrapped),
-        verifier: compute_verifier(&master_key),
+        verifier: compute_verifier(master_key),
     };
     let path = recovery_path(vault_root, profile_id)?;
     let dir = path.parent().ok_or("Invalid recovery path")?;
@@ -823,6 +839,39 @@ fn create_recovery_key_inner(vault_root: &str, profile_id: &str, keys: &SessionK
     fs::rename(&tmp, &path).map_err(|e| format!("Failed to save recovery record: {e}"))?;
 
     Ok(format_recovery_key(&bytes))
+}
+
+/// Make `new_key` the profile's master key, protected by `password`, and
+/// return its new recovery key. The last step of a rotation.
+///
+/// The recovery record goes first: a crash after it leaves the registry on the
+/// old key, which the rotation's pending record still resumes.
+pub(crate) fn install_rotated_key(
+    vault_root: &str,
+    profile_id: &str,
+    password: &str,
+    new_key: MasterKey,
+    keys: &SessionKeys,
+) -> Result<String, String> {
+    let mut registry = load_registry(vault_root)?;
+    let profile = registry
+        .find_mut(profile_id)
+        .ok_or_else(|| format!("No credential profile \"{profile_id}\" in this vault"))?;
+
+    let mut salt = [0u8; SALT_LEN];
+    OsRng
+        .try_fill_bytes(&mut salt)
+        .map_err(|e| format!("Failed to generate salt: {e}"))?;
+    let kek = derive_kek_with_params(password, &salt, &profile.kdf).map_err(|e| e.to_string())?;
+    let wrapped = wrap_master_key(&kek, &new_key).map_err(|e| e.to_string())?;
+
+    let recovery_key = write_recovery_record(vault_root, profile_id, &profile.display_name, &new_key)?;
+    profile.salt = BASE64.encode(salt);
+    profile.wrapped_master_key = BASE64.encode(wrapped);
+    profile.verifier = compute_verifier(&new_key);
+    save_registry(vault_root, &registry)?;
+    keys.insert(vault_root, profile_id, new_key)?;
+    Ok(recovery_key)
 }
 
 /// Unlock a profile with its recovery key and give it a new password. Also
@@ -843,7 +892,7 @@ pub fn recover_credential_profile(
     })
 }
 
-fn recover_profile_inner(
+pub(crate) fn recover_profile_inner(
     vault_root: &str,
     profile_id: &str,
     recovery_key: &str,
