@@ -2,7 +2,7 @@
   <svg windowIcon lucideSettings2 [size]="14"></svg>
   @if (state.isOpen()) {
     <div class="flex flex-1 overflow-hidden mobile:flex-col">
-      <nav class="scrollbar-thin w-44 shrink-0 overflow-y-auto border-r border-border p-2 mobile:flex mobile:w-full mobile:items-center mobile:gap-1 mobile:overflow-x-auto mobile:border-b mobile:border-r-0 mobile:p-1.5 mobile:[scrollbar-width:none]">
+      <nav class="scrollbar-thin w-44 shrink-0 overflow-y-auto border-r border-border p-2 mobile:flex mobile:w-full mobile:items-center mobile:gap-1 mobile:overflow-x-auto mobile:border-b mobile:border-r-0 mobile:p-1.5 mobile:[scrollbar-width:none] mobile:[mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)]">
         <h3 id="settings-nav-options" class="mobile:hidden px-2.5 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Options</h3>
         <div role="group" aria-labelledby="settings-nav-options" class="mobile:contents">
         @for (cat of categories; track cat.id) {

@@ -32,7 +32,6 @@
   [class.-translate-x-full]="!drawerOpen()" [class.shadow-window]="drawerOpen()">
   <div class="flex h-14 shrink-0 items-center gap-1 pl-3 pr-1.5">
     <app-vault-menu />
-    <span class="flex-1"></span>
     <button type="button" aria-label="Commands" (click)="closeDrawer(); commandPalette.open()"
       class="inline-flex size-10 items-center justify-center rounded-lg text-foreground/80 active:bg-background">
       <svg lucideCommand [size]="19"></svg>

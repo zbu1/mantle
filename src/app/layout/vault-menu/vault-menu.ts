@@ -21,7 +21,7 @@ interface RecentVault {
   imports: [MenuSurface, MenuItem, MenuSeparator, LucideFolders, LucideChevronsUpDown, LucideCheck, LucideFolderOpen, LucideFolderPlus, LucideLibrary],
   templateUrl: './vault-menu.html',
   host: {
-    class: 'relative inline-flex min-w-0 shrink-0',
+    class: 'relative inline-flex min-w-0 shrink-0 mobile:flex-1',
   },
 })
 export class VaultMenu {

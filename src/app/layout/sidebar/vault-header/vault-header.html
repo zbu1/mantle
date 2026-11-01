@@ -1,6 +1,6 @@
 <div #toolbar class="relative mb-2 flex items-center gap-0.5">
   <button type="button" title="New Note (Ctrl+N)" aria-label="New Note" [disabled]="!hasVault()" (click)="onNewNote()"
-    class="inline-flex size-7 mobile:size-10 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary transition-colors hover:bg-primary hover:text-primary-foreground disabled:pointer-events-none disabled:opacity-40">
+    class="inline-flex size-7 mobile:hidden shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary transition-colors hover:bg-primary hover:text-primary-foreground disabled:pointer-events-none disabled:opacity-40">
     <svg lucidePlus [size]="15"></svg>
   </button>
   <button type="button" title="New Folder" aria-label="New Folder" [disabled]="!hasVault()" (click)="onNewFolder()"
@@ -45,7 +45,7 @@
 
   @switch (openMenu()) {
   @case ('sort') {
-  <app-menu-surface #panel class="absolute left-14 top-full z-50 mt-1 w-52">
+  <app-menu-surface #panel class="absolute left-14 top-full z-50 mt-1 w-52 mobile:left-0 mobile:w-full">
     <div class="px-3 pb-0.5 pt-1 text-[11px] font-medium text-muted-foreground">Sort by</div>
     @for (mode of sortModes; track mode.id) {
     <app-menu-item [label]="mode.label" [active]="hoveredItem() === mode.id" (hovered)="hoveredItem.set(mode.id)"
@@ -58,7 +58,7 @@
   </app-menu-surface>
   }
   @case ('display') {
-  <app-menu-surface #panel class="absolute left-28 top-full z-50 mt-1 w-56">
+  <app-menu-surface #panel class="absolute left-28 top-full z-50 mt-1 w-56 mobile:left-0 mobile:w-full">
     <div class="px-3 pb-0.5 pt-1 text-[11px] font-medium text-muted-foreground">Show in sidebar</div>
     @for (section of sections; track section.id) {
     <app-menu-item [label]="section.label" [active]="hoveredItem() === section.id" (hovered)="hoveredItem.set(section.id)"
