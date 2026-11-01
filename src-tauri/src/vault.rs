@@ -852,6 +852,7 @@ pub(crate) fn write_note_inner(
             }
             *body = content.to_string();
         })?;
+        crate::history::record_quietly(vault_root, rel_path, &content, Some((&profile_id, &mk)));
         return Ok(relinked);
     }
 
@@ -885,6 +886,7 @@ pub(crate) fn write_note_inner(
         }
         crate::watcher::suppress(&path);
         fs::write(&path, updated).map_err(|e| format!("Failed to write note: {e}"))?;
+        crate::history::record_quietly(vault_root, rel_path, content, None);
         return Ok(relinked);
     }
 
@@ -900,6 +902,7 @@ pub(crate) fn write_note_inner(
     let encoded = mntl_core::encode_note(&frontmatter, content).map_err(|e| e.to_string())?;
     crate::watcher::suppress(&path);
     fs::write(&path, encoded).map_err(|e| format!("Failed to write note: {e}"))?;
+    crate::history::record_quietly(vault_root, rel_path, content, None);
     Ok(relinked)
 }
 
@@ -1118,6 +1121,7 @@ pub(crate) fn rename_note_inner(
             return Err(exists());
         }
         hidden::relocate(vault_root, keys, rel_path, &note, &dest_rel)?;
+        crate::history::follow(vault_root, rel_path, &dest_rel, crate::history::Scope::Keep, keys);
         return Ok(CreatedNote { name: new_name.to_string(), rel_path: dest_rel });
     }
 
@@ -1129,6 +1133,7 @@ pub(crate) fn rename_note_inner(
         return Err(exists());
     }
     fs::rename(&source, &dest).map_err(|e| format!("Failed to rename note: {e}"))?;
+    crate::history::follow(vault_root, rel_path, &dest_rel, crate::history::Scope::Keep, keys);
     Ok(CreatedNote {
         name: new_name.to_string(),
         rel_path: dest_rel,
@@ -1488,6 +1493,7 @@ pub(crate) fn move_note_inner(
         }
         let dest_rel = hidden::unique_note_path(vault_root, keys, dest_rel_dir, &stem, ext, false)?;
         hidden::relocate(vault_root, keys, source_rel_path, &note, &dest_rel)?;
+        crate::history::follow(vault_root, source_rel_path, &dest_rel, crate::history::Scope::Keep, keys);
         return Ok(CreatedNote { name: note_display_name(&dest_rel), rel_path: dest_rel });
     }
 
@@ -1496,6 +1502,7 @@ pub(crate) fn move_note_inner(
     let dest_rel = hidden::unique_note_path(vault_root, keys, dest_rel_dir, &stem, ext, false)?;
     let dest_abs = resolve_rel_path(vault_root, &dest_rel)?;
     fs::rename(&source, &dest_abs).map_err(|e| format!("Failed to move note: {e}"))?;
+    crate::history::follow(vault_root, source_rel_path, &dest_rel, crate::history::Scope::Keep, keys);
     Ok(CreatedNote {
         name: note_display_name(&dest_rel),
         rel_path: dest_rel,

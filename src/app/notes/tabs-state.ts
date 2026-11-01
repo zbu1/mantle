@@ -1,4 +1,5 @@
 import { Injectable, computed, effect, inject, signal } from '@angular/core';
+import { invoke } from '@tauri-apps/api/core';
 import { NoteRef } from './note.model';
 import { VaultRootState } from './vault-root-state';
 
@@ -337,10 +338,18 @@ export class TabsState {
   closeTab(id: string): void {
     const pane = this.paneOf(id);
     if (!pane) return;
+    this.endSnapshot(this.tabs().find((tab) => tab.id === id)?.noteId, id);
     this.tabs.update((tabs) => tabs.filter((tab) => tab.id !== id));
     this.layout.update((layout) => mapPanes(layout, (p) => (p.id === pane.id ? withoutTab(p, id) : p)) ?? newPane());
     if (!this.panes().some((p) => p.id === this.activePaneId())) this.activePaneId.set(this.panes()[0].id);
     this.pruneHistory(id);
+  }
+
+  /** Closing a note's last tab ends its open snapshot, so its next save starts a new one. */
+  private endSnapshot(noteId: string | null | undefined, closingTabId: string): void {
+    const root = this.vaultRoot.path();
+    if (!noteId || !root || this.tabs().some((tab) => tab.id !== closingTabId && tab.noteId === noteId)) return;
+    void invoke('close_snapshot', { vaultRoot: root, relPath: noteId }).catch(() => undefined);
   }
 
   setActive(id: string): void {

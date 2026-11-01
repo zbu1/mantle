@@ -367,6 +367,7 @@ pub(crate) fn move_folder_tree(vault_root: &str, keys: &SessionKeys, from: &str,
         let new_rel = moved(&rel).ok_or("Invalid hidden note path")?;
         relocate(vault_root, keys, &rel, &note, &new_rel)?;
     }
+    crate::history::follow(vault_root, from, to, crate::history::Scope::Keep, keys);
     Ok(())
 }
 

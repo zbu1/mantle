@@ -1,6 +1,7 @@
 mod attachments;
 mod credentials;
 mod export;
+mod history;
 mod hidden;
 mod links;
 mod migrate;
@@ -63,6 +64,12 @@ pub fn run() {
             vault::copy_note,
             vault::move_note,
             vault::move_folder,
+            history::list_snapshots,
+            history::read_snapshot,
+            history::close_snapshot,
+            history::list_deleted_notes,
+            history::restore_deleted_note,
+            history::prune_history,
             vault_meta::load_vault_meta,
             vault_meta::save_vault_meta,
             credentials::list_credential_profiles,

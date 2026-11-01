@@ -31,6 +31,9 @@ export interface VaultMeta {
   propertyTypes: Record<string, PropertyType>;
   /** Icon and color of plaintext notes and folders, by relPath. */
   styles: Record<string, ItemStyle>;
+  snapshotsEnabled: boolean;
+  /** Snapshots older than this many days are pruned. */
+  snapshotDays: number;
 }
 
 /** How many recent notes are kept in `state.json`; the sidebar shows fewer by default. */
@@ -39,7 +42,7 @@ export const MAX_RECENT_NOTES = 20;
 const SAVE_DEBOUNCE_MS = 500;
 
 function emptyMeta(): VaultMeta {
-  return { version: 1, favorites: [], order: {}, collapsedFolders: [], sortMode: 'name-asc', folderSort: {}, recentNotes: [], propertyTypes: {}, styles: {} };
+  return { version: 1, favorites: [], order: {}, collapsedFolders: [], sortMode: 'name-asc', folderSort: {}, recentNotes: [], propertyTypes: {}, styles: {}, snapshotsEnabled: true, snapshotDays: 30 };
 }
 
 /** Tolerates a missing or partial payload, filling absent fields with defaults. */
@@ -63,6 +66,8 @@ function normalizeMeta(raw: unknown): VaultMeta {
     ),
   );
   meta.styles = meta.styles && typeof meta.styles === 'object' && !Array.isArray(meta.styles) ? meta.styles : {};
+  if (typeof meta.snapshotsEnabled !== 'boolean') meta.snapshotsEnabled = true;
+  if (!Number.isInteger(meta.snapshotDays) || meta.snapshotDays < 1) meta.snapshotDays = 30;
   // A mode from a newer build falls back rather than sorting nonsensically.
   if (!SORT_MODES.some((mode) => mode.id === meta.sortMode)) meta.sortMode = 'name-asc';
   meta.folderSort = Object.fromEntries(
@@ -114,6 +119,23 @@ export class VaultMetaState {
 
   /** Icon and color of plaintext notes and folders, by relPath. */
   readonly styles = computed<Readonly<Record<string, ItemStyle>>>(() => this.meta()?.styles ?? {});
+
+  readonly snapshotsEnabled = computed(() => this.meta()?.snapshotsEnabled ?? true);
+  readonly snapshotDays = computed(() => this.meta()?.snapshotDays ?? 30);
+
+  setSnapshotsEnabled(snapshotsEnabled: boolean): void {
+    const meta = this.meta();
+    if (!meta || meta.snapshotsEnabled === snapshotsEnabled) return;
+    this.meta.set({ ...meta, snapshotsEnabled });
+    this.scheduleSave();
+  }
+
+  setSnapshotDays(days: number): void {
+    const meta = this.meta();
+    if (!meta || !Number.isInteger(days) || days < 1 || meta.snapshotDays === days) return;
+    this.meta.set({ ...meta, snapshotDays: days });
+    this.scheduleSave();
+  }
 
   /** Hidden notes and virtual folders, which are never written here; see `setHiddenPaths`. */
   private readonly hiddenPaths = signal<ReadonlySet<string>>(new Set());
@@ -181,6 +203,7 @@ export class VaultMetaState {
       const raw = await invoke<unknown>('load_vault_meta', { vaultRoot });
       if (generation !== this.generation) return;
       this.meta.set(normalizeMeta(raw));
+      void invoke('prune_history', { vaultRoot }).catch((err) => logError(`Failed to prune note history: ${formatError(err)}`));
     } catch (err) {
       if (generation !== this.generation) return;
       logError(`Failed to load vault state for "${vaultRoot}": ${formatError(err)}`);

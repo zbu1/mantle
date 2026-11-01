@@ -4,7 +4,7 @@ import { installTauriMock } from '../../testing/tauri-mock';
 import { MAX_RECENT_NOTES, VaultMeta, VaultMetaState } from './vault-meta-state';
 
 function meta(overrides: Partial<VaultMeta> = {}): VaultMeta {
-  return { version: 1, favorites: [], order: {}, collapsedFolders: [], sortMode: 'name-asc', folderSort: {}, recentNotes: [], propertyTypes: {}, styles: {}, ...overrides };
+  return { version: 1, favorites: [], order: {}, collapsedFolders: [], sortMode: 'name-asc', folderSort: {}, recentNotes: [], propertyTypes: {}, styles: {}, snapshotsEnabled: true, snapshotDays: 30, ...overrides };
 }
 
 async function flushMicrotasks(): Promise<void> {

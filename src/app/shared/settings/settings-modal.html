@@ -222,6 +222,15 @@
             Open .mantle Folder
           </button>
         </app-settings-row>
+        <app-settings-row label="Note History" description="Keep past versions of each note, so you can view and restore them.">
+          <app-toggle [checked]="vaultMeta.snapshotsEnabled()" (changed)="vaultMeta.setSnapshotsEnabled($event)" />
+        </app-settings-row>
+        <app-settings-row label="Keep History For" description="Older versions are removed when the vault opens.">
+          <input type="number" min="1" [value]="vaultMeta.snapshotDays()" (change)="vaultMeta.setSnapshotDays($any($event.target).valueAsNumber)"
+            [disabled]="!vaultMeta.snapshotsEnabled()"
+            class="w-16 rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-ring disabled:opacity-40" />
+          <span class="text-[11px] text-muted-foreground">days</span>
+        </app-settings-row>
         <app-settings-row label="Default Attachment Folder">
           <input type="text" [value]="defaultAttachmentFolder()" (input)="defaultAttachmentFolder.set($any($event.target).value)"
             spellcheck="false"

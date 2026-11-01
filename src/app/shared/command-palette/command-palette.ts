@@ -1,5 +1,6 @@
 import { Component, ElementRef, HostListener, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { VaultActions } from '../../notes/vault-actions';
+import { HistoryState } from '../../notes/history/history-state';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import {
   LucideArrowLeft,
@@ -135,6 +136,7 @@ export class CommandPalette {
   private readonly vaultMeta = inject(VaultMetaState);
   private readonly favorites = inject(FavoritesState);
   private readonly zoom = inject(ZoomState);
+  private readonly historyState = inject(HistoryState);
 
   protected readonly query = this.state.query;
   protected readonly selectedIndex = signal(0);
@@ -176,6 +178,13 @@ export class CommandPalette {
         keywords: ['create', 'folder', 'directory'],
         run: () => void this.newFolder(),
       });
+      items.push({
+        id: 'deleted-notes',
+        label: 'Restore Deleted Note…',
+        icon: 'clock',
+        keywords: ['deleted', 'history', 'snapshot', 'recover', 'trash'],
+        run: () => this.historyState.openDeleted(),
+      });
       if (hasRecents) {
         items.push({
           id: 'open-recent-note',
@@ -213,6 +222,13 @@ export class CommandPalette {
       const noteId = activeTab.noteId;
       if (noteId && this.vaultMeta.loaded() && tree && flattenVaultNotes(tree).has(noteId)) {
         const favorite = this.favorites.isFavorite(noteId);
+        items.push({
+          id: 'note-history',
+          label: 'Note History…',
+          icon: 'clock',
+          keywords: ['history', 'snapshot', 'version', 'restore', 'diff'],
+          run: () => this.historyState.openFor(noteId),
+        });
         items.push({
           id: 'toggle-favorite',
           label: favorite ? 'Remove Note from Favorites' : 'Add Note to Favorites',

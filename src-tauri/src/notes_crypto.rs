@@ -179,6 +179,7 @@ fn encrypt_note_inner(
             .map_err(|e| format!("{e}; the original is untouched"))?;
 
         shred(&source)?;
+        crate::history::follow(vault_root, rel_path, &dest_rel, crate::history::Scope::Profile(profile_id, &mk), keys);
 
         Ok(CreatedNote {
             name: stem,
@@ -398,6 +399,7 @@ fn decrypt_note_inner(
         write_atomic(&dest, document.as_bytes())?;
         fs::remove_file(&source).map_err(|e| format!("Failed to remove the encrypted note: {e}"))?;
         keys.put_hidden(vault_root, rel_path, None)?;
+        crate::history::follow(vault_root, rel_path, &dest_rel, crate::history::Scope::Plain, keys);
 
         Ok(CreatedNote {
             name: stem,
@@ -472,6 +474,13 @@ fn move_note_inner(
             Relink::Convert,
         )?;
         hidden::seal_at(vault_root, keys, profile_id, &destination_key, &target, &document, Some((rel_path, &disk)))?;
+        crate::history::follow(
+            vault_root,
+            rel_path,
+            &target,
+            crate::history::Scope::Profile(profile_id, &destination_key),
+            keys,
+        );
         Ok(CreatedNote { name: note_display_name(&target), rel_path: target })
     }
 }

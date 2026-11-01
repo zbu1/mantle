@@ -77,6 +77,12 @@ pub struct VaultMeta {
     /// (an encrypted note's are sealed in the note instead).
     #[serde(default)]
     pub styles: BTreeMap<String, ItemStyle>,
+    /// Whether saves are snapshotted (`history.rs`).
+    #[serde(default = "default_true")]
+    pub snapshots_enabled: bool,
+    /// Snapshots older than this many days are pruned.
+    #[serde(default = "default_snapshot_days")]
+    pub snapshot_days: u32,
 }
 
 /// A note's or folder's sidebar icon (a Lucide icon name) and color (a
@@ -96,6 +102,14 @@ pub struct RecentNote {
     pub rel_path: String,
     /// When the note was opened, in milliseconds since the Unix epoch.
     pub opened_at: u64,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_snapshot_days() -> u32 {
+    30
 }
 
 fn current_version() -> u32 {
@@ -118,6 +132,8 @@ impl Default for VaultMeta {
             recent_notes: Vec::new(),
             property_types: BTreeMap::new(),
             styles: BTreeMap::new(),
+            snapshots_enabled: true,
+            snapshot_days: default_snapshot_days(),
         }
     }
 }
@@ -204,6 +220,8 @@ mod tests {
             ],
             property_types: BTreeMap::from([("due".to_string(), "date".to_string())]),
             styles: BTreeMap::from([("Work".to_string(), ItemStyle { icon: Some("star".to_string()), color: None })]),
+            snapshots_enabled: false,
+            snapshot_days: 7,
         };
         save_vault_meta(root_str.clone(), state.clone()).unwrap();
 
