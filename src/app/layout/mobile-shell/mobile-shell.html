@@ -15,6 +15,9 @@
     class="h-11 rounded-xl bg-primary px-6 text-sm font-semibold text-primary-foreground shadow-card active:opacity-90">
     Allow Access
   </button>
+  <button type="button" (click)="recheckFilesAccess()" class="-mt-3 text-xs font-medium text-primary active:opacity-70">
+    Already allowed? Check again
+  </button>
   <p class="text-xs text-muted-foreground">Mantle only works in the folders you open as vaults.</p>
 </section>
 } @else if (vaultRoot.isOpen() && !vaultState.managing()) {

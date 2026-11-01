@@ -19,6 +19,8 @@ mod watcher;
 use tauri::{Manager, RunEvent};
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
 
+pub use typst_render::{worker_main as typst_worker, WORKER_ARG as TYPST_WORKER_ARG};
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()

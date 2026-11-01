@@ -101,3 +101,4 @@ key; each note's content key is wrapped by the master key in the note's header.
   `resolve_rel_path`; write through `hidden::seal_at` when a write may change
   whether or where a note is hidden. Hidden notes stay out of `state.json` and persisted tabs.
 - Scope: at-rest confidentiality only, not resistance to reading process memory.
+  File sizes and modification times stay visible (sync tools rely on them).

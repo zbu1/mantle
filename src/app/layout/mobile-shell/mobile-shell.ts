@@ -65,7 +65,7 @@ export class MobileShell {
 
     // Granting access happens in Android's settings, so check again on coming back.
     const recheck = () => {
-      if (document.visibilityState === 'visible') this.filesAccess.set(androidBridge()?.hasFilesAccess() ?? true);
+      if (document.visibilityState === 'visible') this.recheckFilesAccess();
     };
     document.addEventListener('visibilitychange', recheck);
     const destroyRef = inject(DestroyRef);
@@ -75,6 +75,10 @@ export class MobileShell {
       const listener = onBackButtonPress(() => this.back());
       destroyRef.onDestroy(() => void listener.then((l) => l.unregister()));
     }
+  }
+
+  protected recheckFilesAccess(): void {
+    this.filesAccess.set(androidBridge()?.hasFilesAccess() ?? true);
   }
 
   protected requestFilesAccess(): void {

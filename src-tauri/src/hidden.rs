@@ -479,7 +479,8 @@ pub struct HidingFailure {
 /// Change `profile_id`'s hiding settings and convert every one of its notes
 /// to match. The profile must be unlocked. `renames` gives a note (by path)
 /// another name to un-hide under, where its own is taken; notes in `skip`
-/// are left as they are.
+/// are left as they are. If any note fails to convert, the settings revert
+/// (`report.failed` is non-empty) and the call can simply be repeated.
 #[tauri::command(async)]
 pub fn set_profile_hiding(
     vault_root: String,
@@ -512,6 +513,7 @@ pub(crate) fn set_profile_hiding_inner(
     let profile = registry
         .find_mut(profile_id)
         .ok_or_else(|| format!("No credential profile \"{profile_id}\" in this vault"))?;
+    let before = Hiding { locations: profile.hide_locations, names: profile.hide_names };
     profile.hide_locations = hiding.locations;
     profile.hide_names = hiding.names;
     save_registry(vault_root, &registry)?;
@@ -553,6 +555,17 @@ pub(crate) fn set_profile_hiding_inner(
             }
             Ok(_) => {}
             Err(error) => report.failed.push(HidingFailure { rel_path: id, error }),
+        }
+    }
+    if !report.failed.is_empty() {
+        // The failed notes still match the old settings, so put them back:
+        // the user can then retry, which converts every note again.
+        let _registry_lock = crate::credentials::registry_guard();
+        let mut registry = load_registry(vault_root)?;
+        if let Some(profile) = registry.find_mut(profile_id) {
+            profile.hide_locations = before.locations;
+            profile.hide_names = before.names;
+            save_registry(vault_root, &registry)?;
         }
     }
     Ok(report)
@@ -698,6 +711,33 @@ mod tests {
         assert_eq!(journal, ["Plans (2).mntl.enc", "Plans copy.mntl.enc", "Plans.mntl.enc"]);
         assert!(!read_header(&dir.join("Journal/Plans (2).mntl.enc")).unwrap().hidden);
         assert!(listing(&root, &keys).0.iter().all(|(_, hidden)| !hidden));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_failed_conversion_reverts_the_settings_and_can_be_retried() {
+        let dir = temp_dir("revert");
+        let root = dir.to_string_lossy().into_owned();
+        let mk = mntl_core::MasterKey::generate().unwrap();
+        let wrong = mntl_core::MasterKey::generate().unwrap();
+        let mut registry = ProfileRegistry::default();
+        registry.profiles.push(profile("diary"));
+        save_registry(&root, &registry).unwrap();
+        seal(&dir, "Good.mntl.enc", "diary", &mk);
+        seal(&dir, "Bad.mntl.enc", "diary", &wrong);
+        let keys = SessionKeys::default();
+        keys.unlock_for_test(&root, "diary", mk.clone()).unwrap();
+
+        let names = Hiding { locations: false, names: true };
+        let report = set_profile_hiding_inner(&root, "diary", names, &HashMap::new(), &[], &keys).unwrap();
+        assert_eq!(report.failed.len(), 1);
+        assert_eq!(profile_hiding(&root, "diary").unwrap(), Hiding::default());
+
+        fs::remove_file(dir.join("Bad.mntl.enc")).unwrap();
+        let report = set_profile_hiding_inner(&root, "diary", names, &HashMap::new(), &[], &keys).unwrap();
+        assert!(report.failed.is_empty());
+        assert_eq!(profile_hiding(&root, "diary").unwrap(), names);
 
         let _ = fs::remove_dir_all(&dir);
     }

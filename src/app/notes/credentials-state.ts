@@ -656,7 +656,6 @@ Your previous recovery key no longer works. Write this one down or print it, and
       this.tabsState.renameNoteId(from, created.relPath, created.name);
       this.vaultMeta.renameNote(from, created.relPath);
     });
-    logInfo(`Changed what profile "${profileId}" hides`);
     await this.refresh();
     await this.vaultState.refresh();
     if (report.failed.length > 0) {
@@ -665,7 +664,10 @@ Your previous recovery key no longer works. Write this one down or print it, and
         title: `${report.failed.length} Notes Not Converted`,
         tone: 'error',
       });
+      // The backend reverted the settings; toggling again retries.
+      return false;
     }
+    logInfo(`Changed what profile "${profileId}" hides`);
     this.history.record({
       label: `Change Hidden Notes of "${profile.displayName}"`,
       undo: () => this.setHiding(profileId, before.hideLocations, before.hideNames),
