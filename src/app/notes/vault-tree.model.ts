@@ -106,6 +106,12 @@ export function isNoteLocked(note: VaultNoteNode, unlockedProfiles: ReadonlySet<
   return note.profile === null || !unlockedProfiles.has(note.profile);
 }
 
+/** Encryption state of `note` as shown under its name: tooltip on desktop, menu header on Android. */
+export function noteStatusLabel(note: VaultNoteNode, locked: boolean, profileName: string): string {
+  if (!note.encrypted) return markdownExtensionOf(note.relPath) ? 'Plain Markdown file' : 'Not encrypted';
+  return `${locked ? 'Locked' : 'Unlocked'} · ${profileName}`;
+}
+
 /** The folder at `relPath` (empty string is the vault root), or null if the tree has no such folder. */
 export function findFolder(root: VaultFolderNode, relPath: string): VaultFolderNode | null {
   if (relPath === '') return root;

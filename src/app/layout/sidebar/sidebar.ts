@@ -1,5 +1,5 @@
 import { Component, DestroyRef, HostListener, computed, effect, inject, signal, untracked } from '@angular/core';
-import { LucideFileText, LucideLock } from '@lucide/angular';
+import { LucideFileText, LucideFolderInput, LucideLock, LucideStar, LucideTrash2, LucideX } from '@lucide/angular';
 import { SidebarSection } from './sidebar-section/sidebar-section';
 import { SidebarItemButton } from './sidebar-item-button/sidebar-item-button';
 import { VaultHeader } from './vault-header/vault-header';
@@ -46,6 +46,7 @@ import {
   dirOf,
   flattenVaultNotes,
   isNoteLocked,
+  noteStatusLabel,
   isVaultTreeDrag,
   markdownExtensionOf,
   NOTE_REFERENCE_DRAG_MIME,
@@ -61,6 +62,8 @@ import { ContextMenuItem } from '../../shared/context-menu/context-menu.model';
 import { DialogState } from '../../shared/dialog/dialog-state';
 import { EditContextState, TreeEditCommand } from '../../shared/edit-context-state';
 
+const LONG_PRESS_HINT_KEY = 'mantle:long-press-hint-seen';
+
 interface RecentRow {
   note: VaultNoteNode;
   openedAt: number;
@@ -75,7 +78,7 @@ interface FavoriteRow {
 
 @Component({
   selector: 'app-sidebar',
-  imports: [SidebarSection, SidebarItemButton, VaultHeader, VaultTreeNode, CredentialsSection, TagGroupRow, LucideFileText, LucideLock],
+  imports: [SidebarSection, SidebarItemButton, VaultHeader, VaultTreeNode, CredentialsSection, TagGroupRow, LucideFileText, LucideLock, LucideFolderInput, LucideStar, LucideTrash2, LucideX],
   templateUrl: './sidebar.html',
   host: { class: 'contents' },
 })
@@ -269,6 +272,18 @@ export class Sidebar {
   protected onOpenNote(note: VaultNoteNode): void {
     this.tabsState.openNote({ id: note.relPath, title: note.name });
     this.closeDrawer();
+    if (isMobile) this.showLongPressHintOnce();
+  }
+
+  /** Long-press is the only way to a tree item's menu on Android, and nothing hints at it. */
+  private showLongPressHintOnce(): void {
+    try {
+      if (localStorage.getItem(LONG_PRESS_HINT_KEY)) return;
+      localStorage.setItem(LONG_PRESS_HINT_KEY, '1');
+    } catch {
+      return;
+    }
+    this.toast.show('Long-press for more');
   }
 
   protected onOutlineHeading(heading: OutlineHeading): void {
@@ -294,6 +309,7 @@ export class Sidebar {
 
   protected onFileContextMenu(payload: { event: MouseEvent; file: VaultFileNode }): void {
     const { event, file } = payload;
+    if (this.selectionState.selectMode()) return event.preventDefault();
     if (this.openSelectionMenu(event, file.relPath)) return;
     const items: ContextMenuItem[] = [
       { kind: 'item', label: 'Open', icon: 'open', action: () => this.onOpenFile(file) },
@@ -313,10 +329,11 @@ export class Sidebar {
       { kind: 'separator' },
       { kind: 'item', desktopOnly: true, label: 'Show in File Explorer', icon: 'reveal', action: () => void this.vaultState.revealInFileExplorer(file.relPath) },
       { kind: 'item', label: 'Copy Path', icon: 'copy', action: () => this.toast.copy(file.relPath) },
+      ...this.selectItems(file.relPath),
       { kind: 'separator' },
       { kind: 'item', label: 'Delete', icon: 'delete', danger: true, action: () => void this.deleteFile(file) },
     ];
-    this.contextMenuState.open(event, items);
+    this.contextMenuState.open(event, items, { title: file.name, subtitle: 'File in the vault' });
   }
 
   private async deleteFile(file: VaultFileNode): Promise<void> {
@@ -367,6 +384,7 @@ export class Sidebar {
 
   protected onNoteContextMenu(payload: { event: MouseEvent; note: VaultNoteNode }): void {
     const { event, note } = payload;
+    if (this.selectionState.selectMode()) return event.preventDefault();
     if (this.openSelectionMenu(event, note.relPath)) return;
     const items: ContextMenuItem[] = [
       { kind: 'item', label: 'Open', icon: 'open', action: () => this.onOpenNote(note) },
@@ -407,13 +425,17 @@ export class Sidebar {
           ]),
       { kind: 'separator' },
       { kind: 'item', label: 'Rename', icon: 'rename', action: () => this.renameState.renamingPath.set(note.relPath) },
+      ...this.selectItems(note.relPath),
       ...this.moveToItems([note.relPath]),
       this.favoriteMenuItem(note.relPath),
       ...this.styleMenuItems([note.relPath]),
       { kind: 'separator' },
       { kind: 'item', label: 'Delete', icon: 'delete', danger: true, action: () => void this.deleteNote(note) },
     ];
-    this.contextMenuState.open(event, items);
+    this.contextMenuState.open(event, items, {
+      title: note.name,
+      subtitle: noteStatusLabel(note, isNoteLocked(note, this.credentialsState.unlockedIds()), this.credentialsState.displayNameOf(note.profile)),
+    });
   }
 
   /**
@@ -514,6 +536,7 @@ export class Sidebar {
 
   protected onFolderContextMenu(payload: { event: MouseEvent; folder: VaultFolderNode }): void {
     const { event, folder } = payload;
+    if (this.selectionState.selectMode()) return event.preventDefault();
     if (this.openSelectionMenu(event, folder.relPath)) return;
     const markdown = this.encryptionActions.markdownNotesIn([folder.relPath]);
     const mantle = this.encryptionActions.mantleNotesIn([folder.relPath]);
@@ -536,6 +559,7 @@ export class Sidebar {
       },
       { kind: 'separator' },
       { kind: 'item', label: 'Rename', icon: 'rename', action: () => this.renameState.renamingPath.set(folder.relPath) },
+      ...this.selectItems(folder.relPath),
       ...this.moveToItems([folder.relPath]),
       ...this.styleMenuItems([folder.relPath]),
       this.folderSortMenu(folder.relPath),
@@ -553,7 +577,7 @@ export class Sidebar {
       { kind: 'separator' },
       { kind: 'item', label: 'Delete', icon: 'delete', danger: true, action: () => void this.deleteFolder(folder) },
     ];
-    this.contextMenuState.open(event, items);
+    this.contextMenuState.open(event, items, { title: folder.name });
   }
 
   /** "Sort By": the vault's order, or one of the folder's own. */
@@ -772,12 +796,52 @@ export class Sidebar {
         kind: 'item',
         label: 'Move to…',
         icon: 'move-to-root',
-        action: () =>
-          void this.folderPicker.pickFolderIn('Move to…', root, vaultNameFromPath(root)).then((dest) =>
-            dest === null ? undefined : this.onNotesDropped({ relPaths, destRelDir: dest }),
-          ),
+        action: () => void this.pickMoveDestination(relPaths),
       },
     ];
+  }
+
+  private async pickMoveDestination(relPaths: string[]): Promise<void> {
+    const root = this.vaultState.rootPath();
+    if (!root) return;
+    const dest = await this.folderPicker.pickFolderIn('Move to…', root, vaultNameFromPath(root));
+    if (dest !== null) await this.onNotesDropped({ relPaths, destRelDir: dest });
+  }
+
+  /** Android's way into multi-select, from an item's long-press menu. */
+  private selectItems(relPath: string): ContextMenuItem[] {
+    return isMobile
+      ? [{ kind: 'item', label: 'Select', icon: 'check', action: () => this.selectionState.enterSelectMode(relPath) }]
+      : [];
+  }
+
+  protected readonly selectedCount = computed(() => this.selectionState.selected().size);
+
+  /** Every selected item is a note, so Favorite applies. */
+  protected readonly selectionAllNotes = computed(() => {
+    const nodes = this.nodesByPath();
+    const selected = this.selectionState.selected();
+    return selected.size > 0 && [...selected].every((path) => nodes.get(path)?.type === 'note');
+  });
+
+  protected bulkMove(): void {
+    void this.pickMoveDestination([...this.selectionState.selected()]).then(() => this.leaveSelectModeIfEmpty());
+  }
+
+  protected bulkFavorite(): void {
+    const selected = [...this.selectionState.selected()];
+    if (selected.every((path) => this.favorites.isFavorite(path))) this.favorites.remove(selected);
+    else this.favorites.add(selected);
+    this.selectionState.exitSelectMode();
+  }
+
+  protected bulkDelete(): void {
+    void this.deleteSelection().then(() => this.leaveSelectModeIfEmpty());
+  }
+
+  /** A completed move or delete clears the selection; a cancelled one leaves it, and the mode, in place. */
+  private leaveSelectModeIfEmpty(): void {
+    if (this.selectionState.selected().size === 0) this.selectionState.exitSelectMode();
   }
 
   protected async onFolderDropped(payload: { relPath: string; destRelDir: string }): Promise<void> {

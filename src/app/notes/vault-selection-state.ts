@@ -8,6 +8,9 @@ import { Injectable, signal } from '@angular/core';
 export class VaultSelectionState {
   readonly selected = signal<ReadonlySet<string>>(new Set());
 
+  /** Android's multi-select: taps toggle rows instead of opening them (there are no modifier keys). */
+  readonly selectMode = signal(false);
+
   /** Range anchor for shift-click; the last item explicitly clicked (plain or ctrl/cmd). */
   private anchor: string | null = null;
 
@@ -58,5 +61,16 @@ export class VaultSelectionState {
   clear(): void {
     this.selected.set(new Set());
     this.anchor = null;
+  }
+
+  /** Starts select mode with `relPath` as the first pick. */
+  enterSelectMode(relPath: string): void {
+    this.selectOnly(relPath);
+    this.selectMode.set(true);
+  }
+
+  exitSelectMode(): void {
+    this.clear();
+    this.selectMode.set(false);
   }
 }

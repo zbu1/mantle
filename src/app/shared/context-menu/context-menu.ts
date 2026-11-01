@@ -16,6 +16,7 @@ import {
   LucideTrash2,
   LucideX,
 } from '@lucide/angular';
+import { isMobile } from '../../core/tauri-env';
 import { MenuItem } from '../menu/menu-item';
 import { MenuSeparator } from '../menu/menu-separator';
 import { MenuSurface } from '../menu/menu-surface';
@@ -67,6 +68,8 @@ export class ContextMenu {
   private readonly state = inject(ContextMenuState);
 
   protected readonly menu = this.state.menu;
+  /** Android opens a submenu as a bottom sheet rather than a flyout beside its row. */
+  protected readonly isMobile = isMobile;
 
   // Drives row highlighting in place of CSS `:hover` — see MenuItem.active.
   // Shared between mouse (hover) and keyboard (arrow keys) so only one row
@@ -191,7 +194,8 @@ export class ContextMenu {
     const fitsRight = rect.right + MENU_WIDTH + VIEWPORT_MARGIN <= window.innerWidth;
     const left = fitsRight ? rect.right : rect.left - MENU_WIDTH;
     const top = Math.max(VIEWPORT_MARGIN, Math.min(rect.top - 4, window.innerHeight - height - VIEWPORT_MARGIN));
-    if (this.submenu()?.index !== index) this.submenu.set({ index, style: { left: `${left}px`, top: `${top}px` } });
+    const style: Record<string, string> = isMobile ? {} : { left: `${left}px`, top: `${top}px` };
+    if (this.submenu()?.index !== index) this.submenu.set({ index, style });
     this.selectedIndex.set(index);
     this.subIndex.set(focus ? (selectableIndices(item.items)[0] ?? null) : null);
   }

@@ -25,6 +25,12 @@ export type ContextMenuIcon =
   | 'code'
   | 'paragraph';
 
+/** What a menu is about, shown above its rows on Android where a long-press leaves no hover tooltip. */
+export interface ContextMenuHeader {
+  title: string;
+  subtitle?: string;
+}
+
 export interface ContextMenuAction {
   kind: 'item';
   label: string;

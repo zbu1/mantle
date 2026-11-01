@@ -13,6 +13,7 @@ import {
   isNoteLocked,
   isVaultTreeDrag,
   markdownExtensionOf,
+  noteStatusLabel,
 } from '../../../notes/vault-tree.model';
 import { CredentialsState } from '../../../notes/credentials-state';
 import { TabsState } from '../../../notes/tabs-state';
@@ -208,7 +209,8 @@ export class VaultTreeNode {
 
   /** Shift-click selects a range, ctrl/cmd-click toggles one item. False for a plain click. */
   private selectWithModifiers(relPath: string, event: MouseEvent): boolean {
-    if (event.shiftKey) this.selectionState.selectRange(relPath, this.visibleTreePaths());
+    if (this.selectionState.selectMode()) this.selectionState.toggle(relPath);
+    else if (event.shiftKey) this.selectionState.selectRange(relPath, this.visibleTreePaths());
     else if (event.ctrlKey || event.metaKey) this.selectionState.toggle(relPath);
     else return false;
     return true;
@@ -230,12 +232,11 @@ export class VaultTreeNode {
 
   /** Sublabel for the note's hover tooltip: encryption state, and profile name if encrypted. */
   protected encryptionStatus(note: VaultNoteNode): string {
-    if (!note.encrypted) return markdownExtensionOf(note.relPath) ? 'Plain Markdown file' : 'Not encrypted';
-    return `${this.isLocked(note) ? 'Locked' : 'Unlocked'} · ${this.profileName(note)}`;
+    return noteStatusLabel(note, this.isLocked(note), this.profileName(note));
   }
 
   protected onNoteClick(note: VaultNoteNode, event: MouseEvent): void {
-    if (this.isLocked(note)) {
+    if (this.isLocked(note) && !this.selectionState.selectMode()) {
       this.lockedClicked.emit(note);
       return;
     }
@@ -245,6 +246,7 @@ export class VaultTreeNode {
   }
 
   protected onNoteContextMenu(note: VaultNoteNode, event: MouseEvent): void {
+    if (this.selectionState.selectMode()) return event.preventDefault();
     if (!this.selectionState.isSelected(note.relPath)) {
       this.selectionState.selectOnly(note.relPath);
     }

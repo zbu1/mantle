@@ -1,5 +1,13 @@
 @if (menu(); as m) {
   <app-menu-surface #panel class="fixed z-50" [style]="style()">
+    @if (m.header; as header) {
+      <div class="border-b border-border px-3 pb-2 pt-1.5">
+        <div class="break-words text-sm font-medium text-foreground">{{ header.title }}</div>
+        @if (header.subtitle) {
+          <div class="text-xs text-muted-foreground">{{ header.subtitle }}</div>
+        }
+      </div>
+    }
     @for (item of m.items; track $index) {
       @if (item.kind === 'separator') {
         <app-menu-separator />
@@ -29,7 +37,12 @@
     }
   </app-menu-surface>
   @if (submenuItems(); as subItems) {
-    <app-menu-surface #subPanel [scrollable]="true" class="fixed z-50" [style]="submenu()!.style">
+    @if (isMobile) {
+      <div class="fixed inset-0 z-50 bg-black/40" aria-hidden="true"></div>
+    }
+    <app-menu-surface #subPanel [scrollable]="true" class="fixed z-50"
+      [class]="isMobile ? 'inset-x-0 bottom-0 z-50 w-full! max-h-[60%]! rounded-b-none! rounded-t-2xl! pb-2' : ''"
+      [style]="submenu()!.style">
       @for (item of subItems; track $index) {
         @if (item.kind === 'separator') {
           <app-menu-separator />

@@ -11,6 +11,16 @@ describe('VaultSelectionState', () => {
     return TestBed.inject(VaultSelectionState);
   }
 
+  it('enters select mode with one pick and leaves it cleared', () => {
+    const state = setup();
+    state.enterSelectMode('a.mntl');
+    expect(state.selectMode()).toBe(true);
+    expect([...state.selected()]).toEqual(['a.mntl']);
+    state.exitSelectMode();
+    expect(state.selectMode()).toBe(false);
+    expect(state.selected().size).toBe(0);
+  });
+
   it('starts with nothing selected', () => {
     const state = setup();
     expect(state.selected().size).toBe(0);
