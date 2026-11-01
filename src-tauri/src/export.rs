@@ -288,7 +288,7 @@ pub struct ToMarkdownReport {
 /// copied out of `attachments/`, which is never edited here; with
 /// `remove_unused`, the ones no note uses any more then go to the trash too.
 /// A note that fails is reported and the rest carry on.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn convert_to_markdown(
     vault_root: String,
     notes: Vec<ToMarkdownRequest>,
@@ -405,7 +405,7 @@ pub struct ExportReport {
 /// Notes become `.md` files, every other file is copied as it is, and
 /// `.mantle/` (like every dot entry the tree doesn't show) is left out. The
 /// vault itself isn't changed.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn export_vault(
     vault_root: String,
     dest: String,

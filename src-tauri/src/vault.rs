@@ -617,7 +617,7 @@ fn check_new_vault_path(dir: &Path) -> Result<(), String> {
 ///
 /// Reading tags means decrypting every note of every unlocked profile, so the
 /// frontend rescans when a profile is unlocked or locked, to add or drop them.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn scan_vault(vault_root: String, keys: State<SessionKeys>) -> Result<VaultNode, String> {
     logged("scan_vault", || scan_vault_inner(&vault_root, &keys))
 }

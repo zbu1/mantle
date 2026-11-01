@@ -36,7 +36,7 @@ struct Pending {
 ///
 /// The caller flushes pending note saves first: a save racing a rotation could
 /// leave a note under the old key.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn rotate_master_key(
     app: tauri::AppHandle,
     vault_root: String,

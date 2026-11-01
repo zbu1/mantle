@@ -33,7 +33,7 @@ pub struct ImportReport {
 
 /// Copy the Obsidian vault `source` into `dest`, a new or empty folder, as a
 /// new Mantle vault for the frontend to open.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn import_obsidian_vault(source: String, dest: String, keys: State<SessionKeys>) -> Result<ImportReport, String> {
     logged("import_obsidian_vault", || import_obsidian_inner(Path::new(&source), Path::new(&dest), &keys))
 }

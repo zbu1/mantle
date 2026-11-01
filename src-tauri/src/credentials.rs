@@ -8,10 +8,6 @@
 //! master key, and holds it in [`SessionKeys`] — process memory only — until
 //! the user locks it or quits.
 //!
-//! Each `.mntl.enc` note names its profile in cleartext in its header, so the
-//! app can group notes by profile and decrypt a whole profile's worth of them
-//! from one password entry.
-//!
 //! # Two rules for anyone editing this module
 //!
 //! 1. **Every error returned from here is written verbatim to the on-disk log**
@@ -21,12 +17,6 @@
 //!    headers deliberately do not duplicate the salt or the wrapped key, so
 //!    losing this file makes every encrypted note in the vault unrecoverable
 //!    even with the correct password. Hence the `.bak` written on every save.
-//!
-//! # Threat model
-//!
-//! This design provides at-rest confidentiality of the vault directory. It
-//! does not resist an attacker who can read the memory of a running Mantle
-//! process.
 
 use crate::logging::logged;
 use crate::vault_meta::STATE_DIR;
@@ -420,7 +410,7 @@ pub fn list_credential_profiles(
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn create_credential_profile(
     vault_root: String,
     display_name: String,
@@ -492,7 +482,7 @@ pub(crate) fn create_profile_inner(
     Ok(to_info(vault_root, &profile, true))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn unlock_credential_profile(
     vault_root: String,
     profile_id: String,
@@ -599,7 +589,7 @@ fn rename_profile_inner(
 /// rewrap: re-deriving a KEK from a brand new password can't unwrap the
 /// *old* wrapped key, and asking for the old password again would just be
 /// re-deriving what unlocking it already proved.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn change_credential_profile_password(
     app: tauri::AppHandle,
     vault_root: String,
@@ -655,7 +645,7 @@ fn change_password_inner(
 /// profile's member notes to plaintext first — deleting a profile that still
 /// has encrypted notes under it leaves them as unrecoverable orphans (the
 /// same state as copying `.mntl.enc` files in from another vault).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn delete_credential_profile(
     vault_root: String,
     profile_id: String,
@@ -684,7 +674,7 @@ fn delete_profile_inner(vault_root: &str, profile_id: &str, keys: &SessionKeys) 
 /// Undo creating a profile: take it out of the registry, keeping the entry
 /// in memory for redo. Refused once anything is encrypted under it, since the
 /// registry entry is the only way back to that content.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn undo_create_credential_profile(
     vault_root: String,
     profile_id: String,
@@ -718,7 +708,7 @@ pub fn undo_create_credential_profile(
 
 /// Redo creating a profile undone by [`undo_create_credential_profile`]. It
 /// comes back locked: its key wasn't kept.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn redo_create_credential_profile(
     vault_root: String,
     profile_id: String,
@@ -793,7 +783,7 @@ fn parse_recovery_key(text: &str) -> Result<KeyEncryptionKey, String> {
 
 /// Make a new recovery key for an unlocked profile, replacing any earlier one,
 /// and return it. It is shown once and never stored.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn create_recovery_key(
     vault_root: String,
     profile_id: String,
@@ -880,7 +870,7 @@ pub(crate) fn install_rotated_key(
 /// Unlock a profile with its recovery key and give it a new password. Also
 /// brings back a profile whose `profiles.json` entry was lost (it comes back
 /// without its hide settings, which can be set again).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn recover_credential_profile(
     vault_root: String,
     profile_id: String,

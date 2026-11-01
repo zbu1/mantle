@@ -332,7 +332,7 @@ fn exists(vault_root: &str, path: &str, keys: &SessionKeys) -> Result<bool, Stri
 }
 
 /// Notes that are gone but still have history, newest first.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_deleted_notes(vault_root: String, keys: State<SessionKeys>) -> Result<Vec<DeletedNote>, String> {
     logged("list_deleted_notes", || {
         let mut newest: HashMap<String, Entry> = HashMap::new();
@@ -380,7 +380,7 @@ pub fn restore_deleted_note(vault_root: String, id: String, keys: State<SessionK
 
 /// Delete snapshots older than the vault's retention. Sealed ones are only
 /// judged once their profile is unlocked, since their time is sealed.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn prune_history(vault_root: String, keys: State<SessionKeys>) -> Result<(), String> {
     logged("prune_history", || {
         let meta = crate::vault_meta::load_vault_meta(vault_root.clone())?;

@@ -129,7 +129,7 @@ fn reseal_document(
 ///    and the difference between "we deleted your note and hope the ciphertext
 ///    is good" and "we proved it before deleting anything".
 /// 4. Only then shred the original.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn encrypt_note_to_profile(
     vault_root: String,
     rel_path: String,
@@ -233,7 +233,7 @@ pub struct ConvertReport {
 /// original goes. The original is sent to the OS trash rather than shredded:
 /// nothing here is secret, and the trash keeps the untouched `.md`
 /// recoverable. A file that fails is reported and the rest carry on.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn convert_markdown_notes(
     vault_root: String,
     notes: Vec<ConvertRequest>,
@@ -338,7 +338,7 @@ fn convert_markdown_inner(
 ///
 /// A hidden note goes back to its real path, or under `name` (a file stem)
 /// in its folder when that's taken.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn decrypt_note_to_plaintext(
     vault_root: String,
     rel_path: String,
@@ -419,7 +419,7 @@ fn decrypt_note_inner(
 /// under the new master key. It has to: the profile id lives in the header,
 /// the header is the AEAD's associated data, so changing it necessarily
 /// invalidates the existing ciphertext.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn move_note_to_profile(
     vault_root: String,
     rel_path: String,

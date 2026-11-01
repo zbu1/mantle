@@ -388,7 +388,7 @@ pub struct HidingClash {
 /// The notes of `profile_id` that turning hiding off would put on a path
 /// that's taken, each with a free name to use instead. Only un-hiding can
 /// clash: hiding picks a free disk name by itself.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn hiding_clashes(
     vault_root: String,
     profile_id: String,
@@ -445,7 +445,7 @@ pub struct HidingFailure {
 /// to match. The profile must be unlocked. `renames` gives a note (by path)
 /// another name to un-hide under, where its own is taken; notes in `skip`
 /// are left as they are.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn set_profile_hiding(
     vault_root: String,
     profile_id: String,

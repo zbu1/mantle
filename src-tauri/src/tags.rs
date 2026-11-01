@@ -34,7 +34,7 @@ pub struct TagEditReport {
 /// Rename the tag `from` to `to` in every note that has it, matching case-
 /// insensitively. A note that already has `to` just loses `from`, so renaming
 /// onto an existing tag merges the two.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn rename_tag(
     vault_root: String,
     from: String,
@@ -50,7 +50,7 @@ pub fn rename_tag(
 }
 
 /// Remove the tag `tag` from every note that has it, matching case-insensitively.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn remove_tag(
     vault_root: String,
     tag: String,

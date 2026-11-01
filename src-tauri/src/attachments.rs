@@ -11,17 +11,13 @@
 //!   the plaintext in the filename would let anyone check whether a vault
 //!   holds a known file.
 //!
-//! Notes reference attachments with ordinary Markdown (`![alt](attachments/…)`,
-//! `[spec](attachments/…)`), and wiki-style `![[photo.png|300]]` / `[[doc.pdf]]`
-//! are read too. The webview loads images through the `mantle://` protocol
-//! ([`serve`]), which decrypts sealed ones in memory, so a decrypted image
-//! never touches the disk.
+//! Notes link them with Markdown or wiki-style links. The webview loads them
+//! through the `mantle://` protocol ([`serve`]), which decrypts sealed ones in
+//! memory.
 //!
-//! Attachments are never modified once written — a duplicated note shares its
-//! attachments with the original — so converting a note between plaintext and
-//! a profile ([`reseal_attachments`]) writes new copies and leaves the old ones
-//! behind. They are only deleted when the user asks, and only once nothing
-//! else uses them ([`unused_attachments`]).
+//! Attachments are never modified once written, so re-homing a note
+//! ([`reseal_attachments`]) writes new copies. They are deleted only when the
+//! user asks, once nothing uses them ([`unused_attachments`]).
 
 use crate::credentials::SessionKeys;
 use crate::logging::logged;
@@ -547,7 +543,7 @@ pub struct UnusedAttachments {
 /// `deleting` reference, that no other note uses.
 ///
 /// Every readable note is checked; see [`unreferenced`] for a locked one.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn unused_attachments(
     vault_root: String,
     deleting: Vec<String>,
@@ -618,7 +614,7 @@ pub(crate) fn unreferenced(
 }
 
 /// Every attachment sealed under `profile_id`.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn profile_attachments(vault_root: String, profile_id: String) -> Result<Vec<String>, String> {
     logged("profile_attachments", || {
         let Ok(entries) = fs::read_dir(resolve_rel_dir(&vault_root, "")?.join(ATTACHMENTS_DIR)) else {
@@ -635,7 +631,7 @@ pub fn profile_attachments(vault_root: String, profile_id: String) -> Result<Vec
 
 /// Move managed attachments to the OS trash. Only ever files directly in
 /// `attachments/`: a user's own files are theirs to delete.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn delete_attachments(vault_root: String, paths: Vec<String>) -> Result<(), String> {
     logged("delete_attachments", || delete_attachments_inner(&vault_root, &paths))
 }
