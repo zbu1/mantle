@@ -26,7 +26,6 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { isMobile } from '../../core/tauri-env';
 
 import { AttachmentsState, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, attachmentUrl } from '../attachments-state';
-import { CredentialsState } from '../credentials-state';
 import { NotePropertiesState } from '../note-properties-state';
 import { NotesState } from '../notes-state';
 import { sameProperties } from '../properties';
@@ -47,6 +46,8 @@ import { listMarkerPlugin } from './prosemirror/plugins/list-marker-plugin';
 import { enterAfterFold, foldedHeadings, headingFoldKey, headingFoldPlugin, setFoldedHeadings } from './prosemirror/plugins/heading-fold-plugin';
 import { calloutPlugin } from './prosemirror/plugins/callout-plugin';
 import { footnotePlugin } from './prosemirror/plugins/footnote-plugin';
+import { tocPlugin } from './prosemirror/plugins/toc-plugin';
+import { OutlineState } from './outline-state';
 import { HeadingFoldState, NoteFolds } from './heading-fold-state';
 import { findPlugin, findStatus } from './prosemirror/plugins/find-plugin';
 import { demoteEmptyLeadingBlock } from './prosemirror/commands/demote-empty-leading-block';
@@ -61,6 +62,7 @@ import {
   imagePlugin,
   relinkImages,
   removeImage,
+  resizeImage,
 } from './prosemirror/plugins/image-plugin';
 
 import { CodeLanguagePicker } from './code-language-picker/code-language-picker';
@@ -185,7 +187,6 @@ export class NoteEditor {
   private readonly vaultRoot = inject(VaultRootState).path;
   private readonly vaultState = inject(VaultState);
   private readonly attachments = inject(AttachmentsState);
-  private readonly credentialsState = inject(CredentialsState);
   private readonly contextMenuState = inject(ContextMenuState);
   private readonly dialogState = inject(DialogState);
   private readonly editContext = inject(EditContextState);
@@ -194,6 +195,7 @@ export class NoteEditor {
   private readonly linkMenuState = inject(LinkMenuState);
   private readonly tabsState = inject(TabsState);
   private readonly headingFolds = inject(HeadingFoldState);
+  private readonly outline = inject(OutlineState);
 
   readonly noteId = input.required<string>();
   /** The tab showing the note, which keys its saved scroll position and selection. */
@@ -252,6 +254,7 @@ export class NoteEditor {
           headingFoldPlugin(),
           calloutPlugin(),
           footnotePlugin(),
+          tocPlugin(),
           findPlugin(),
           dropCursor({ color: 'var(--primary)', width: 2 }),
           trailingParagraphPlugin(),
@@ -306,6 +309,7 @@ export class NoteEditor {
         handleDOMEvents: {
           focus: (view) => {
             this.editContext.focusEditor(view);
+            this.outline.show(view);
             // With the note open in two panes, the panel edits the one last used.
             this.noteProperties.attach(this.noteId(), view);
           },
@@ -326,6 +330,7 @@ export class NoteEditor {
             this.noteProperties.applied(this.noteId(), tags, properties);
           }
           if (tr.docChanged) {
+            this.outline.changed(view);
             const markdown = serializeMarkdown(newState.doc);
             this.lastMarkdown = markdown;
             // Counted from the saved Markdown, so revealed syntax doesn't count.
@@ -419,6 +424,7 @@ export class NoteEditor {
       this.saveViewState();
       if (this.editorView) this.editContext.forgetEditor(this.editorView);
       if (this.editorView) this.noteProperties.detach(this.editorView);
+      if (this.editorView) this.outline.forget(this.editorView);
       this.editorView?.destroy();
     });
   }
@@ -458,12 +464,8 @@ export class NoteEditor {
         return sourcePath ? invoke<string>('import_attachment', { ...args(), sourcePath }) : null;
       },
       url: (src) => attachmentUrl(args().vaultRoot, args().noteRelPath, src),
-      describe: async (src) => {
-        const info = await this.attachments.info(this.noteId(), src);
-        return info && { ...info, profile: info.profile && this.credentialsState.displayNameOf(info.profile) };
-      },
       open: (src) => void this.attachments.openLinked(this.noteId(), src),
-      contextMenu: (event, view, pos, node) => void this.openImageMenu(event, view, pos, node.attrs['src']),
+      contextMenu: (event, view, pos, node) => void this.openImageMenu(event, view, pos, node),
     };
   }
 
@@ -616,13 +618,35 @@ export class NoteEditor {
     view.focus();
   }
 
-  private async openImageMenu(event: MouseEvent, view: EditorView, pos: number, src: string): Promise<void> {
+  private async openImageMenu(event: MouseEvent, view: EditorView, pos: number, node: ProseMirrorNode): Promise<void> {
     // Claim the event now: the content area has its own menu, and this one waits on a lookup.
     event.preventDefault();
     event.stopPropagation();
+    const { src, size } = node.attrs;
     const noteId = this.noteId();
     const info = await this.attachments.info(noteId, src).catch(() => null);
+    // The note may have changed while the menu was open.
+    const resize = (to: string | null) => view.state.doc.nodeAt(pos)?.attrs['src'] === src && resizeImage(view, pos, to);
+    const presets: [string, string | null][] = [['Small', '200'], ['Medium', '400'], ['Large', '600'], ['Original', null]];
     this.contextMenuState.open(event, [
+      {
+        kind: 'submenu',
+        label: 'Size',
+        items: [
+          ...presets.map(([label, to]) => ({
+            kind: 'item' as const,
+            label: to ? `${label} (${to} px)` : label,
+            checked: size === to,
+            action: () => resize(to),
+          })),
+          {
+            kind: 'item' as const,
+            label: 'Custom…',
+            checked: !presets.some(([, to]) => to === size),
+            action: () => void this.promptImageSize(size, resize),
+          },
+        ],
+      },
       {
         kind: 'item',
         desktopOnly: true,
@@ -663,6 +687,23 @@ export class NoteEditor {
     ]);
   }
 
+  /** Asks for an image's size as `300` or `300x200`, an empty answer for its own. */
+  private async promptImageSize(size: string | null, resize: (to: string | null) => void): Promise<void> {
+    const answer = await this.dialogState.prompt('A width in px, or width × height like 300x200. Leave empty for its own size.', {
+      title: 'Image Size',
+      placeholder: '300 or 300x200',
+      initialValue: size ?? '',
+      confirmLabel: 'Resize',
+    });
+    if (answer === null) return;
+    const to = answer.replace(/\s|px/gi, '').replace('×', 'x').toLowerCase();
+    if (!to) return resize(null);
+    if (/^[1-9]\d*(x[1-9]\d*)?$/.test(to)) return resize(to);
+    await this.dialogState.alert(`"${answer}" isn't a size. Use a width like 300, or width × height like 300x200.`, {
+      title: "Couldn't Resize",
+    });
+  }
+
   private applyIfReady(id: string): void {
     const view = this.editorView;
     if (!view) return;
@@ -698,6 +739,8 @@ export class NoteEditor {
     }
     this.lastMarkdown = entry.note.content;
     view.dispatch(tr);
+    // The note just switched to is the one to outline.
+    if (switching) this.outline.show(view);
     this.lastAppliedNoteId = id;
     this.appliedKey = key;
     const folds = untracked(() => this.headingFolds.folds().get(id));

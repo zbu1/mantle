@@ -11,6 +11,7 @@ import {
   LucideMinus,
   LucideQuote,
   LucideTable,
+  LucideTableOfContents,
   LucideTags,
   LucideText,
 } from '@lucide/angular';
@@ -32,6 +33,7 @@ import { SlashCommandItem } from './slash-menu.model';
     LucideListTodo,
     LucideQuote,
     LucideTable,
+    LucideTableOfContents,
     LucideCode2,
     LucideMinus,
     LucideImage,

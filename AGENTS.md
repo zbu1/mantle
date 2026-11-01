@@ -10,7 +10,9 @@ Angular 22 (frontend, signals-based, no NgModules).
   tree, content area) around a `notes/` feature — a tabbed, ProseMirror-based
   Markdown editor (`notes/editor/`) with a slash command menu, which shows the
   Markdown under the cursor as editable raw text (`syntax-reveal-plugin.ts`:
-  `md_raw` / `md_prefix` marks, saved so the file never changes). The editor
+  `md_raw` / `md_prefix` marks, saved so the file never changes). A `[TOC]`
+  paragraph shows the note's headings (`toc-plugin.ts`), and the sidebar's
+  Outline section lists them for the editor last focused (`OutlineState`). The editor
   area splits into nested panes (`TabsState.layout`, rendered by
   `layout/pane-layout/`), each with its own `TabStrip`; two panes showing one
   note share its `NotesState` entry and copy each other's edits in — plus
@@ -59,6 +61,10 @@ Angular 22 (frontend, signals-based, no NgModules).
   `src-tauri/src/tags.rs` renames or removes a tag across the whole vault;
   its `edit_note` rewrites one note of any kind, which `src-tauri/src/links.rs`
   also uses to rewrite `[[links]]` after a rename or move.
+  `src-tauri/src/typst_render.rs` compiles ` ```typst ` blocks to SVG for
+  the editor's code block view (no file or package access, cached in memory
+  by content hash); ` ```mermaid ` blocks render in the frontend, the
+  `mermaid` package loaded lazily on first use.
   `src-tauri/src/export.rs` turns Mantle notes back into Markdown — in place
   (`convert_to_markdown`) or as a copy of the vault elsewhere (`export_vault`)
   — writing their `attachments/` files out decrypted where the user picks

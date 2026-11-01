@@ -8,6 +8,7 @@ mod logging;
 mod notes_crypto;
 mod spelling;
 mod tags;
+mod typst_render;
 mod vault;
 mod vault_meta;
 mod watcher;
@@ -39,6 +40,7 @@ pub fn run() {
         .register_asynchronous_uri_scheme_protocol("mantle", attachments::protocol)
         .invoke_handler(tauri::generate_handler![
             spelling::spelling_suggestions,
+            typst_render::render_typst,
             vault::scan_vault,
             vault::create_vault,
             vault::move_vault,

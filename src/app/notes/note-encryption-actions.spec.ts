@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideZonelessChangeDetection } from '@angular/core';
 import { installTauriMock } from '../../testing/tauri-mock';
 import { DialogState } from '../shared/dialog/dialog-state';
+import { CredentialsState } from './credentials-state';
 import { NoteEncryptionActions } from './note-encryption-actions';
 import { VaultHistoryState } from './vault-history-state';
 import { VaultState } from './vault-state';
@@ -98,5 +99,47 @@ describe('NoteEncryptionActions conversion', () => {
     choose.mockResolvedValue(null);
     await actions.convertToNotes(actions.markdownNotesIn(['Docs']));
     expect(calls('convert_markdown_notes')).toHaveLength(1);
+  });
+});
+
+describe('NoteEncryptionActions bulk encryption', () => {
+  it('unlocks sources then target, keeps going past a failure, and undoes in one step', async () => {
+    localStorage.clear();
+    const mock = installTauriMock();
+    TestBed.configureTestingModule({ providers: [provideZonelessChangeDetection()] });
+    const encrypted = (relPath: string, profile: string): VaultNoteNode => ({ ...note(relPath), name: 'e', encrypted: true, profile });
+    let profileOfE = 'work';
+    mock.respondWith('scan_vault', folder('', [note('d.mntl'), note('h.mntl')]));
+    const scan = () => folder('', [note('d.mntl'), encrypted('e.mntl.enc', profileOfE), encrypted('h.mntl.enc', 'home')]);
+    const base = mock.invoke.getMockImplementation()!;
+    mock.invoke.mockImplementation((command: string, args?: unknown) => {
+      const { relPath, profileId } = (args ?? {}) as { relPath: string; profileId: string };
+      if (command === 'scan_vault') return Promise.resolve(scan());
+      if (command === 'encrypt_note_to_profile') return Promise.reject('disk full');
+      if (command === 'move_note_to_profile') {
+        profileOfE = profileId;
+        return Promise.resolve({ relPath, name: 'e' });
+      }
+      return base(command, args);
+    });
+    const vaultState = TestBed.inject(VaultState);
+    vaultState.rootPath.set('/vault');
+    TestBed.tick();
+    await vaultState.refresh();
+    const unlock = jest.spyOn(TestBed.inject(CredentialsState), 'promptUnlock').mockResolvedValue(true);
+    const alert = jest.spyOn(TestBed.inject(DialogState), 'alert').mockResolvedValue();
+    const actions = TestBed.inject(NoteEncryptionActions);
+    const calls = (command: string) => mock.invoke.mock.calls.filter(([name]) => name === command).map(([, args]) => args);
+
+    await actions.changeEncryption(actions.allNotesIn(['d.mntl', 'e.mntl.enc', 'h.mntl.enc']), 'home');
+    expect(unlock.mock.calls.map(([id]) => id)).toEqual(['work', 'home']);
+    expect(calls('encrypt_note_to_profile')).toEqual([{ vaultRoot: '/vault', relPath: 'd.mntl', profileId: 'home' }]);
+    expect(calls('move_note_to_profile')).toEqual([{ vaultRoot: '/vault', relPath: 'e.mntl.enc', profileId: 'home' }]);
+    expect(alert).toHaveBeenCalledTimes(1);
+    expect(alert.mock.calls[0][0]).toContain('d.mntl: disk full');
+
+    await TestBed.inject(VaultHistoryState).undo();
+    expect(calls('move_note_to_profile')[1]).toEqual({ vaultRoot: '/vault', relPath: 'e.mntl.enc', profileId: 'work' });
+    expect(calls('encrypt_note_to_profile')).toHaveLength(1);
   });
 });

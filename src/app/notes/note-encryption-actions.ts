@@ -22,6 +22,13 @@ interface ConvertReport {
   removed: string[];
 }
 
+/** A note `changeEncryption` changed: where it was, where it is, and the profile it was in (null for plaintext). */
+interface BulkConverted {
+  from: string;
+  to: string;
+  source: string | null;
+}
+
 /** What converting a Markdown file does, behind the `?` wherever Mantle offers it. */
 export const CONVERT_HELP =
   'Converting turns a plain Markdown file into a Mantle note (.mntl), saved beside it.\n\n' +
@@ -91,6 +98,11 @@ export class NoteEncryptionActions {
       action: () => this.modalState.open(note),
     });
     return items;
+  }
+
+  /** The notes among `relPaths`, and every one inside a folder among them at any depth. */
+  allNotesIn(relPaths: readonly string[]): VaultNoteNode[] {
+    return this.notesIn(relPaths, () => true);
   }
 
   /** The Markdown files among `relPaths`, and every one inside a folder among them at any depth. */
@@ -360,6 +372,90 @@ export class NoteEncryptionActions {
       await this.dialogState.alert(String(err), { title: 'Move Failed', tone: 'error' });
       return false;
     }
+  }
+
+  /**
+   * Put every note in `notes` under `target` (a profile id, or null for
+   * plaintext), as one undo step. Notes already there are skipped. Locked
+   * profiles are unlocked first, sources then target; cancelling one cancels
+   * everything. A note that fails doesn't stop the rest, and all failures are
+   * reported together at the end.
+   */
+  async changeEncryption(notes: readonly VaultNoteNode[], target: string | null): Promise<void> {
+    const done = await this.convertMany(notes.map((note) => ({ relPath: note.relPath, target })));
+    if (!done || done.length === 0) return;
+    let forward = done;
+    let back: BulkConverted[] = [];
+    this.history.record({
+      label: `Change Encryption of ${done.length} Notes`,
+      paths: done.flatMap((d) => [d.from, d.to]),
+      undo: async () => {
+        const result = await this.convertMany(forward.map((d) => ({ relPath: d.to, target: d.source })));
+        if (result) back = result;
+        return result !== null;
+      },
+      redo: async () => {
+        const result = await this.convertMany(back.map((d) => ({ relPath: d.to, target })));
+        if (result) forward = result;
+        return result !== null;
+      },
+    });
+  }
+
+  /** Runs a bulk conversion. Resolves the notes it changed, or null if an unlock was cancelled. */
+  private async convertMany(items: readonly { relPath: string; target: string | null }[]): Promise<BulkConverted[] | null> {
+    const root = this.vaultState.rootPath();
+    const tree = this.vaultState.tree();
+    if (!root || !tree) return null;
+    const nodes = new Map(flattenAllNotes(tree).map((n) => [n.relPath, n]));
+    const failed: { relPath: string; error: string }[] = [];
+    const todo: { note: VaultNoteNode; target: string | null }[] = [];
+    for (const { relPath, target } of items) {
+      const note = nodes.get(relPath);
+      if (!note) failed.push({ relPath, error: 'No longer exists' });
+      else if (note.encrypted ? note.profile !== target : target !== null) todo.push({ note, target });
+    }
+
+    const profiles = new Set([
+      ...todo.flatMap(({ note }) => (note.encrypted ? [note.profile] : [])),
+      ...todo.flatMap(({ target }) => (target === null ? [] : [target])),
+    ]);
+    for (const profile of profiles) {
+      if (!(await this.credentialsState.promptUnlock(profile))) return null;
+    }
+
+    await this.notesState.flushPending(todo.map(({ note }) => note.relPath));
+    const done: BulkConverted[] = [];
+    for (const { note, target } of todo) {
+      try {
+        let created: CreatedNote;
+        if (target === null) {
+          const wasFavorite = this.favorites.isFavorite(note.relPath);
+          created = await invoke<CreatedNote>('decrypt_note_to_plaintext', { vaultRoot: root, relPath: note.relPath });
+          this.retarget(note.relPath, created);
+          if (wasFavorite) this.vaultMeta.addFavorites([created.relPath]);
+        } else {
+          const command = note.encrypted ? 'move_note_to_profile' : 'encrypt_note_to_profile';
+          created = await invoke<CreatedNote>(command, { vaultRoot: root, relPath: note.relPath, profileId: target });
+          this.retarget(note.relPath, created);
+          if (note.encrypted) this.notesState.reload(created.relPath);
+        }
+        done.push({ from: note.relPath, to: created.relPath, source: note.encrypted ? note.profile : null });
+      } catch (err) {
+        logError(`Failed to change the encryption of "${note.relPath}": ${formatError(err)}`);
+        failed.push({ relPath: note.relPath, error: String(err) });
+      }
+    }
+    if (done.length > 0) logInfo(`Changed the encryption of ${done.length} notes`);
+
+    await this.vaultState.refresh();
+    if (failed.length > 0) {
+      await this.dialogState.alert(failed.map((f) => `${fileNameOf(f.relPath)}: ${f.error}`).join('\n'), {
+        title: done.length === 0 ? 'Encryption Not Changed' : `${failed.length} Not Changed`,
+        tone: 'error',
+      });
+    }
+    return done;
   }
 
   /**

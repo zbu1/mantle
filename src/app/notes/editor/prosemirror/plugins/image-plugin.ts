@@ -2,17 +2,8 @@ import { Node as PMNode } from 'prosemirror-model';
 import { Plugin, PluginKey } from 'prosemirror-state';
 import { EditorView } from 'prosemirror-view';
 import { logError, formatError } from '../../../../core/logger';
+import { serializeMarkdown } from '../markdown-converter';
 import { schema } from '../schema';
-
-/** Where an image's `src` leads, for the bar shown under a selected image. */
-export interface ImageDescription {
-  /** The vault-relative path it resolved to. */
-  relPath: string;
-  /** In Mantle's `attachments/` folder, rather than one of the user's own files. */
-  managed: boolean;
-  /** Display name of the profile it's encrypted under, or null if plaintext. */
-  profile: string | null;
-}
 
 /** What the editor needs from the app to store and show a note's images. */
 export interface ImageContext {
@@ -22,8 +13,6 @@ export interface ImageContext {
   pick(): Promise<string | null>;
   /** The URL an image `src` from the current note loads from. */
   url(src: string): string;
-  /** Where an image `src` from the current note leads; null for a remote URL or a missing file. */
-  describe(src: string): Promise<ImageDescription | null>;
   /** Opens the file an image `src` from the current note leads to in its own tab. */
   open(src: string): void;
   /** Opens the context menu for the image `node` at `pos`. */
@@ -46,6 +35,22 @@ export function insertImage(view: EditorView, src: string, pos?: number): void {
 export function removeImage(view: EditorView, pos: number): void {
   const node = view.state.doc.nodeAt(pos);
   if (node?.type === schema.nodes['image']) view.dispatch(view.state.tr.delete(pos, pos + node.nodeSize));
+}
+
+/** Sets the size (`"300"` or `"300x200"`, null for its own) of the image node at `pos`. */
+export function resizeImage(view: EditorView, pos: number, size: string | null): void {
+  const node = view.state.doc.nodeAt(pos);
+  if (node?.type !== schema.nodes['image'] || node.attrs['size'] === size) return;
+  const resized = node.type.create({ ...node.attrs, size }, null, node.marks);
+  const tr = view.state.tr.setNodeMarkup(pos, undefined, resized.attrs);
+  // A revealed source is what gets saved, so it follows too.
+  const $pos = tr.doc.resolve(pos);
+  const source = $pos.nodeBefore;
+  if (source?.isText && source.marks.some((mark) => mark.type === schema.marks['md_raw'] && mark.attrs['image'])) {
+    const markdown = serializeMarkdown(schema.node('doc', null, [schema.node('paragraph', null, [resized])])).trim();
+    tr.replaceWith(pos - source.nodeSize, pos, schema.text(markdown, source.marks));
+  }
+  view.dispatch(tr);
 }
 
 /**

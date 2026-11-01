@@ -192,6 +192,12 @@ export function insertHorizontalRule(view: EditorView): boolean {
   return true;
 }
 
+/** A `[TOC]` paragraph, which `tocPlugin` shows as the note's headings. */
+export function insertTableOfContents(view: EditorView): boolean {
+  view.dispatch(view.state.tr.replaceSelectionWith(schema.nodes['paragraph'].create(null, schema.text('[TOC]'))));
+  return true;
+}
+
 /** Whether the selection sits in revealed Markdown, where marks can't go and delimiters are typed instead. */
 function inRawMarkdown(view: EditorView): boolean {
   const { from, to, $from } = view.state.selection;

@@ -56,9 +56,9 @@ describe('Sidebar', () => {
     fixture.detectChanges();
     const ids = () =>
       [...fixture.nativeElement.querySelectorAll('app-sidebar-section')].map((el: HTMLElement) => el.getAttribute('id'));
-    expect(ids()).toEqual(['favorites', 'recent', 'tags', 'credentials']);
+    expect(ids()).toEqual(['outline', 'favorites', 'recent', 'tags', 'credentials']);
 
-    for (const section of ['favorites', 'recent', 'tags', 'credentials'] as const) state.toggleSectionVisibility(section);
+    for (const section of ['outline', 'favorites', 'recent', 'tags', 'credentials'] as const) state.toggleSectionVisibility(section);
     fixture.detectChanges();
 
     expect(ids()).toEqual([]);

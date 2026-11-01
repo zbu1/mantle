@@ -34,15 +34,26 @@ export class NoteEncryptionModal {
   private readonly actions = inject(NoteEncryptionActions);
 
   protected readonly note = this.state.note;
+  protected readonly notes = this.state.notes;
+  /** More than one note: picked from a multi-selection, converted by `changeEncryption`. */
+  protected readonly bulk = computed(() => this.notes().length > 1);
+  protected readonly anyEncrypted = computed(() => this.notes().some((n) => n.encrypted));
   protected readonly convertHelp = CONVERT_HELP;
 
   protected readonly choice = signal<ProfileChoice>(null);
   /** True while the picker unlocks or creates a profile — blocks dismissal and double submits. */
   protected readonly busy = signal(false);
 
-  protected readonly heading = computed(() => (this.note()?.encrypted ? 'Change encryption' : 'Encrypt note'));
+  protected readonly heading = computed(() => {
+    if (this.bulk()) return `Change encryption of ${this.notes().length} notes`;
+    return this.note()?.encrypted ? 'Change encryption' : 'Encrypt note';
+  });
 
   protected readonly status = computed(() => {
+    if (this.bulk()) {
+      const encrypted = this.notes().filter((n) => n.encrypted).length;
+      return `${encrypted} encrypted, ${this.notes().length - encrypted} not encrypted`;
+    }
     const note = this.note();
     if (!note?.encrypted) return 'Not encrypted';
     return `Encrypted with "${this.credentialsState.displayNameOf(note.profile)}"`;
@@ -55,6 +66,7 @@ export class NoteEncryptionModal {
 
   protected readonly confirmLabel = computed(() => {
     if (this.busy()) return 'Working…';
+    if (this.bulk()) return this.outcome() === 'decrypt' ? `Decrypt ${this.toChange()} notes` : `Change ${this.toChange()} notes`;
     switch (this.outcome()) {
       case 'decrypt':
         return 'Decrypt note';
@@ -98,6 +110,7 @@ export class NoteEncryptionModal {
     if (this.busy()) return null;
     const choice = this.choice();
     if (choice === null) {
+      if (this.bulk()) return 'Pick the profile to encrypt these notes with, or remove their encryption.';
       return this.note()?.encrypted
         ? 'Pick a profile to move this note to, or remove its encryption.'
         : 'Pick the profile to encrypt this note with.';
@@ -106,6 +119,10 @@ export class NoteEncryptionModal {
       return this.credentialsState.profiles().length === 0
         ? 'Notes are encrypted with a profile. Create one above to continue.'
         : 'Finish creating the new profile, or pick an existing one above.';
+    }
+    if (this.bulk()) {
+      // Locked profiles are unlocked when confirming, one after another.
+      return this.toChange() === 0 ? 'All of these notes are already there.' : null;
     }
     if (choice.kind === 'profile') {
       const profile = this.credentialsState.profileById(choice.id);
@@ -117,6 +134,13 @@ export class NoteEncryptionModal {
     return null;
   });
 
+  /** How many of the notes aren't already under the chosen profile (or plaintext); the rest are skipped. */
+  protected readonly toChange = computed(() => {
+    const choice = this.choice();
+    const target = choice?.kind === 'profile' ? choice.id : null;
+    return this.notes().filter((n) => (n.encrypted ? n.profile !== target : target !== null)).length;
+  });
+
   protected readonly canConfirm = computed(() => !this.busy() && this.disabledReason() === null);
 
   private readonly dialog = viewChild<ElementRef<HTMLElement>>('dialog');
@@ -125,8 +149,8 @@ export class NoteEncryptionModal {
     // Starting state each time the modal opens. Untracked: the picker edits
     // `choice` while it's open, and that must not reset the form.
     effect(() => {
-      const note = this.note();
-      if (note) untracked(() => this.reset(note));
+      const notes = this.notes();
+      if (notes.length > 0) untracked(() => this.reset(notes));
     });
 
     // Move focus into the dialog so keyboard users land in it, not behind it.
@@ -135,7 +159,7 @@ export class NoteEncryptionModal {
 
   @HostListener('document:keydown.escape')
   protected onEscape(): void {
-    if (this.note() && !this.busy()) this.state.close();
+    if (this.state.isOpen() && !this.busy()) this.state.close();
   }
 
   protected onBackdropPointerDown(event: PointerEvent): void {
@@ -147,15 +171,21 @@ export class NoteEncryptionModal {
   }
 
   protected submit(): void {
+    const notes = this.notes();
     const note = this.note();
     const choice = this.choice();
-    if (!note || !choice || !this.canConfirm()) return;
+    if (!choice || !this.canConfirm()) return;
 
     const outcome = this.outcome();
     const profileId = chosenProfileId(choice);
     // Closed first: the actions report their own failures in an alert, which
     // shouldn't stack on top of this dialog.
     this.state.close();
+
+    if (!note) {
+      void this.actions.changeEncryption(notes, profileId);
+      return;
+    }
 
     if (outcome === 'decrypt') {
       // The warning is already on screen in this dialog, so skip the second confirmation.
@@ -165,10 +195,10 @@ export class NoteEncryptionModal {
     }
   }
 
-  private reset(note: VaultNoteNode): void {
+  private reset(notes: readonly VaultNoteNode[]): void {
     const profiles = this.credentialsState.profiles();
-    if (note.encrypted) {
-      // Nothing preselected: the note's own profile can't be picked, and moving or
+    if (notes.length > 1 || notes[0].encrypted) {
+      // Nothing preselected: a note's own profile can't be picked, and moving or
       // decrypting shouldn't be one Enter away.
       this.choice.set(null);
     } else {

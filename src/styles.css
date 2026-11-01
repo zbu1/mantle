@@ -273,9 +273,11 @@ button.focus-ring-inset:focus-visible,
   vertical-align: bottom;
 }
 
-.ProseMirror .note-image.ProseMirror-selectednode {
+/* Inside its own box: an image as wide as the column would have the ring clipped by the scroll area. */
+.ProseMirror .note-image.ProseMirror-selectednode,
+.ProseMirror .note-pdf.ProseMirror-selectednode {
   outline: 2px solid var(--ring);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 
 .ProseMirror h1,
@@ -697,6 +699,61 @@ button.focus-ring-inset:focus-visible,
 
 .ProseMirror .code-block:not(.revealed) code {
   padding-block: 1lh;
+}
+
+/* What a ```typst or ```mermaid block renders to, under its code. */
+.ProseMirror .code-preview {
+  border-top: 1px solid var(--border);
+  padding: 0.6em 0.8em;
+  overflow-x: auto;
+  cursor: default;
+}
+
+.ProseMirror .code-preview img {
+  max-width: none;
+}
+
+.ProseMirror .code-preview.error {
+  color: var(--destructive);
+  font-size: 0.8em;
+  white-space: pre-wrap;
+}
+
+/* Typst draws black on transparent; flip it for dark themes, keeping hues. */
+@media (prefers-color-scheme: dark) {
+  .ProseMirror .typst-preview img {
+    filter: invert(1) hue-rotate(180deg);
+  }
+}
+
+/* A `[TOC]` paragraph: the note's headings, as links (toc-plugin.ts). `[TOC]` shows only while the cursor is in it. */
+.ProseMirror .toc-source {
+  display: none;
+}
+
+.ProseMirror .toc {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15em;
+  border-left: 2px solid var(--border);
+  padding: 0.2em 0 0.2em 0.9em;
+  color: var(--muted-foreground);
+  cursor: default;
+}
+
+.ProseMirror .toc-editing .toc {
+  margin-top: 0.4em;
+}
+
+.ProseMirror .toc a {
+  width: fit-content;
+  color: var(--foreground);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.ProseMirror .toc a:hover {
+  color: var(--primary);
 }
 
 /* highlight.js token classes; colors are the --code-* tokens in theme.css. */

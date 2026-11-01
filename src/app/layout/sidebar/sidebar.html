@@ -49,6 +49,17 @@
   <!-- Secondary sections: quieter, capped so the tree always keeps most of the height. -->
   @if (anySectionVisible()) {
   <div class="scrollbar-thin mr-1 flex max-h-[40%] shrink-0 flex-col overflow-y-auto overscroll-contain border-t border-border px-1.5 py-1">
+    @if (state.isSectionVisible('outline')) {
+    <app-sidebar-section id="outline" label="Outline" [count]="outline.headings().length">
+      @for (heading of outline.headings(); track $index) {
+      <app-sidebar-item-button [label]="heading.text || 'Untitled'" [indent]="(heading.level - outlineTopLevel()) * 12"
+        (clicked)="onOutlineHeading(heading)" />
+      } @empty {
+      <div class="py-1 pl-6 pr-2 text-xs text-muted-foreground">No headings in this note.</div>
+      }
+    </app-sidebar-section>
+    }
+
     @if (state.isSectionVisible('favorites')) {
     <app-sidebar-section id="favorites" label="Favorites" [count]="favoriteRows().length">
       <div class="flex flex-col" (dragenter)="onFavoritesDragOver($event)" (dragover)="onFavoritesDragOver($event)"

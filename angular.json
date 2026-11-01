@@ -22,6 +22,7 @@
           "options": {
             "browser": "src/main.ts",
             "tsConfig": "tsconfig.app.json",
+            "allowedCommonJsDependencies": ["@braintree/sanitize-url", "dayjs", "cytoscape-fcose", "cytoscape-cose-bilkent", "fastdom"],
             "inlineStyleLanguage": "scss",
             "assets": [
               {

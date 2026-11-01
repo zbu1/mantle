@@ -7,6 +7,7 @@ import {
   toggleBlockquote,
   toggleCodeBlock,
   insertHorizontalRule,
+  insertTableOfContents,
 } from '../prosemirror/editor-commands';
 import { insertTable } from '../prosemirror/plugins/table-plugin';
 import { pickImage } from '../prosemirror/plugins/image-plugin';
@@ -24,6 +25,7 @@ export type SlashCommandIcon =
   | 'code-block'
   | 'divider'
   | 'table'
+  | 'toc'
   | 'image'
   | 'property'
   | 'tag';
@@ -109,6 +111,13 @@ export const SLASH_COMMAND_ITEMS: SlashCommandItem[] = [
     icon: 'table',
     keywords: ['table', 'grid', 'columns', 'rows'],
     run: (view) => insertTable(view),
+  },
+  {
+    id: 'toc',
+    label: 'Table of Contents',
+    icon: 'toc',
+    keywords: ['toc', 'contents', 'outline'],
+    run: (view) => insertTableOfContents(view),
   },
   {
     id: 'image',

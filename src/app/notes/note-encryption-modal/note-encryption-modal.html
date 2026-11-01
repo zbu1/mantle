@@ -1,4 +1,4 @@
-@if (note(); as current) {
+@if (notes().length > 0) {
 <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" (pointerdown)="onBackdropPointerDown($event)">
   <div #dialog tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="note-encryption-heading"
     class="scrollbar-thin max-h-[90vh] w-[560px] max-w-[calc(100vw-2rem)] overflow-y-auto rounded-lg border border-border bg-surface p-4 text-surface-foreground shadow-xl outline-none animate-pop-in">
@@ -7,8 +7,24 @@
       <h2 id="note-encryption-heading" class="text-sm font-semibold">{{ heading() }}</h2>
     </div>
     <p class="mt-1 truncate text-xs text-muted-foreground">
-      <span class="font-medium text-foreground/80">{{ current.name }}</span> · {{ status() }}
+      @if (note(); as current) {<span class="font-medium text-foreground/80">{{ current.name }}</span> · }{{ status() }}
     </p>
+
+    @if (bulk()) {
+    <div class="mt-3 rounded-md border border-border bg-background px-3 py-2 text-[11px]">
+      @if (outcome() === 'decrypt') {
+      <p class="text-destructive">The notes will be stored as readable text on disk, no longer protected by their profiles.</p>
+      } @else {
+      <p class="text-muted-foreground">
+        The notes' contents are encrypted. Their filenames and folders are visible on disk. Markdown files are converted
+        to Mantle notes as they're encrypted.
+      </p>
+      }
+      @if (choice() && toChange() < notes().length) {
+      <p class="mt-1 text-muted-foreground">{{ notes().length - toChange() }} already there will be skipped.</p>
+      }
+    </div>
+    } @else {
 
     <div class="mt-3 rounded-md border border-border bg-background px-3 py-2 text-xs">
     <dl class="grid grid-cols-[auto_1fr] items-baseline gap-x-4 gap-y-1.5">
@@ -40,9 +56,10 @@
     </p>
     }
     </div>
+    }
 
-    <app-profile-picker class="mt-4 block" [(choice)]="choice" [(busy)]="busy" [currentProfileId]="current.profile"
-      [allowPlaintext]="current.encrypted" />
+    <app-profile-picker class="mt-4 block" [(choice)]="choice" [(busy)]="busy" [currentProfileId]="note()?.profile ?? null"
+      [allowPlaintext]="anyEncrypted()" />
 
     <div class="mt-4 flex items-center justify-end gap-2">
       @if (disabledReason(); as reason) {

@@ -17,6 +17,15 @@ describe('markdown images', () => {
     expect(image.attrs).toMatchObject({ src: 'cat.png', embed: true, size: '300x200' });
   });
 
+  it("reads and keeps Obsidian's size on a Markdown image", () => {
+    expect(parseMarkdown('![cat|300x200](cat.png)').firstChild!.firstChild!.attrs).toMatchObject({ alt: 'cat', size: '300x200' });
+    expect(roundTrip('![cat|300](cat.png "Tom")')).toBe('![cat|300](cat.png "Tom")');
+    expect(roundTrip('![|300](cat.png)')).toBe('![|300](cat.png)');
+    // Not a size: stays part of the alt text.
+    expect(parseMarkdown('![a|b](cat.png)').firstChild!.firstChild!.attrs).toMatchObject({ alt: 'a|b', size: null });
+    expect(roundTrip('| a |\n| --- |\n| ![cat\\|300](cat.png) |')).toBe('| a |\n| --- |\n| ![cat\\|300](cat.png) |');
+  });
+
   it('embeds a PDF as an image node, so it shows inline', () => {
     expect(parseMarkdown('![[docs/report.pdf|600]]').firstChild!.firstChild!.attrs).toMatchObject({ src: 'docs/report.pdf', size: '600' });
   });

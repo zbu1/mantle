@@ -66,13 +66,14 @@ describe('SidebarSection', () => {
 
     const items = TestBed.inject(ContextMenuState).menu()?.items as ContextMenuAction[];
     expect(items.map((i) => [i.label, i.checked, !!i.disabled])).toEqual([
+      ['Outline', true, false],
       ['Favorites', true, false],
       ['Recent Files', false, false],
       ['Tags', true, false],
       ['Credential Profiles', true, false],
     ]);
 
-    items[2].action();
+    items[3].action();
     expect(state.isSectionVisible('tags')).toBe(false);
   });
 });

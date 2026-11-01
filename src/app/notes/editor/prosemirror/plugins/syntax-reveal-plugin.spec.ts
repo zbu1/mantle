@@ -4,6 +4,7 @@ import { Node as PMNode } from 'prosemirror-model';
 import { parseMarkdown, serializeMarkdown } from '../markdown-converter';
 import { schema } from '../schema';
 import { EditorView } from 'prosemirror-view';
+import { resizeImage } from './image-plugin';
 import { exitEmptyQuoteLine, revealImageSource, revealTaskMarker, syntaxRevealKey, syntaxRevealPlugin, taskMarkerPlugin } from './syntax-reveal-plugin';
 
 function stateFor(markdown: string): EditorState {
@@ -301,6 +302,14 @@ describe('revealing Markdown syntax', () => {
     revealImageSource(view, find(view.state.doc, 'and ') + 4);
     const { from, to } = view.state.selection;
     expect(view.state.doc.textBetween(from, to)).toBe('![two](2.png)');
+    view.destroy();
+  });
+
+  it('resizes an image whose source shows, its source following', () => {
+    const view = new EditorView(document.createElement('div'), { state: cursorAt(stateFor('x ![alt](a.png) y'), '￼') });
+    resizeImage(view, find(view.state.doc, '￼'), '300x200');
+    expect(text(view.state)).toBe('x ![alt|300x200](a.png)￼ y');
+    expect(serializeMarkdown(view.state.doc)).toBe('x ![alt|300x200](a.png) y');
     view.destroy();
   });
 

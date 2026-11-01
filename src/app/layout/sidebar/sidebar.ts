@@ -11,8 +11,11 @@ import { CredentialsState } from '../../notes/credentials-state';
 import { NewEncryptedNoteState } from '../../notes/new-encrypted-note/new-encrypted-note-state';
 import { MarkdownExportState } from '../../notes/markdown-export/markdown-export-state';
 import { NoteEncryptionActions } from '../../notes/note-encryption-actions';
+import { NoteEncryptionModalState } from '../../notes/note-encryption-modal/note-encryption-modal-state';
 import { TagGroup } from '../../notes/tags';
 import { VaultActions } from '../../notes/vault-actions';
+import { OutlineState } from '../../notes/editor/outline-state';
+import { OutlineHeading } from '../../notes/editor/prosemirror/outline';
 import { canUndoDelete } from '../../notes/vault-history-state';
 import { isMobile } from '../../core/tauri-env';
 import { focusNoteTitle } from '../../notes/tab-menu';
@@ -87,6 +90,7 @@ export class Sidebar {
   private readonly dialogState = inject(DialogState);
   protected readonly credentialsState = inject(CredentialsState);
   private readonly encryptionActions = inject(NoteEncryptionActions);
+  private readonly encryptionModal = inject(NoteEncryptionModalState);
   private readonly markdownExport = inject(MarkdownExportState);
   private readonly newEncryptedNoteState = inject(NewEncryptedNoteState);
   private readonly vaultMeta = inject(VaultMetaState);
@@ -96,6 +100,9 @@ export class Sidebar {
   private readonly editContext = inject(EditContextState);
   private readonly tagActions = inject(TagActions);
   private readonly vaultActions = inject(VaultActions);
+  protected readonly outline = inject(OutlineState);
+  /** The outline's highest heading level, which sits flush with the section. */
+  protected readonly outlineTopLevel = computed(() => Math.min(...this.outline.headings().map((h) => h.level)));
 
   /** Text in the header's filter field; the tree shows only notes whose name contains it. Session-only. */
   protected readonly filterQuery = signal('');
@@ -252,6 +259,11 @@ export class Sidebar {
   protected onOpenNote(note: VaultNoteNode): void {
     this.tabsState.openNote({ id: note.relPath, title: note.name });
     this.closeDrawer();
+  }
+
+  protected onOutlineHeading(heading: OutlineHeading): void {
+    this.closeDrawer();
+    this.outline.go(heading);
   }
 
   /** On Android the sidebar is a drawer over the note (`MobileShell`): opening something from it shuts it. */
@@ -442,7 +454,16 @@ export class Sidebar {
     const mantle = this.encryptionActions.mantleNotesIn(selected);
     if (markdown.length > 0) items.push(this.convertMenuItem(markdown));
     if (mantle.length > 0) items.push(this.toMarkdownMenuItem(mantle));
-    if (markdown.length > 0 || mantle.length > 0) items.push({ kind: 'separator' });
+    const notes = [...markdown, ...mantle];
+    if (notes.length > 0) {
+      items.push({
+        kind: 'item',
+        label: notes.length === 1 ? 'Change Encryption of 1 Note…' : `Change Encryption of ${notes.length} Notes…`,
+        icon: 'lock',
+        action: () => this.encryptionModal.openBulk(notes),
+      });
+      items.push({ kind: 'separator' });
+    }
     if (allNotes) {
       const allFavorites = selected.every((path) => this.favorites.isFavorite(path));
       items.push({

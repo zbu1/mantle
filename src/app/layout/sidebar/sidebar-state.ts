@@ -4,10 +4,11 @@ import { Injectable, computed, effect, signal } from '@angular/core';
  * The sidebar's secondary sections, stacked below the vault tree. The tree
  * itself isn't a section: it's always shown and can't be collapsed.
  */
-export type SectionId = 'favorites' | 'recent' | 'tags' | 'credentials';
+export type SectionId = 'outline' | 'favorites' | 'recent' | 'tags' | 'credentials';
 
 /** Every sidebar section in display order, for menus that list them. */
 export const SIDEBAR_SECTIONS: readonly { id: SectionId; label: string }[] = [
+  { id: 'outline', label: 'Outline' },
   { id: 'favorites', label: 'Favorites' },
   { id: 'recent', label: 'Recent Files' },
   { id: 'tags', label: 'Tags' },
@@ -40,7 +41,7 @@ const DEFAULT_STATE: PersistedSidebarState = {
   collapsed: false,
   // `readFromStorage` spreads these under whatever is persisted, so adding a
   // section here back-fills existing users without a storage version bump.
-  sections: { favorites: true, recent: true, tags: true, credentials: true },
+  sections: { outline: true, favorites: true, recent: true, tags: true, credentials: true },
   hidden: [],
   showExtensions: false,
 };

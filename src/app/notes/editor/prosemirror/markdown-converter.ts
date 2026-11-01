@@ -196,11 +196,11 @@ export const markdownParser = new MarkdownParser(schema, md, {
   softbreak: { node: 'hard_break' },
   image: {
     node: 'image',
-    getAttrs: (tok) => ({
-      src: tok.attrGet('src'),
-      title: tok.attrGet('title') || null,
-      alt: tok.children?.[0]?.content || null,
-    }),
+    getAttrs: (tok) => {
+      // Obsidian's `![alt|300](src)` / `![alt|300x200](src)` size.
+      const [, alt, size] = /^(.*?)(?:\|(\d+(?:x\d+)?))?$/s.exec(tok.children?.[0]?.content ?? '')!;
+      return { src: tok.attrGet('src'), title: tok.attrGet('title') || null, alt: alt || null, size: size ?? null };
+    },
   },
   image_embed: {
     node: 'image',
@@ -384,7 +384,11 @@ export const markdownSerializer = new MarkdownSerializer(
       if (index > 0 && isImageSource(parent.child(index - 1))) return;
       const { src, size } = node.attrs;
       if (node.attrs['embed']) state.write(`![[${src}${size ? `|${size}` : ''}]]`);
-      else defaultMarkdownSerializer.nodes['image'](state, node, parent, index);
+      else {
+        // Obsidian's size goes after the alt text: `![alt|300](src)`.
+        const sized = size ? node.type.create({ ...node.attrs, alt: `${node.attrs['alt'] ?? ''}|${size}` }) : node;
+        defaultMarkdownSerializer.nodes['image'](state, sized, parent, index);
+      }
     },
     // A plain newline, not CommonMark's `\`, so Obsidian-style notes keep their source.
     hard_break(state, node, parent, index) {

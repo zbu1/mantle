@@ -34,6 +34,12 @@ zeroize = "1.8"
 percent-encoding = "2"
 sha2 = "0.10"
 tauri-plugin-clipboard-manager = "2"
+# ```typst blocks in notes (`typst_render.rs`); the bundled fonts add several MB.
+typst = "0.15.1"
+typst-layout = "0.15.1"
+typst-svg = "0.15.1"
+typst-assets = { version = "0.15.1", features = ["fonts"] }
+comemo = "0.5.1"
 
 
 # Android has no OS trash; deletes there are permanent (`vault::move_to_trash`).

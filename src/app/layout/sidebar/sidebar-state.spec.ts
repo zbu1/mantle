@@ -15,6 +15,7 @@ describe('SidebarState', () => {
     expect(state.width()).toBe(240);
     expect(state.collapsed()).toBe(false);
     expect(state.sections()).toEqual({
+      outline: true,
       favorites: true,
       recent: true,
       tags: true,
@@ -94,7 +95,7 @@ describe('SidebarState', () => {
   it("drops the vault tree's old `workspace` section state when hydrating", () => {
     localStorage.setItem('mantle.sidebar.v1', JSON.stringify({ sections: { workspace: false, tags: false } }));
     const state = TestBed.inject(SidebarState);
-    expect(state.sections()).toEqual({ favorites: true, recent: true, tags: false, credentials: true });
+    expect(state.sections()).toEqual({ outline: true, favorites: true, recent: true, tags: false, credentials: true });
   });
 
   it('hydrates hidden sections, ignoring the Vault and unknown ids', () => {
