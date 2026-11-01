@@ -240,7 +240,7 @@ impl SessionKeys {
         })
     }
 
-    fn insert(&self, vault_root: &str, profile_id: &str, mk: MasterKey) -> Result<(), String> {
+    pub(crate) fn insert(&self, vault_root: &str, profile_id: &str, mk: MasterKey) -> Result<(), String> {
         self.with_vault(vault_root, |inner| {
             inner.keys.insert(profile_id.to_string(), Box::new(mk));
         })
@@ -601,6 +601,7 @@ fn rename_profile_inner(
 /// re-deriving what unlocking it already proved.
 #[tauri::command]
 pub fn change_credential_profile_password(
+    app: tauri::AppHandle,
     vault_root: String,
     profile_id: String,
     new_password: String,
@@ -608,7 +609,9 @@ pub fn change_credential_profile_password(
 ) -> Result<(), String> {
     let new_password = Zeroizing::new(new_password);
     logged("change_credential_profile_password", || {
-        change_password_inner(&vault_root, &profile_id, &new_password, &keys)
+        change_password_inner(&vault_root, &profile_id, &new_password, &keys)?;
+        crate::biometric::forget(&app, &vault_root, &profile_id);
+        Ok(())
     })
 }
 

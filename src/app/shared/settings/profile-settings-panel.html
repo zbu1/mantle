@@ -52,6 +52,12 @@
     </button>
   </div>
 </app-settings-row>
+@if (credentialsState.biometric().available) {
+<app-settings-row label="Windows Hello" description="Unlock on this device without the password. The password is asked again after changing it or the key.">
+  <app-toggle [checked]="credentialsState.biometric().enabled.includes(p.id)" [disabled]="!unlocked()"
+    (changed)="credentialsState.setBiometric(p.id, $event)" />
+</app-settings-row>
+}
 <app-settings-row label="Master Key" description="Re-encrypts every note, attachment and snapshot under a new key.">
   <button type="button" (click)="credentialsState.promptRotateKey(p.id)" [disabled]="!unlocked()"
     class="rounded-md border border-border px-2.5 py-1 text-xs text-foreground hover:bg-background disabled:pointer-events-none disabled:opacity-40">

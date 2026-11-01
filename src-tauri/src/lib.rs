@@ -3,6 +3,7 @@ mod credentials;
 mod export;
 mod history;
 mod hidden;
+mod biometric;
 mod links;
 mod migrate;
 mod logging;
@@ -84,6 +85,10 @@ pub fn run() {
             credentials::create_recovery_key,
             credentials::recover_credential_profile,
             rotation::rotate_master_key,
+            biometric::biometric_status,
+            biometric::enable_biometric,
+            biometric::disable_biometric,
+            biometric::unlock_with_biometric,
             credentials::undo_create_credential_profile,
             credentials::redo_create_credential_profile,
             hidden::set_profile_hiding,

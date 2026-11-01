@@ -45,3 +45,7 @@ spellbook = "0.4.2"
 # Android has no OS trash; deletes there are permanent (`vault::move_to_trash`).
 [target.'cfg(not(target_os = "android"))'.dependencies]
 trash = "5.2.6"
+
+# Windows Hello unlock (`biometric.rs`).
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = ["Foundation", "Security_Credentials", "Security_Cryptography", "Storage_Streams"] }

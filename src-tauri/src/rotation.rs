@@ -35,17 +35,21 @@ struct Pending {
 /// recovery key. Resumes an interrupted rotation.
 ///
 /// The caller flushes pending note saves first: a save racing a rotation could
-/// leave a note under the old key. Biometric wraps would have to be dropped
-/// here too; none exist yet.
+/// leave a note under the old key.
 #[tauri::command]
 pub fn rotate_master_key(
+    app: tauri::AppHandle,
     vault_root: String,
     profile_id: String,
     password: String,
     keys: State<SessionKeys>,
 ) -> Result<String, String> {
     let password = Zeroizing::new(password);
-    logged("rotate_master_key", || rotate_inner(&vault_root, &profile_id, &password, &keys))
+    logged("rotate_master_key", || {
+        let recovery_key = rotate_inner(&vault_root, &profile_id, &password, &keys)?;
+        crate::biometric::forget(&app, &vault_root, &profile_id);
+        Ok(recovery_key)
+    })
 }
 
 fn rotate_inner(vault_root: &str, profile_id: &str, password: &str, keys: &SessionKeys) -> Result<String, String> {

@@ -84,6 +84,8 @@ export class CredentialsState {
 
   readonly profiles = signal<CredentialProfile[]>([]);
   readonly loading = signal(false);
+  /** Windows Hello: whether this device has it, and the profiles unlockable with it. */
+  readonly biometric = signal<{ available: boolean; enabled: string[] }>({ available: false, enabled: [] });
   readonly error = signal<string | null>(null);
 
   readonly unlockedIds = computed(
@@ -200,6 +202,7 @@ export class CredentialsState {
         vaultRoot: root,
       });
       this.profiles.set(profiles);
+      this.biometric.set(await invoke('biometric_status', { vaultRoot: root }));
     } catch (err) {
       logError(`Failed to load credential profiles: ${formatError(err)}`);
       this.error.set(String(err));
@@ -288,6 +291,8 @@ export class CredentialsState {
       return useKey && this.promptRecover(profileId);
     }
 
+    if (this.biometric().enabled.includes(profileId) && (await this.unlockWithBiometric(profileId)) === null) return true;
+
     // Returning a message from `submit` keeps the dialog open with the typed
     // value intact, so a mistyped password can just be corrected.
     return this.dialogState.password(
@@ -312,6 +317,38 @@ export class CredentialsState {
       return String(err);
     }
 
+    await this.afterUnlock(profileId);
+    return null;
+  }
+
+  /** Unlock `profileId` with Windows Hello. Resolves null once it's unlocked, or why it wasn't. */
+  async unlockWithBiometric(profileId: string): Promise<string | null> {
+    const root = this.vaultState.rootPath();
+    if (!root) return 'No vault is open.';
+    try {
+      await invoke('unlock_with_biometric', { vaultRoot: root, profileId });
+    } catch (err) {
+      logError(`Windows Hello unlock of "${profileId}" failed: ${formatError(err)}`);
+      return String(err);
+    }
+    await this.afterUnlock(profileId);
+    return null;
+  }
+
+  /** Turn Windows Hello unlock on or off for an unlocked profile on this device. */
+  async setBiometric(profileId: string, on: boolean): Promise<void> {
+    const root = this.vaultState.rootPath();
+    if (!root) return;
+    try {
+      await invoke(on ? 'enable_biometric' : 'disable_biometric', { vaultRoot: root, profileId });
+    } catch (err) {
+      logError(`Failed to turn Windows Hello ${on ? 'on' : 'off'} for "${profileId}": ${formatError(err)}`);
+      await this.dialogState.alert(String(err), { title: 'Windows Hello' });
+    }
+    await this.refresh();
+  }
+
+  private async afterUnlock(profileId: string): Promise<void> {
     logInfo(`Unlocked credential profile "${profileId}"`);
     // Re-read every note that was showing as locked.
     for (const path of this.notePathsFor(profileId)) {
@@ -320,7 +357,6 @@ export class CredentialsState {
     await this.refresh();
     // Rescan so the tree reads the tags sealed inside this profile's notes.
     await this.vaultState.refresh();
-    return null;
   }
 
   /** Prompt for a name and password, create the profile, and unlock it. Resolves the new profile's id. */
