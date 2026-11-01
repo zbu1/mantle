@@ -137,8 +137,8 @@ function cycleHeading(view: EditorView): void {
     @if (editing()) {
       <div role="toolbar" aria-label="Formatting" class="flex min-w-0 flex-1 items-stretch overflow-x-auto px-1 [scrollbar-width:none]">
         @for (tool of tools; track tool.id) {
-          <button type="button" [attr.aria-label]="tool.label" (pointerdown)="$event.preventDefault()" (click)="run(tool.id)"
-            class="inline-flex w-11 shrink-0 items-center justify-center rounded-lg text-foreground/80 active:bg-accent">
+          <button type="button" [attr.aria-label]="tool.label" [disabled]="!enabled(tool.id)" (pointerdown)="$event.preventDefault()" (click)="run(tool.id)"
+            class="inline-flex w-11 shrink-0 items-center justify-center rounded-lg text-foreground/80 active:bg-accent disabled:text-muted-foreground/40">
             @switch (tool.id) {
               @case ('undo') { <svg lucideUndo2 [size]="19"></svg> }
               @case ('redo') { <svg lucideRedo2 [size]="19"></svg> }
@@ -220,6 +220,11 @@ export class MobileToolbar {
       document.removeEventListener('focusin', track);
       document.removeEventListener('focusout', track);
     });
+  }
+
+  protected enabled(tool: Tool): boolean {
+    this.editContext.transactions();
+    return (tool !== 'undo' && tool !== 'redo') || this.editContext.canRun(tool);
   }
 
   protected run(tool: Tool): void {

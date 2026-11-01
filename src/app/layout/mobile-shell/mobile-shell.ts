@@ -1,4 +1,4 @@
-import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, computed, effect, inject, signal } from '@angular/core';
 import { onBackButtonPress } from '@tauri-apps/api/app';
 import { LucideCommand, LucideFolderLock, LucidePlus, LucideSettings, LucideX } from '@lucide/angular';
 import { androidBridge, isTauri } from '../../core/tauri-env';
@@ -55,6 +55,11 @@ export class MobileShell {
   );
 
   constructor() {
+    // Closing the last tab leaves the sheet with nothing to show.
+    effect(() => {
+      if (this.tabsOpen() && this.tabRows().length === 0) this.tabsOpen.set(false);
+    });
+
     // Starts shut; the sidebar shuts it again when a note is opened from it.
     this.sidebarState.setCollapsed(true);
 

@@ -26,6 +26,8 @@ export interface TreeEditCommands {
 @Injectable({ providedIn: 'root' })
 export class EditContextState {
   readonly context = signal<'editor' | 'tree' | null>(null);
+  /** Bumped on each editor transaction, so views of non-signal editor state (undo depth) refresh. */
+  readonly transactions = signal(0);
   private editor: EditorView | null = null;
   private tree: TreeEditCommands | null = null;
   private readonly history = inject(VaultHistoryState);
@@ -54,6 +56,11 @@ export class EditContextState {
   /** The editor that last had focus, while it's still there. */
   get editorView(): EditorView | null {
     return this.editor;
+  }
+
+  /** The editor `view` applied a transaction. */
+  transacted(view: EditorView): void {
+    if (view === this.editor) this.transactions.update((n) => n + 1);
   }
 
   /** The editor `view` took focus. */

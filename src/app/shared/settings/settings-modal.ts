@@ -1,4 +1,5 @@
 import { SpellcheckState } from '../../notes/editor/spellcheck-state';
+import { isMobile } from '../../core/tauri-env';
 import { Component, computed, effect, inject, signal } from '@angular/core';
 import { appLogDir, join } from '@tauri-apps/api/path';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
@@ -98,6 +99,7 @@ const SHORTCUTS: ShortcutEntry[] = [
   templateUrl: './settings-modal.html',
 })
 export class SettingsModal {
+  protected readonly isMobile = isMobile;
   protected readonly state = inject(SettingsModalState);
   protected readonly sidebarState = inject(SidebarState);
   protected readonly vaultState = inject(VaultState);

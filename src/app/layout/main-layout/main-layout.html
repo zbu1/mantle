@@ -15,7 +15,11 @@
   }
   <app-context-menu />
   <app-encryption-panel />
+  @if (isMobile) {
+  <app-mobile-dialog />
+  } @else {
   <app-dialog />
+  }
   <app-new-encrypted-note />
   <app-note-encryption-modal />
   <app-markdown-export-modal />

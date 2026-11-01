@@ -8,6 +8,7 @@ import { Welcome } from '../welcome/welcome';
 import { CommandPalette } from '../../shared/command-palette/command-palette';
 import { ContextMenu } from '../../shared/context-menu/context-menu';
 import { Dialog } from '../../shared/dialog/dialog';
+import { MobileDialog } from '../../shared/dialog/mobile-dialog';
 import { QuickSwitcher } from '../../shared/quick-switcher/quick-switcher';
 import { SettingsModal } from '../../shared/settings/settings-modal';
 import { VaultDragPreview } from '../../shared/vault-drag-preview/vault-drag-preview';
@@ -36,6 +37,7 @@ import { MobileShell } from '../mobile-shell/mobile-shell';
     Welcome,
     ContextMenu,
     Dialog,
+    MobileDialog,
     NewEncryptedNote,
     NoteEncryptionModal,
     MarkdownExportModal,

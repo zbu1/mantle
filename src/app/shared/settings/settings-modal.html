@@ -333,7 +333,7 @@
         <app-settings-row label="Hardware Acceleration">
           <app-toggle [checked]="hardwareAcceleration()" (changed)="hardwareAcceleration.set($event)" />
         </app-settings-row>
-        <app-settings-row label="Zoom" description="Ctrl+= and Ctrl+- also zoom; Ctrl+0 resets.">
+        <app-settings-row label="Zoom" [description]="isMobile ? undefined : 'Ctrl+= and Ctrl+- also zoom; Ctrl+0 resets.'">
           <div class="flex items-center gap-2">
             <button type="button" (click)="zoom.zoomOut()"
               class="flex size-6 items-center justify-center rounded-md border border-border text-xs hover:bg-background">−</button>

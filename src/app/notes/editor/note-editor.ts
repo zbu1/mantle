@@ -326,6 +326,7 @@ export class NoteEditor {
           const foldsBefore = headingFoldKey.getState(view.state);
           const newState = view.state.apply(tr);
           view.updateState(newState);
+          this.editContext.transacted(view);
 
           const status = findStatus(newState);
           if (status.current !== this.findStatus().current || status.total !== this.findStatus().total) this.findStatus.set(status);
