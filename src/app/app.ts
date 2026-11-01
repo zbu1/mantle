@@ -25,7 +25,7 @@ export class App {
     const locked = tab?.noteId && this.notesState.entry(tab.noteId)?.status === 'locked';
     return [tab && (locked ? `${tab.title} (locked)` : tab.title), root && vaultNameFromPath(root), 'Mantle']
       .filter(Boolean)
-      .join(' — ');
+      .join(' - ');
   });
 
   constructor() {

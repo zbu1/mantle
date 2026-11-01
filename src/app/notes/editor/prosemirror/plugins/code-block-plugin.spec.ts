@@ -48,7 +48,7 @@ describe('code blocks', () => {
   });
 
   it('lists a code block per matching language for `/code <language>`', () => {
-    expect(filterSlashCommands('code pyth').map((item) => item.label)).toContain('Code Block — Python');
+    expect(filterSlashCommands('code pyth').map((item) => item.label)).toContain('Code Block: Python');
     expect(filterSlashCommands('code').map((item) => item.label)).toEqual(['Code Block']);
   });
 });

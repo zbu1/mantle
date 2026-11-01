@@ -34,7 +34,7 @@ export type CommandPaletteIcon =
 export interface CommandPaletteItem {
   id: string;
   label: string;
-  icon: CommandPaletteIcon;
+  icon?: CommandPaletteIcon;
   keywords: string[];
   run: () => void;
 }

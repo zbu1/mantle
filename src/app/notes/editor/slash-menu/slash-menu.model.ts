@@ -148,7 +148,7 @@ export function filterSlashCommands(query: string): SlashCommandItem[] {
   if (language) {
     return matchLanguages(language[1]).map((lang) => ({
       id: `code-block-${lang.id}`,
-      label: `Code Block — ${lang.name}`,
+      label: `Code Block: ${lang.name}`,
       icon: 'code-block',
       keywords: [],
       run: (view) => void setCodeBlock(view, lang.id),

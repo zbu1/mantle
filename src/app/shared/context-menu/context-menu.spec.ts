@@ -34,7 +34,7 @@ describe('ContextMenu', () => {
 
   it('renders items and separators through the shared menu components', () => {
     const items: ContextMenuItem[] = [
-      { kind: 'item', label: 'Open', icon: 'open', action: () => {} },
+      { kind: 'item', label: 'Copy', icon: 'copy', action: () => {} },
       { kind: 'separator' },
       { kind: 'item', label: 'Delete', icon: 'delete', danger: true, action: () => {} },
     ];
@@ -47,14 +47,14 @@ describe('ContextMenu', () => {
     expect(el.querySelectorAll('app-menu-separator').length).toBe(1);
 
     const rows = Array.from(el.querySelectorAll('app-menu-item'));
-    expect(rows.map((row) => row.textContent?.trim())).toEqual(['Open', 'Delete']);
+    expect(rows.map((row) => row.textContent?.trim())).toEqual(['Copy', 'Delete']);
     // Each row carries its icon, projected into the shared item's leading slot.
     expect(rows.every((row) => row.querySelector('svg'))).toBe(true);
   });
 
   it('styles danger items destructively', () => {
     const items: ContextMenuItem[] = [
-      { kind: 'item', label: 'Open', icon: 'open', action: () => {} },
+      { kind: 'item', label: 'Copy', icon: 'copy', action: () => {} },
       { kind: 'item', label: 'Delete', icon: 'delete', danger: true, action: () => {} },
     ];
     const fixture = TestBed.createComponent(ContextMenu);
@@ -69,7 +69,7 @@ describe('ContextMenu', () => {
   it('runs the action and closes when an item is clicked', () => {
     const action = jest.fn();
     const fixture = TestBed.createComponent(ContextMenu);
-    state.open(rightClick(), [{ kind: 'item', label: 'Open', icon: 'open', action }]);
+    state.open(rightClick(), [{ kind: 'item', label: 'Copy', icon: 'copy', action }]);
     fixture.detectChanges();
 
     fixture.nativeElement.querySelector('app-menu-item button').click();
@@ -82,7 +82,7 @@ describe('ContextMenu', () => {
 
   it('keeps the menu open when the click lands inside the panel', () => {
     const fixture = TestBed.createComponent(ContextMenu);
-    state.open(rightClick(), [{ kind: 'item', label: 'Open', icon: 'open', action: () => {} }]);
+    state.open(rightClick(), [{ kind: 'item', label: 'Copy', icon: 'copy', action: () => {} }]);
     fixture.detectChanges();
 
     const panel = fixture.nativeElement.querySelector('app-menu-surface');
@@ -94,7 +94,7 @@ describe('ContextMenu', () => {
 
   it('closes on a pointerdown outside the panel', () => {
     const fixture = TestBed.createComponent(ContextMenu);
-    state.open(rightClick(), [{ kind: 'item', label: 'Open', icon: 'open', action: () => {} }]);
+    state.open(rightClick(), [{ kind: 'item', label: 'Copy', icon: 'copy', action: () => {} }]);
     fixture.detectChanges();
 
     document.body.dispatchEvent(pointerDown());

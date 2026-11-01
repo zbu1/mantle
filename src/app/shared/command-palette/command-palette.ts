@@ -5,36 +5,15 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import {
   LucideArrowLeft,
   LucideArrowRight,
-  LucideClock,
   LucideCommand,
-  LucideDoorOpen,
-  LucideExpand,
   LucideFilePlus,
-  LucideFileSearch2,
   LucideFolderPlus,
-  LucideFolderX,
-  LucideFolders,
-  LucideInfo,
-  LucideLayers,
-  LucideLock,
-  LucidePanelLeft,
-  LucideRefreshCw,
   LucideSave,
-  LucideSaveAll,
   LucideSettings,
-  LucideShieldCheck,
   LucideStar,
-  LucideTags,
   LucideX,
   LucideZoomIn,
   LucideZoomOut,
-  LucideRotateCcw,
-  LucideKeyboard,
-  LucideBug,
-  LucideUnfoldVertical,
-  LucideFoldVertical,
-  LucideArrowDownAZ,
-  LucideFileText,
 } from '@lucide/angular';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { ZoomState } from '../zoom-state';
@@ -53,21 +32,20 @@ import { SORT_MODES, flattenVaultNotes, folderPaths } from '../../notes/vault-tr
 import { isMobile, isTauri } from '../../core/tauri-env';
 import { SectionId, SidebarState } from '../../layout/sidebar/sidebar-state';
 import { CommandPaletteState } from './command-palette-state';
-import { CommandPaletteIcon, CommandPaletteItem, filterCommandPaletteItems } from './command-palette.model';
+import { CommandPaletteItem, filterCommandPaletteItems } from './command-palette.model';
 
 export const ISSUES_URL = 'https://github.com/zbu1/mantle/issues/new';
 
 interface SectionDef {
   id: SectionId;
   label: string;
-  icon: CommandPaletteIcon;
 }
 
 const SIDEBAR_SECTIONS: SectionDef[] = [
-  { id: 'favorites', label: 'Favorites', icon: 'star' },
-  { id: 'recent', label: 'Recent Files', icon: 'clock' },
-  { id: 'tags', label: 'Tags', icon: 'tags' },
-  { id: 'credentials', label: 'Credential Profiles', icon: 'shield-check' },
+  { id: 'favorites', label: 'Favorites' },
+  { id: 'recent', label: 'Recent Files' },
+  { id: 'tags', label: 'Tags' },
+  { id: 'credentials', label: 'Credential Profiles' },
 ];
 
 /**
@@ -87,37 +65,16 @@ const SIDEBAR_SECTIONS: SectionDef[] = [
   imports: [
     MenuItem,
     LucideCommand,
-    LucideFileSearch2,
     LucideFilePlus,
     LucideFolderPlus,
     LucideSave,
-    LucideSaveAll,
     LucideX,
-    LucideLayers,
-    LucideFolders,
-    LucideFolderX,
-    LucideLock,
-    LucidePanelLeft,
     LucideStar,
-    LucideClock,
-    LucideTags,
-    LucideShieldCheck,
     LucideArrowLeft,
     LucideArrowRight,
-    LucideExpand,
-    LucideRefreshCw,
     LucideSettings,
-    LucideInfo,
-    LucideDoorOpen,
     LucideZoomIn,
     LucideZoomOut,
-    LucideRotateCcw,
-    LucideKeyboard,
-    LucideBug,
-    LucideUnfoldVertical,
-    LucideFoldVertical,
-    LucideArrowDownAZ,
-    LucideFileText,
   ],
   templateUrl: './command-palette.html',
 })
@@ -157,7 +114,6 @@ export class CommandPalette {
       {
         id: 'quick-switcher',
         label: 'Go to Note…',
-        icon: 'file-search',
         keywords: ['quick', 'switcher', 'open', 'find'],
         run: () => this.quickSwitcherState.open(),
       },
@@ -181,7 +137,6 @@ export class CommandPalette {
       items.push({
         id: 'deleted-notes',
         label: 'Restore Deleted Note…',
-        icon: 'clock',
         keywords: ['deleted', 'history', 'snapshot', 'recover', 'trash'],
         run: () => this.historyState.openDeleted(),
       });
@@ -189,14 +144,12 @@ export class CommandPalette {
         items.push({
           id: 'open-recent-note',
           label: 'Open Recent Note…',
-          icon: 'clock',
           keywords: ['recent', 'history', 'open', 'note', 'switch'],
           run: () => this.quickSwitcherState.open({ recentsOnly: true }),
         });
         items.push({
           id: 'clear-recent-files',
           label: 'Clear Recent Files',
-          icon: 'x',
           keywords: ['recent', 'history', 'clear', 'reset', 'forget'],
           run: () => this.vaultMeta.clearRecents(),
         });
@@ -225,7 +178,6 @@ export class CommandPalette {
         items.push({
           id: 'note-history',
           label: 'Note History…',
-          icon: 'clock',
           keywords: ['history', 'snapshot', 'version', 'restore', 'diff'],
           run: () => this.historyState.openFor(noteId),
         });
@@ -243,14 +195,12 @@ export class CommandPalette {
       items.push({
         id: 'save-all',
         label: 'Save All',
-        icon: 'save-all',
         keywords: ['save', 'all'],
         run: () => void this.notesState.flushPending(),
       });
       items.push({
         id: 'close-all-tabs',
         label: 'Close All Tabs',
-        icon: 'layers',
         keywords: ['close', 'all', 'tabs'],
         run: () => this.tabsState.closeAllTabs(),
       });
@@ -259,7 +209,6 @@ export class CommandPalette {
     items.push({
       id: 'new-vault',
       label: 'New Vault…',
-      icon: 'folder-plus',
       keywords: ['new', 'create', 'vault', 'folder'],
       run: () => void this.vaultState.createVault(),
     });
@@ -267,7 +216,6 @@ export class CommandPalette {
     items.push({
       id: 'open-vault',
       label: 'Open Vault…',
-      icon: 'folders',
       keywords: ['open', 'vault', 'folder'],
       run: () => void this.vaultState.pickVault(),
     });
@@ -276,7 +224,6 @@ export class CommandPalette {
       items.push({
         id: 'close-vault',
         label: 'Close Vault',
-        icon: 'folder-x',
         keywords: ['close', 'vault'],
         run: () => this.vaultState.closeVault(),
       });
@@ -285,7 +232,6 @@ export class CommandPalette {
     items.push({
       id: 'lock-all',
       label: 'Lock All Profiles',
-      icon: 'lock',
       keywords: ['lock', 'encryption', 'profiles'],
       run: () => void this.credentialsState.lockAll(),
     });
@@ -293,7 +239,6 @@ export class CommandPalette {
     items.push({
       id: 'toggle-sidebar',
       label: sidebarCollapsed ? 'Show Sidebar' : 'Hide Sidebar',
-      icon: 'panel-left',
       keywords: ['sidebar', 'toggle', 'panel'],
       run: () => this.sidebarState.toggleCollapsed(),
     });
@@ -304,7 +249,6 @@ export class CommandPalette {
       items.push({
         id: `section-${section.id}`,
         label: `${expanded ? 'Collapse' : 'Expand'} ${section.label}`,
-        icon: section.icon,
         keywords: ['sidebar', 'section', section.label.toLowerCase()],
         run: () => this.sidebarState.toggleSection(section.id),
       });
@@ -335,21 +279,18 @@ export class CommandPalette {
         {
           id: 'expand-all-folders',
           label: 'Expand All Folders',
-          icon: 'unfold',
           keywords: ['expand', 'open', 'folders', 'tree'],
           run: () => this.vaultMeta.setCollapsedFolders([]),
         },
         {
           id: 'collapse-all-folders',
           label: 'Collapse All Folders',
-          icon: 'fold',
           keywords: ['collapse', 'close', 'folders', 'tree'],
           run: () => this.vaultMeta.setCollapsedFolders(folderPaths(tree)),
         },
         ...SORT_MODES.filter((mode) => mode.id !== this.vaultMeta.sortMode()).map((mode) => ({
           id: `sort-${mode.id}`,
           label: `Sort by ${mode.label}`,
-          icon: 'sort' as const,
           keywords: ['sort', 'order', 'tree'],
           run: () => this.vaultMeta.setSortMode(mode.id),
         })),
@@ -358,7 +299,6 @@ export class CommandPalette {
     items.push({
       id: 'show-extensions',
       label: this.sidebarState.showExtensions() ? 'Hide File Extensions' : 'Show File Extensions',
-      icon: 'file-text',
       keywords: ['extensions', 'markdown', 'md', 'sidebar'],
       run: () => this.sidebarState.showExtensions.update((show) => !show),
     });
@@ -366,20 +306,18 @@ export class CommandPalette {
     items.push(
       { id: 'zoom-in', label: 'Zoom In', icon: 'zoom-in', keywords: ['zoom', 'bigger', 'larger'], run: () => this.zoom.zoomIn() },
       { id: 'zoom-out', label: 'Zoom Out', icon: 'zoom-out', keywords: ['zoom', 'smaller'], run: () => this.zoom.zoomOut() },
-      { id: 'reset-zoom', label: 'Reset Zoom', icon: 'rotate-ccw', keywords: ['zoom', 'reset', 'actual'], run: () => this.zoom.reset() },
+      { id: 'reset-zoom', label: 'Reset Zoom', keywords: ['zoom', 'reset', 'actual'], run: () => this.zoom.reset() },
     );
 
     if (!isMobile) items.push({
       id: 'fullscreen',
       label: 'Toggle Fullscreen',
-      icon: 'expand',
       keywords: ['fullscreen', 'maximize'],
       run: () => void this.toggleFullscreen(),
     });
     items.push({
       id: 'reload',
       label: 'Reload',
-      icon: 'refresh-cw',
       keywords: ['reload', 'refresh'],
       run: () => location.reload(),
     });
@@ -393,21 +331,18 @@ export class CommandPalette {
     if (!isMobile) items.push({
       id: 'shortcuts',
       label: 'Keyboard Shortcuts',
-      icon: 'keyboard',
       keywords: ['keyboard', 'shortcuts', 'hotkeys', 'keys'],
       run: () => this.settingsModalState.open('shortcuts'),
     });
     items.push({
       id: 'report-issue',
       label: 'Report an Issue',
-      icon: 'bug',
       keywords: ['bug', 'issue', 'feedback', 'report'],
       run: () => void (isTauri() ? openUrl(ISSUES_URL) : window.open(ISSUES_URL, '_blank', 'noopener')),
     });
     items.push({
       id: 'about',
       label: 'About Mantle',
-      icon: 'info',
       keywords: ['about', 'version'],
       run: () => void this.showAbout(),
     });
@@ -416,7 +351,6 @@ export class CommandPalette {
       items.push({
         id: 'exit',
         label: 'Exit',
-        icon: 'door-open',
         keywords: ['exit', 'quit'],
         run: () => getCurrentWindow().close(),
       });
