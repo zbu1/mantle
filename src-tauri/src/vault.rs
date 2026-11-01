@@ -20,6 +20,7 @@ use crate::attachments::{reseal_attachments, Relink};
 use crate::credentials::{HiddenNote, SessionKeys};
 use crate::hidden::{self, resolve_note};
 use crate::logging::logged;
+use crate::scan_index::{Indexed, ScanIndex};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::{self, File};
@@ -262,30 +263,33 @@ struct NoteInfo {
 }
 
 /// The [`NoteInfo`] of the note at `path`: read from a plaintext note, or by
-/// decrypting an encrypted one whose profile is unlocked. Tags and links are
-/// `None` when they can't be known right now; like [`read_profile_id`], a
-/// scan never fails over one unreadable note.
-// ponytail: reads every note whole on every scan, for its links; keep a link
-// index if big vaults scan slowly.
-fn read_note_info(path: &Path, file_name: &str, profile: Option<&str>, vault_root: &str, keys: &SessionKeys) -> NoteInfo {
-    if file_name.ends_with(EXT_ENCRYPTED) {
-        return read_sealed_note(path, profile, vault_root, keys).map_or_else(NoteInfo::default, |(h, links)| NoteInfo {
-            tags: Some(h.tags),
-            links: Some(links),
-            favorite: h.favorite,
-            icon: h.icon,
-            color: h.color,
-        });
-    }
-    let Ok(raw) = fs::read_to_string(path) else { return NoteInfo::default() };
+/// decrypting an encrypted one whose profile is unlocked, unless the index
+/// holds a current entry. Tags and links are `None` when they can't be known
+/// right now; like [`read_profile_id`], a scan never fails over one
+/// unreadable note.
+fn read_note_info(note: &ScanNote, profile: Option<&str>, vault_root: &str, keys: &SessionKeys, index: &mut ScanIndex) -> NoteInfo {
+    let info = if note.name.ends_with(EXT_ENCRYPTED) {
+        read_sealed_note(note, profile, vault_root, keys, index)
+    } else {
+        index.plain(&note.rel, note.stamp, || read_plain_note(&note.path, &note.name))
+    };
+    info.map_or_else(NoteInfo::default, |i| NoteInfo {
+        tags: Some(i.tags),
+        links: Some(i.links),
+        favorite: i.favorite,
+        icon: i.icon,
+        color: i.color,
+    })
+}
+
+fn read_plain_note(path: &Path, file_name: &str) -> Option<Indexed> {
+    let raw = fs::read_to_string(path).ok()?;
     if is_markdown_note(file_name) {
         let (_, body) = mntl_core::split_markdown_frontmatter(&raw);
-        return NoteInfo { tags: Some(mntl_core::markdown_tags(&raw)), links: Some(wikilink_targets(body)), ..NoteInfo::default() };
+        return Some(Indexed { tags: mntl_core::markdown_tags(&raw), links: wikilink_targets(body), ..Indexed::default() });
     }
-    mntl_core::decode_note(&raw).map_or_else(
-        |_| NoteInfo::default(),
-        |(h, body)| NoteInfo { tags: Some(h.tags), links: Some(wikilink_targets(&body)), ..NoteInfo::default() },
-    )
+    let (h, body) = mntl_core::decode_note(&raw).ok()?;
+    Some(Indexed { tags: h.tags, links: wikilink_targets(&body), ..Indexed::default() })
 }
 
 /// The distinct targets of the `[[wikilinks]]` in `body`, outside code.
@@ -300,29 +304,45 @@ pub(crate) fn wikilink_targets(body: &str) -> Vec<String> {
     targets
 }
 
-/// Decrypt the `.mntl.enc` at `path` if its profile is unlocked, for its
-/// frontmatter and wikilink targets.
-fn read_sealed_note(
-    path: &Path,
-    profile: Option<&str>,
-    vault_root: &str,
-    keys: &SessionKeys,
-) -> Option<(mntl_core::NoteFrontmatter, Vec<String>)> {
-    let mk = keys.get(vault_root, profile?).ok()??;
+/// A note file the scan is at: where it is, its vault-relative path, and its
+/// size and modified time, which tell the index whether it has changed.
+struct ScanNote {
+    path: PathBuf,
+    name: String,
+    rel: String,
+    stamp: (u64, u64),
+}
+
+/// Decrypt the `.mntl.enc` if its profile is unlocked, unless the index holds
+/// a current entry.
+fn read_sealed_note(note: &ScanNote, profile: Option<&str>, vault_root: &str, keys: &SessionKeys, index: &mut ScanIndex) -> Option<Indexed> {
+    let profile = profile?;
+    let mk = keys.get(vault_root, profile).ok()??;
+    index.sealed(profile, &mk, &note.rel, note.stamp, || open_sealed(&note.path, &mk))
+}
+
+fn open_sealed(path: &Path, mk: &mntl_core::MasterKey) -> Option<Indexed> {
     let blob = fs::read(path).ok()?;
-    let document = mntl_core::decrypt_note(&mk, &blob).ok()?;
+    let document = mntl_core::decrypt_note(mk, &blob).ok()?;
     let document = std::str::from_utf8(&document).ok()?;
-    let (frontmatter, body) = mntl_core::decode_note(document).ok()?;
-    let links = wikilink_targets(&body);
-    Some((frontmatter, links))
+    let (h, body) = mntl_core::decode_note(document).ok()?;
+    Some(Indexed {
+        tags: h.tags,
+        links: wikilink_targets(&body),
+        favorite: h.favorite,
+        icon: h.icon,
+        color: h.color,
+        location: h.location,
+        name: h.name,
+    })
 }
 
 /// The hidden notes a scan came across, which it lists at their sealed path
 /// rather than where their files are.
 #[derive(Default)]
 struct HiddenScan {
-    /// Those of unlocked profiles: disk path, profile, sealed frontmatter, links and times.
-    open: Vec<(String, String, mntl_core::NoteFrontmatter, Vec<String>, u64, u64)>,
+    /// Those of unlocked profiles: disk path, profile, what the scan read, and times.
+    open: Vec<(String, String, Indexed, u64, u64)>,
     /// How many each locked profile has.
     locked: BTreeMap<String, usize>,
     /// Every hidden note's disk path, which no listed path may take.
@@ -335,6 +355,7 @@ fn scan_dir(
     vault_root: &str,
     keys: &SessionKeys,
     hidden: &mut HiddenScan,
+    index: &mut ScanIndex,
 ) -> std::io::Result<Vec<VaultNode>> {
     let mut folders = Vec::new();
     let mut notes = Vec::new();
@@ -353,9 +374,11 @@ fn scan_dir(
         if file_type.is_dir() && rel_dir.as_os_str().is_empty() && name == crate::attachments::ATTACHMENTS_DIR {
             continue;
         }
-        let (modified, created) = file_times(entry.metadata());
+        let meta = entry.metadata();
+        let len = meta.as_ref().map_or(0, |m| m.len());
+        let (modified, created) = file_times(meta);
         if file_type.is_dir() {
-            let children = scan_dir(&entry.path(), &child_rel, vault_root, keys, hidden)?;
+            let children = scan_dir(&entry.path(), &child_rel, vault_root, keys, hidden, index)?;
             folders.push(VaultNode::Folder {
                 name,
                 rel_path: to_slash(&child_rel),
@@ -371,17 +394,17 @@ fn scan_dir(
                 let profile = header.as_ref().map(|h| h.credential_profile.clone());
                 if let Some(profile) = profile.clone().filter(|_| header.as_ref().is_some_and(|h| h.hidden)) {
                     let rel = to_slash(&child_rel);
-                    match read_sealed_note(&entry.path(), Some(&profile), vault_root, keys) {
-                        Some((frontmatter, links)) => {
-                            hidden.open.push((rel.clone(), profile, frontmatter, links, modified, created))
-                        }
+                    let note = ScanNote { path: entry.path(), name: name.clone(), rel: rel.clone(), stamp: (len, modified) };
+                    match read_sealed_note(&note, Some(&profile), vault_root, keys, index) {
+                        Some(info) => hidden.open.push((rel.clone(), profile, info, modified, created)),
                         None => *hidden.locked.entry(profile).or_default() += 1,
                     }
                     hidden.disk.insert(rel);
                     continue;
                 }
+                let note = ScanNote { path: entry.path(), name: name.clone(), rel: to_slash(&child_rel), stamp: (len, modified) };
                 let NoteInfo { tags, links, favorite, icon, color } =
-                    read_note_info(&entry.path(), &name, profile.as_deref(), vault_root, keys);
+                    read_note_info(&note, profile.as_deref(), vault_root, keys, index);
                 notes.push(VaultNode::Note {
                     name: title,
                     rel_path: to_slash(&child_rel),
@@ -424,7 +447,7 @@ fn insert_hidden(root: &mut Vec<VaultNode>, hidden: HiddenScan) -> HashMap<Strin
     let mut map = HashMap::new();
     let mut open = hidden.open;
     open.sort_by(|a, b| a.0.cmp(&b.0));
-    for (disk, profile, frontmatter, links, modified, created) in open {
+    for (disk, profile, frontmatter, modified, created) in open {
         let (_, disk_stem, _) = split_rel_note_path(&disk);
         let location = frontmatter
             .location
@@ -478,7 +501,7 @@ fn insert_hidden(root: &mut Vec<VaultNode>, hidden: HiddenScan) -> HashMap<Strin
             encrypted: true,
             profile: Some(profile.clone()),
             tags: Some(frontmatter.tags),
-            links: Some(links),
+            links: Some(frontmatter.links),
             favorite: frontmatter.favorite,
             icon: frontmatter.icon,
             color: frontmatter.color,
@@ -638,8 +661,10 @@ pub(crate) fn scan_vault_inner(vault_root: &str, keys: &SessionKeys) -> Result<V
         ));
     }
     let mut hidden = HiddenScan::default();
+    let mut index = ScanIndex::load(vault_root);
     let mut children =
-        scan_dir(&root, Path::new(""), vault_root, keys, &mut hidden).map_err(|e| e.to_string())?;
+        scan_dir(&root, Path::new(""), vault_root, keys, &mut hidden, &mut index).map_err(|e| e.to_string())?;
+    index.save();
     let locked_hidden = std::mem::take(&mut hidden.locked);
     keys.set_hidden(vault_root, insert_hidden(&mut children, hidden))?;
     Ok(VaultNode::Folder {

@@ -9,6 +9,7 @@ mod migrate;
 mod logging;
 mod notes_crypto;
 mod rotation;
+mod scan_index;
 mod session;
 mod spelling;
 mod tags;
