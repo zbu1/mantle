@@ -18,6 +18,8 @@
 //!    losing this file makes every encrypted note in the vault unrecoverable
 //!    even with the correct password. Hence the `.bak` written on every save.
 
+use crate::session::ActiveVault;
+
 use crate::logging::logged;
 use crate::vault::write_atomic;
 use crate::vault_meta::STATE_DIR;
@@ -407,9 +409,10 @@ fn to_info(vault_root: &str, profile: &CredentialProfile, unlocked: bool) -> Pro
 
 #[tauri::command]
 pub fn list_credential_profiles(
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     keys: State<SessionKeys>,
 ) -> Result<Vec<ProfileInfo>, String> {
+    let vault_root = active_vault.root()?;
     logged("list_credential_profiles", || {
         let registry = load_registry(&vault_root)?;
         let unlocked = keys.unlocked_ids(&vault_root)?;
@@ -423,11 +426,12 @@ pub fn list_credential_profiles(
 
 #[tauri::command(async)]
 pub fn create_credential_profile(
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     display_name: String,
     password: String,
     keys: State<SessionKeys>,
 ) -> Result<ProfileInfo, String> {
+    let vault_root = active_vault.root()?;
     let password = Zeroizing::new(password);
     logged("create_credential_profile", || {
         create_profile_inner(
@@ -496,11 +500,12 @@ pub(crate) fn create_profile_inner(
 
 #[tauri::command(async)]
 pub fn unlock_credential_profile(
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     profile_id: String,
     password: String,
     keys: State<SessionKeys>,
 ) -> Result<(), String> {
+    let vault_root = active_vault.root()?;
     let password = Zeroizing::new(password);
     logged("unlock_credential_profile", || {
         unlock_profile_inner(&vault_root, &profile_id, &password, &keys)
@@ -544,10 +549,11 @@ pub(crate) fn unlock_profile_inner(
 
 #[tauri::command]
 pub fn lock_credential_profile(
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     profile_id: String,
     keys: State<SessionKeys>,
 ) -> Result<(), String> {
+    let vault_root = active_vault.root()?;
     logged("lock_credential_profile", || {
         keys.lock_one(&vault_root, &profile_id)
     })
@@ -563,11 +569,12 @@ pub fn lock_all_credential_profiles(keys: State<SessionKeys>) -> Result<(), Stri
 /// unlocked.
 #[tauri::command]
 pub fn rename_credential_profile(
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     profile_id: String,
     display_name: String,
     keys: State<SessionKeys>,
 ) -> Result<ProfileInfo, String> {
+    let vault_root = active_vault.root()?;
     logged("rename_credential_profile", || {
         rename_profile_inner(&vault_root, &profile_id, &display_name, &keys)
     })
@@ -605,11 +612,12 @@ fn rename_profile_inner(
 #[tauri::command(async)]
 pub fn change_credential_profile_password(
     app: tauri::AppHandle,
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     profile_id: String,
     new_password: String,
     keys: State<SessionKeys>,
 ) -> Result<(), String> {
+    let vault_root = active_vault.root()?;
     let new_password = Zeroizing::new(new_password);
     logged("change_credential_profile_password", || {
         change_password_inner(&vault_root, &profile_id, &new_password, &keys)?;
@@ -662,10 +670,11 @@ fn change_password_inner(
 #[tauri::command(async)]
 pub fn delete_credential_profile(
     app: tauri::AppHandle,
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     profile_id: String,
     keys: State<SessionKeys>,
 ) -> Result<(), String> {
+    let vault_root = active_vault.root()?;
     logged("delete_credential_profile", || {
         delete_profile_inner(&vault_root, &profile_id, &keys)?;
         crate::biometric::forget(&app, &vault_root, &profile_id);
@@ -684,7 +693,7 @@ pub(crate) fn profile_in_use(vault_root: &str, profile_id: &str, keys: &SessionK
                 .as_deref()
                 == Some(profile_id)
     });
-    Ok(in_note || !crate::attachments::profile_attachments(vault_root.to_string(), profile_id.to_string())?.is_empty())
+    Ok(in_note || !crate::attachments::profile_attachments_inner(vault_root, profile_id)?.is_empty())
 }
 
 fn delete_profile_inner(vault_root: &str, profile_id: &str, keys: &SessionKeys) -> Result<(), String> {
@@ -711,10 +720,11 @@ fn delete_profile_inner(vault_root: &str, profile_id: &str, keys: &SessionKeys) 
 /// registry entry is the only way back to that content.
 #[tauri::command(async)]
 pub fn undo_create_credential_profile(
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     profile_id: String,
     keys: State<SessionKeys>,
 ) -> Result<(), String> {
+    let vault_root = active_vault.root()?;
     logged("undo_create_credential_profile", || {
         if profile_in_use(&vault_root, &profile_id, &keys)? {
             return Err("Something is encrypted under this profile now".to_string());
@@ -738,10 +748,11 @@ pub fn undo_create_credential_profile(
 /// comes back locked: its key wasn't kept.
 #[tauri::command(async)]
 pub fn redo_create_credential_profile(
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     profile_id: String,
     keys: State<SessionKeys>,
 ) -> Result<(), String> {
+    let vault_root = active_vault.root()?;
     logged("redo_create_credential_profile", || {
         let profile = keys
             .with_vault(&vault_root, |inner| inner.removed.remove(&profile_id))?
@@ -814,10 +825,11 @@ fn parse_recovery_key(text: &str) -> Result<KeyEncryptionKey, String> {
 /// and return it. It is shown once and never stored.
 #[tauri::command(async)]
 pub fn create_recovery_key(
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     profile_id: String,
     keys: State<SessionKeys>,
 ) -> Result<String, String> {
+    let vault_root = active_vault.root()?;
     logged("create_recovery_key", || create_recovery_key_inner(&vault_root, &profile_id, &keys))
 }
 
@@ -899,12 +911,13 @@ pub(crate) fn install_rotated_key(
 /// without its hide settings, which can be set again).
 #[tauri::command(async)]
 pub fn recover_credential_profile(
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     profile_id: String,
     recovery_key: String,
     new_password: String,
     keys: State<SessionKeys>,
 ) -> Result<ProfileInfo, String> {
+    let vault_root = active_vault.root()?;
     let recovery_key = Zeroizing::new(recovery_key);
     let new_password = Zeroizing::new(new_password);
     logged("recover_credential_profile", || {

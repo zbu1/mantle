@@ -9,6 +9,7 @@ mod migrate;
 mod logging;
 mod notes_crypto;
 mod rotation;
+mod session;
 mod spelling;
 mod tags;
 mod typst_render;
@@ -42,6 +43,11 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .manage(watcher::WatcherState::default())
         .manage(credentials::SessionKeys::default())
+        .setup(|app| {
+            let file = session::session_file(app.handle())?;
+            app.manage(session::ActiveVault::load(file));
+            Ok(())
+        })
         .register_asynchronous_uri_scheme_protocol("mantle", attachments::protocol)
         .invoke_handler(tauri::generate_handler![
             spelling::spelling_suggestions,
@@ -49,9 +55,16 @@ pub fn run() {
             spelling::add_to_dictionary,
             typst_render::render_typst,
             vault::scan_vault,
-            vault::create_vault,
-            vault::move_vault,
-            vault::list_folders,
+            session::vault_session,
+            session::pick_vault,
+            session::create_vault,
+            session::switch_vault,
+            session::close_vault,
+            session::remove_recent_vault,
+            session::clear_recent_vaults,
+            session::move_vault,
+            session::browse_folders,
+            session::android_approve,
             vault::read_note,
             vault::write_note,
             vault::set_note_favorite,
@@ -103,7 +116,7 @@ pub fn run() {
             notes_crypto::convert_markdown_notes,
             export::convert_to_markdown,
             export::export_vault,
-            migrate::import_obsidian_vault,
+            session::import_obsidian_vault,
             attachments::save_attachment,
             attachments::import_attachment,
             attachments::save_attachment_copy,

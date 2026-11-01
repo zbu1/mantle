@@ -223,7 +223,7 @@ export class VaultActions {
   async restore(relPaths: readonly string[]): Promise<void> {
     const vaultRoot = this.vaultState.rootPath();
     if (!vaultRoot) throw new Error('No vault is open.');
-    await invoke('restore_from_trash', { vaultRoot, relPaths });
+    await invoke('restore_from_trash', { relPaths });
     await this.vaultState.refresh();
   }
 

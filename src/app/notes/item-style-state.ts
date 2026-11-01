@@ -80,7 +80,7 @@ export class ItemStyleState {
     if (!root || !note) return false;
     if (!(await this.credentialsState.promptUnlock(note.profile))) return false;
     try {
-      await invoke('set_note_style', { vaultRoot: root, relPath, icon: style?.icon ?? null, color: style?.color ?? null });
+      await invoke('set_note_style', { relPath, icon: style?.icon ?? null, color: style?.color ?? null });
       this.vaultState.setNoteStyleInTree(relPath, style);
       return true;
     } catch (err) {

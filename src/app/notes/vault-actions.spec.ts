@@ -52,7 +52,7 @@ describe('VaultActions undo', () => {
   it('undoes a delete by restoring from the trash, attachments included', async () => {
     await actions.delete([note('a.mntl')], ['attachments/x.png']);
     await history.undo();
-    expect(calls('restore_from_trash')).toEqual([{ vaultRoot: '/vault', relPaths: ['a.mntl', 'attachments/x.png'] }]);
+    expect(calls('restore_from_trash')).toEqual([{ relPaths: ['a.mntl', 'attachments/x.png'] }]);
   });
 
   it('skips a step the vault no longer matches', async () => {

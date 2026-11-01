@@ -233,7 +233,7 @@ export class CommandPalette {
         id: 'close-vault',
         label: 'Close Vault',
         keywords: ['close', 'vault'],
-        run: () => this.vaultState.closeVault(),
+        run: () => void this.vaultState.closeVault(),
       });
     }
 

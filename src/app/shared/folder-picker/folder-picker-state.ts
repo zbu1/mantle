@@ -1,5 +1,5 @@
 import { Injectable, signal } from '@angular/core';
-import { open, save } from '@tauri-apps/plugin-dialog';
+import { invoke } from '@tauri-apps/api/core';
 import { isMobile } from '../../core/tauri-env';
 
 export interface FolderPickRequest {
@@ -13,10 +13,23 @@ export interface FolderPickRequest {
   resolve: (path: string | null) => void;
 }
 
+/** What the backend's native dialog would ask for, which on Android it is told the answer to instead. */
+export type ApprovalKind =
+  | 'vault'
+  | 'newVault'
+  | 'obsidianSource'
+  | 'obsidianDest'
+  | 'moveTo'
+  | 'exportTo'
+  | 'copyTo';
+
+const NEW_PATH_KINDS: ReadonlySet<ApprovalKind> = new Set(['newVault', 'obsidianDest', 'moveTo', 'copyTo']);
+
 /**
- * Asks for a folder, or for where something new should go. The native dialogs
- * on desktop; on Android, whose system picker hands back `content://` URIs
- * rather than paths, the in-app `FolderPicker` instead.
+ * The backend shows the native dialogs on desktop. Android's system picker
+ * hands back `content://` URIs rather than paths, so there the in-app
+ * `FolderPicker` asks instead and the choice is approved to the backend,
+ * which the command that follows consumes.
  */
 @Injectable({ providedIn: 'root' })
 export class FolderPickerState {
@@ -25,17 +38,19 @@ export class FolderPickerState {
   /** The folder the in-app picker last showed, where it reopens. */
   readonly lastDir = signal<string | null>(null);
 
-  /** An existing folder. */
-  async pickFolder(title: string): Promise<string | null> {
-    if (isMobile) return this.ask({ title, confirmLabel: 'Use This Folder' });
-    const picked = await open({ directory: true, multiple: false, title });
-    return typeof picked === 'string' ? picked : null;
-  }
-
-  /** A path for something new: a folder to put it in and the name it gets there, `defaultPath`'s to start with. */
-  pickNewPath(title: string, defaultPath: string): Promise<string | null> {
-    if (isMobile) return this.ask({ title, confirmLabel: 'Save Here', name: defaultPath.split(/[/\\]/).pop() ?? '' });
-    return save({ title, defaultPath });
+  /**
+   * Gets `kind`'s path approved before its command runs. True to go ahead:
+   * at once on desktop, where the command asks itself; false if cancelled.
+   * `defaultName` starts the name field for a path to something new.
+   */
+  async approve(kind: ApprovalKind, title: string, defaultName = ''): Promise<boolean> {
+    if (!isMobile) return true;
+    const path = NEW_PATH_KINDS.has(kind)
+      ? await this.ask({ title, confirmLabel: 'Save Here', name: defaultName })
+      : await this.ask({ title, confirmLabel: 'Use This Folder' });
+    if (path === null) return false;
+    await invoke('android_approve', { kind, path });
+    return true;
   }
 
   /** A folder inside `root` (Android only), as a path relative to it; '' is `root` itself. */

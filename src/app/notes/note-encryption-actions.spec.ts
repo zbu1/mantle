@@ -68,7 +68,6 @@ describe('NoteEncryptionActions conversion', () => {
     await actions.convertToNotes(actions.markdownNotesIn(['Docs']));
     expect(calls('convert_markdown_notes')).toEqual([
       {
-        vaultRoot: '/vault',
         notes: [
           { relPath: 'Docs/a.md', name: 'a 3' },
           { relPath: 'Docs/sub/b.md', name: 'b' },
@@ -79,7 +78,7 @@ describe('NoteEncryptionActions conversion', () => {
 
     await TestBed.inject(VaultHistoryState).undo();
     expect(calls('restore_from_trash')).toEqual([
-      { vaultRoot: '/vault', relPaths: ['Docs/a.md', 'Docs/sub/b.md', 'files/x.pdf'] },
+      { relPaths: ['Docs/a.md', 'Docs/sub/b.md', 'files/x.pdf'] },
     ]);
     expect(calls('delete_note').map((args) => (args as { relPath: string }).relPath)).toEqual([
       'Docs/a 3.mntl',
@@ -133,13 +132,13 @@ describe('NoteEncryptionActions bulk encryption', () => {
 
     await actions.changeEncryption(actions.allNotesIn(['d.mntl', 'e.mntl.enc', 'h.mntl.enc']), 'home');
     expect(unlock.mock.calls.map(([id]) => id)).toEqual(['work', 'home']);
-    expect(calls('encrypt_note_to_profile')).toEqual([{ vaultRoot: '/vault', relPath: 'd.mntl', profileId: 'home' }]);
-    expect(calls('move_note_to_profile')).toEqual([{ vaultRoot: '/vault', relPath: 'e.mntl.enc', profileId: 'home' }]);
+    expect(calls('encrypt_note_to_profile')).toEqual([{ relPath: 'd.mntl', profileId: 'home' }]);
+    expect(calls('move_note_to_profile')).toEqual([{ relPath: 'e.mntl.enc', profileId: 'home' }]);
     expect(alert).toHaveBeenCalledTimes(1);
     expect(alert.mock.calls[0][0]).toContain('d.mntl: disk full');
 
     await TestBed.inject(VaultHistoryState).undo();
-    expect(calls('move_note_to_profile')[1]).toEqual({ vaultRoot: '/vault', relPath: 'e.mntl.enc', profileId: 'work' });
+    expect(calls('move_note_to_profile')[1]).toEqual({ relPath: 'e.mntl.enc', profileId: 'work' });
     expect(calls('encrypt_note_to_profile')).toHaveLength(1);
   });
 });

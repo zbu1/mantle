@@ -3,6 +3,8 @@
 //! frontend so it can re-scan and reconcile open tabs, and reload open notes
 //! whose content changed.
 
+use crate::session::ActiveVault;
+
 use crate::logging::logged;
 use notify::event::ModifyKind;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
@@ -98,7 +100,8 @@ fn is_structural(kind: &EventKind) -> bool {
 }
 
 #[tauri::command]
-pub fn start_vault_watch(app: AppHandle, state: State<WatcherState>, vault_root: String) -> Result<(), String> {
+pub fn start_vault_watch(app: AppHandle, state: State<WatcherState>, active_vault: State<'_, ActiveVault>) -> Result<(), String> {
+    let vault_root = active_vault.root()?;
     logged("start_vault_watch", || {
         let root = PathBuf::from(&vault_root);
         if !root.is_dir() {

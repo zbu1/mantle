@@ -76,7 +76,7 @@ export class FilePreview {
     return isImagePath(path) ? 'image' : isVideoPath(path) ? 'video' : isPdfPath(path) ? 'pdf' : null;
   });
   protected readonly sealed = computed(() => this.relPath().endsWith('.enc'));
-  protected readonly url = computed(() => attachmentUrl(this.vaultState.rootPath() ?? '', '', this.relPath()));
+  protected readonly url = computed(() => attachmentUrl('', this.relPath()));
   /** The file failed to load; reset when the tab shows another file. */
   protected readonly failed = linkedSignal({ source: this.relPath, computation: () => false });
   private readonly pages = viewChild<ElementRef<HTMLElement>>('pages');

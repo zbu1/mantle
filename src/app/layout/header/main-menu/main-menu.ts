@@ -242,7 +242,7 @@ export class MainMenu {
 
   protected closeVault(): void {
     this.closeMenu();
-    this.vaultState.closeVault();
+    void this.vaultState.closeVault();
   }
 
   protected async lockAllProfiles(): Promise<void> {

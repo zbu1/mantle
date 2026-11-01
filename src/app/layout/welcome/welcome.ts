@@ -1,12 +1,10 @@
 import { Component, ElementRef, HostListener, computed, inject, signal } from '@angular/core';
-import { dirname, join } from '@tauri-apps/api/path';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { LucideArrowLeft, LucideArrowRight, LucideEllipsis, LucideFolderInput, LucideFolderOpen, LucideFolderPlus } from '@lucide/angular';
 import { CredentialsState } from '../../notes/credentials-state';
 import { VaultState, vaultNameFromPath } from '../../notes/vault-state';
 import { ContextMenuState } from '../../shared/context-menu/context-menu-state';
 import { DialogState } from '../../shared/dialog/dialog-state';
-import { FolderPickerState } from '../../shared/folder-picker/folder-picker-state';
 import { WindowControls } from '../window-controls/window-controls';
 import { isMobile } from '../../core/tauri-env';
 
@@ -140,7 +138,6 @@ export class Welcome {
   private readonly credentials = inject(CredentialsState);
   private readonly contextMenu = inject(ContextMenuState);
   private readonly dialog = inject(DialogState);
-  private readonly folderPicker = inject(FolderPickerState);
 
   protected readonly strata = STRATA;
   protected readonly strataViewBox = `0 0 ${STRATA_WIDTH} ${STRATA_HEIGHT}`;
@@ -221,22 +218,18 @@ export class Welcome {
     this.renaming.set(null);
     name = name.trim();
     if (!name || name === vaultNameFromPath(path)) return;
-    await this.run(async () => {
-      await this.move(path, await join(await dirname(path), name));
-    });
+    await this.run(() => this.move(path, name));
   }
 
   private moveVault(path: string): Promise<void> {
-    return this.run(async () => {
-      const to = await this.folderPicker.pickNewPath('Move Vault', path);
-      if (to) await this.move(path, to);
-    });
+    return this.run(() => this.move(path));
   }
 
-  private async move(from: string, to: string): Promise<void> {
+  /** Moves the vault to where the backend asks, or renames it in place given `newName`. */
+  private async move(from: string, newName?: string): Promise<void> {
     // Unlocked keys are tied to the vault's path, and pending saves need them.
     if (from === this.vaultState.rootPath()) await this.credentials.lockAll();
-    await this.vaultState.moveVault(from, to);
+    await this.vaultState.moveVault(from, newName);
   }
 
   protected async clearRecents(): Promise<void> {

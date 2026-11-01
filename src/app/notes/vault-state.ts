@@ -1,28 +1,16 @@
-import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
+import { Injectable, computed, effect, inject, Injector, signal, untracked } from '@angular/core';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { join } from '@tauri-apps/api/path';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { flattenVaultNotes, hiddenTreePaths, withNoteFields, withRenamedNote, VaultFolderNode } from './vault-tree.model';
+import { NotesState } from './notes-state';
 import { TabsState } from './tabs-state';
 import { VaultMetaState } from './vault-meta-state';
 import { VaultRootState } from './vault-root-state';
 import { formatError, logError, logInfo } from '../core/logger';
 import { ItemStyle } from '../shared/item-style/item-style';
 import { FolderPickerState } from '../shared/folder-picker/folder-picker-state';
-
-const RECENT_KEY = 'mantle.vault.recent.v1';
-const MAX_RECENT_VAULTS = 8;
-
-function readStoredRecents(): string[] {
-  try {
-    const raw = localStorage.getItem(RECENT_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed.filter((p) => typeof p === 'string') : [];
-  } catch {
-    return [];
-  }
-}
 
 /** Vault display name, derived from the trailing path segment (handles both `/` and `\` separators). */
 export function vaultNameFromPath(path: string): string {
@@ -52,14 +40,17 @@ export class VaultState {
   private readonly tabsState = inject(TabsState);
   private readonly vaultMeta = inject(VaultMetaState);
   private readonly folderPicker = inject(FolderPickerState);
+  // Looked up late: NotesState depends on this service.
+  private readonly injector = inject(Injector);
 
-  readonly rootPath = inject(VaultRootState).path;
+  private readonly rootState = inject(VaultRootState);
+  readonly rootPath = this.rootState.path;
   readonly tree = signal<VaultFolderNode | null>(null);
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
 
   /** Most-recently-opened vault paths, newest first, for the sidebar vault switcher. */
-  readonly recentVaults = signal<string[]>(readStoredRecents());
+  readonly recentVaults = this.rootState.recents;
 
   /** True while the welcome screen is shown over an open vault ("Manage Vaults"). Cleared when the vault changes. */
   readonly managing = signal(false);
@@ -87,18 +78,8 @@ export class VaultState {
 
   constructor() {
     effect(() => {
-      const path = this.rootPath();
-      if (path) this.rememberRecentVault(path);
+      this.rootPath();
       untracked(() => this.managing.set(false));
-    });
-
-    effect(() => {
-      const recents = this.recentVaults();
-      try {
-        localStorage.setItem(RECENT_KEY, JSON.stringify(recents));
-      } catch {
-        // storage unavailable (e.g. private browsing) — ignore
-      }
     });
 
     // Load the vault's `.mantle/state.json` (recent notes, ...) alongside the vault itself.
@@ -141,7 +122,7 @@ export class VaultState {
     effect(() => {
       const path = this.rootPath();
       if (path) {
-        void invoke('start_vault_watch', { vaultRoot: path }).catch((err) => {
+        void invoke('start_vault_watch').catch((err) => {
           logError(`Failed to watch vault "${path}" for external changes: ${formatError(err)}`);
         });
       } else {
@@ -160,53 +141,67 @@ export class VaultState {
     }
   }
 
-  async pickVault(): Promise<void> {
-    const selected = await this.folderPicker.pickFolder('Open a Vault');
-    if (!selected) return;
-    this.rootPath.set(selected);
+  /**
+   * Writes out pending edits. The backend acts on the active vault, so this
+   * runs before it changes, or they'd land in the next one.
+   */
+  private async settle(): Promise<void> {
+    await this.injector.get(NotesState).flushPending();
+    this.vaultMeta.flush();
+  }
+
+  /** Adopts the vault the backend just made active (null: the user cancelled) and its updated recents. */
+  private async opened(path: string | null): Promise<boolean> {
+    if (!path) return false;
+    await this.rootState.load();
     await this.refresh();
+    return true;
+  }
+
+  async pickVault(): Promise<void> {
+    if (!(await this.folderPicker.approve('vault', 'Open a Vault'))) return;
+    await this.settle();
+    await this.opened(await invoke<string | null>('pick_vault'));
   }
 
   /**
-   * Copies an Obsidian vault into a new Mantle vault and opens it: one folder
-   * dialog for the Obsidian vault, one save dialog for where the new vault
-   * goes. Resolves what the import did, or null if a dialog was cancelled.
+   * Copies an Obsidian vault into a new Mantle vault and opens it: the backend
+   * asks for the Obsidian vault, then for where the new vault goes. Resolves
+   * what the import did, or null if a dialog was cancelled.
    */
   async importObsidianVault(): Promise<ImportReport | null> {
-    const source = await this.folderPicker.pickFolder('Choose an Obsidian Vault');
-    if (!source) return null;
-    const dest = await this.folderPicker.pickNewPath('Create the New Mantle Vault', `${vaultNameFromPath(source)} (Mantle)`);
-    if (!dest) return null;
+    if (!(await this.folderPicker.approve('obsidianSource', 'Choose an Obsidian Vault'))) return null;
+    if (!(await this.folderPicker.approve('obsidianDest', 'Create the New Mantle Vault', 'Obsidian Vault (Mantle)'))) return null;
     this.error.set(null);
     try {
-      const report = await invoke<ImportReport>('import_obsidian_vault', { source, dest });
-      logInfo(`Imported "${source}" into "${dest}": ${report.notes} notes, ${report.failed.length} failed`);
-      this.rootPath.set(dest);
-      await this.refresh();
-      return report;
+      await this.settle();
+      const result = await invoke<{ path: string; report: ImportReport } | null>('import_obsidian_vault');
+      if (!result) return null;
+      logInfo(`Imported into "${result.path}": ${result.report.notes} notes, ${result.report.failed.length} failed`);
+      await this.opened(result.path);
+      return result.report;
     } catch (err) {
-      logError(`Failed to import "${source}": ${formatError(err)}`);
+      logError(`Failed to import an Obsidian vault: ${formatError(err)}`);
       this.error.set(formatError(err));
       return null;
     }
   }
 
   /**
-   * Creates a new, empty vault and opens it. A native save dialog picks both
-   * the location and the name in one step; the backend creates that folder
+   * Creates a new, empty vault and opens it. The backend's save dialog picks
+   * both the location and the name in one step; it creates that folder
    * (refusing one that already exists) and seeds its `.mantle/` state.
    */
   async createVault(): Promise<void> {
-    const selected = await this.folderPicker.pickNewPath('Create New Vault', 'New Vault');
-    if (!selected) return;
+    if (!(await this.folderPicker.approve('newVault', 'Create New Vault', 'New Vault'))) return;
     this.error.set(null);
     try {
-      const path = await invoke<string>('create_vault', { path: selected });
-      logInfo(`Created vault "${path}"`);
-      this.rootPath.set(path);
-      await this.refresh();
+      await this.settle();
+      const path = await invoke<string | null>('create_vault');
+      if (path) logInfo(`Created vault "${path}"`);
+      await this.opened(path);
     } catch (err) {
-      logError(`Failed to create vault "${selected}": ${formatError(err)}`);
+      logError(`Failed to create a vault: ${formatError(err)}`);
       this.error.set(formatError(err));
     }
   }
@@ -214,12 +209,19 @@ export class VaultState {
   /** Switches to an already-known vault path (e.g. from the sidebar's recent-vaults switcher). */
   async switchVault(path: string): Promise<void> {
     if (path === this.rootPath()) return;
-    this.rootPath.set(path);
-    await this.refresh();
+    try {
+      await this.settle();
+      await this.opened(await invoke<string>('switch_vault', { path }));
+    } catch (err) {
+      logError(`Failed to open vault "${path}": ${formatError(err)}`);
+      this.error.set(formatError(err));
+    }
   }
 
   /** Closes the open vault and any tabs into it, returning to the no-vault-open state. */
-  closeVault(): void {
+  async closeVault(): Promise<void> {
+    await this.settle();
+    void invoke('close_vault').catch((err) => logError(`Failed to close the vault: ${formatError(err)}`));
     this.rootPath.set(null);
     this.tree.set(null);
     this.error.set(null);
@@ -231,36 +233,42 @@ export class VaultState {
   /** Forgets `path` from the recent-vaults list; the folder itself is untouched. */
   removeRecentVault(path: string): void {
     this.recentVaults.update((paths) => paths.filter((p) => p !== path));
+    void invoke('remove_recent_vault', { path }).catch((err) => logError(`Failed to forget "${path}": ${formatError(err)}`));
   }
 
   clearRecentVaults(): void {
     this.recentVaults.set([]);
+    void invoke('clear_recent_vaults').catch((err) => logError(`Failed to clear recent vaults: ${formatError(err)}`));
   }
 
   /**
-   * Renames or moves the vault folder at `from` to `to`, keeping its place in
-   * the recent list. Moving the open vault reopens it at `to`; callers must
-   * flush pending writes (and drop unlocked keys, which belong to the old
-   * path) first. Returns false, with `error` set, if the move failed.
+   * Moves the vault folder at `from`: to where the backend's save dialog says,
+   * or, given `newName`, renamed in place. Moving the open vault reopens it
+   * at its new path; callers must flush pending writes (and drop unlocked
+   * keys, which belong to the old path) first. Returns false if it was
+   * cancelled or failed (then `error` is set).
    */
-  async moveVault(from: string, to: string): Promise<boolean> {
+  async moveVault(from: string, newName?: string): Promise<boolean> {
+    if (!newName && !(await this.folderPicker.approve('moveTo', 'Move Vault', vaultNameFromPath(from)))) return false;
     const isOpen = from === this.rootPath();
     this.error.set(null);
     // The watcher holds a handle on the vault folder, which can block renaming it on Windows.
     if (isOpen) await invoke('stop_vault_watch').catch(() => {});
     try {
-      const moved = await invoke<string>('move_vault', { from, to });
-      logInfo(`Moved vault "${from}" to "${moved}"`);
-      this.recentVaults.update((paths) => paths.map((p) => (p === from ? moved : p)));
-      if (isOpen) {
-        this.rootPath.set(moved);
-        await this.refresh();
+      await this.settle();
+      const to = await invoke<string | null>('move_vault', newName ? { from, newName } : { from });
+      if (!to) {
+        if (isOpen) void invoke('start_vault_watch').catch(() => {});
+        return false;
       }
+      logInfo(`Moved vault "${from}" to "${to}"`);
+      await this.rootState.load();
+      if (isOpen) await this.refresh();
       return true;
     } catch (err) {
-      logError(`Failed to move vault "${from}" to "${to}": ${formatError(err)}`);
+      logError(`Failed to move vault "${from}": ${formatError(err)}`);
       this.error.set(formatError(err));
-      if (isOpen) void invoke('start_vault_watch', { vaultRoot: from }).catch(() => {});
+      if (isOpen) void invoke('start_vault_watch').catch(() => {});
       return false;
     }
   }
@@ -273,12 +281,6 @@ export class VaultState {
     this.vaultMeta.recordOpened(relPath);
   }
 
-  private rememberRecentVault(path: string): void {
-    const current = untracked(this.recentVaults);
-    const next = [path, ...current.filter((p) => p !== path)].slice(0, MAX_RECENT_VAULTS);
-    this.recentVaults.set(next);
-  }
-
   async refresh(): Promise<void> {
     const root = this.rootPath();
     if (!root) return;
@@ -286,7 +288,7 @@ export class VaultState {
     let tree: VaultFolderNode;
     try {
       logInfo(`Scanning vault "${root}"`);
-      tree = await invoke<VaultFolderNode>('scan_vault', { vaultRoot: root });
+      tree = await invoke<VaultFolderNode>('scan_vault');
     } catch (err) {
       // A rescan of the open vault can fail transiently (e.g. a sync tool
       // holding a file); keep showing what we had rather than blanking it.
@@ -349,7 +351,6 @@ export class VaultState {
     const root = this.rootPath();
     if (!root) throw new Error('No vault open');
     const created = await invoke<CreatedNote>('create_note', {
-      vaultRoot: root,
       relDir,
       name,
     });
@@ -375,7 +376,7 @@ export class VaultState {
   async createFolder(relDir: string, name: string): Promise<CreatedFolder> {
     const root = this.rootPath();
     if (!root) throw new Error('No vault open');
-    return invoke<CreatedFolder>('create_folder', { vaultRoot: root, relDir, name });
+    return invoke<CreatedFolder>('create_folder', { relDir, name });
   }
 
   /** Creates a "New Folder" in `relDir` (retrying on name collisions). */
@@ -395,7 +396,7 @@ export class VaultState {
   async deleteNote(relPath: string): Promise<void> {
     const root = this.rootPath();
     if (!root) throw new Error('No vault open');
-    await invoke('delete_note', { vaultRoot: root, relPath });
+    await invoke('delete_note', { relPath });
   }
 
   /** Moves a file that isn't a note to the trash; `delete_note` trashes whatever path it's given. */
@@ -406,7 +407,7 @@ export class VaultState {
   async deleteFolder(relPath: string): Promise<void> {
     const root = this.rootPath();
     if (!root) throw new Error('No vault open');
-    await invoke('delete_folder', { vaultRoot: root, relPath });
+    await invoke('delete_folder', { relPath });
   }
 
   /**
@@ -449,26 +450,25 @@ export class VaultState {
   async renameNote(relPath: string, newName: string): Promise<CreatedNote> {
     const root = this.rootPath();
     if (!root) throw new Error('No vault open');
-    return invoke<CreatedNote>('rename_note', { vaultRoot: root, relPath, newName });
+    return invoke<CreatedNote>('rename_note', { relPath, newName });
   }
 
   async renameFolder(relPath: string, newName: string): Promise<CreatedFolder> {
     const root = this.rootPath();
     if (!root) throw new Error('No vault open');
-    return invoke<CreatedFolder>('rename_folder', { vaultRoot: root, relPath, newName });
+    return invoke<CreatedFolder>('rename_folder', { relPath, newName });
   }
 
   async duplicateNote(relPath: string): Promise<CreatedNote> {
     const root = this.rootPath();
     if (!root) throw new Error('No vault open');
-    return invoke<CreatedNote>('duplicate_note', { vaultRoot: root, relPath });
+    return invoke<CreatedNote>('duplicate_note', { relPath });
   }
 
   async copyNote(sourceRelPath: string, destRelDir: string): Promise<CreatedNote> {
     const root = this.rootPath();
     if (!root) throw new Error('No vault open');
     return invoke<CreatedNote>('copy_note', {
-      vaultRoot: root,
       sourceRelPath,
       destRelDir,
     });
@@ -478,7 +478,6 @@ export class VaultState {
     const root = this.rootPath();
     if (!root) throw new Error('No vault open');
     const created = await invoke<CreatedNote>('move_note', {
-      vaultRoot: root,
       sourceRelPath,
       destRelDir,
     });
@@ -489,7 +488,6 @@ export class VaultState {
     const root = this.rootPath();
     if (!root) throw new Error('No vault open');
     return invoke<CreatedFolder>('move_folder', {
-      vaultRoot: root,
       sourceRelPath,
       destRelDir,
     });
@@ -508,7 +506,7 @@ export class VaultState {
     const root = this.rootPath();
     if (!root) return;
     const absolute = relPath.endsWith('.mntl.enc')
-      ? await invoke<string>('note_disk_path', { vaultRoot: root, relPath })
+      ? await invoke<string>('note_disk_path', { relPath })
       : relPath
         ? await join(root, ...relPath.split('/'))
         : root;

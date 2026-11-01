@@ -57,7 +57,7 @@ export class NoteLinksState {
       // Pending edits first: a debounced save landing afterwards would undo the rewrite.
       await this.notesState.flushPending(notes);
       try {
-        const report = await invoke<LinkRewriteReport>('rewrite_links', { vaultRoot, rewrites });
+        const report = await invoke<LinkRewriteReport>('rewrite_links', { rewrites });
         logInfo(`Updated links in ${report.updated.length} notes`);
         for (const id of report.updated) if (this.notesState.getNote(id)) this.notesState.reload(id);
         locked = Math.max(locked, report.locked.length);

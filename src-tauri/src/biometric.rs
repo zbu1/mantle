@@ -8,6 +8,8 @@
 //! As in [`crate::credentials`], errors reach the on-disk log: never interpolate
 //! a password, key or note content.
 
+use crate::session::ActiveVault;
+
 use crate::credentials::{load_registry, SessionKeys};
 use crate::logging::logged;
 use base64::engine::general_purpose::STANDARD as BASE64;
@@ -145,7 +147,8 @@ pub(crate) fn forget(app: &AppHandle, vault_root: &str, profile_id: &str) {
 }
 
 #[tauri::command]
-pub async fn biometric_status(app: AppHandle, vault_root: String) -> Result<BiometricStatus, String> {
+pub async fn biometric_status(app: AppHandle, active_vault: State<'_, ActiveVault>) -> Result<BiometricStatus, String> {
+    let vault_root = active_vault.root()?;
     logged("biometric_status", || {
         let available = hello::available();
         let enabled = load_registry(&vault_root)?
@@ -162,10 +165,11 @@ pub async fn biometric_status(app: AppHandle, vault_root: String) -> Result<Biom
 #[tauri::command]
 pub async fn enable_biometric(
     app: AppHandle,
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     profile_id: String,
     keys: State<'_, SessionKeys>,
 ) -> Result<(), String> {
+    let vault_root = active_vault.root()?;
     logged("enable_biometric", || {
         let master = keys
             .get(&vault_root, &profile_id)?
@@ -182,7 +186,8 @@ pub async fn enable_biometric(
 }
 
 #[tauri::command]
-pub async fn disable_biometric(app: AppHandle, vault_root: String, profile_id: String) -> Result<(), String> {
+pub async fn disable_biometric(app: AppHandle, active_vault: State<'_, ActiveVault>, profile_id: String) -> Result<(), String> {
+    let vault_root = active_vault.root()?;
     logged("disable_biometric", || {
         forget(&app, &vault_root, &profile_id);
         Ok(())
@@ -192,10 +197,11 @@ pub async fn disable_biometric(app: AppHandle, vault_root: String, profile_id: S
 #[tauri::command]
 pub async fn unlock_with_biometric(
     app: AppHandle,
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     profile_id: String,
     keys: State<'_, SessionKeys>,
 ) -> Result<(), String> {
+    let vault_root = active_vault.root()?;
     logged("unlock_with_biometric", || {
         let slot = slot(&vault_root, &profile_id)?;
         let corrupt = || "The Windows Hello unlock is corrupt; use the password".to_string();

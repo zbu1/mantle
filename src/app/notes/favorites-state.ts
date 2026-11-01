@@ -122,7 +122,7 @@ export class FavoritesState {
     if (!root || !note) return false;
     if (!(await this.credentialsState.promptUnlock(note.profile))) return false;
     try {
-      await invoke('set_note_favorite', { vaultRoot: root, relPath, favorite });
+      await invoke('set_note_favorite', { relPath, favorite });
       this.vaultState.setNoteFavoriteInTree(relPath, favorite);
       return true;
     } catch (err) {

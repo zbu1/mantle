@@ -22,7 +22,6 @@ import { undoInputRule } from 'prosemirror-inputrules';
 import { gapCursor } from 'prosemirror-gapcursor';
 import { dropCursor } from 'prosemirror-dropcursor';
 import { invoke } from '@tauri-apps/api/core';
-import { open } from '@tauri-apps/plugin-dialog';
 import { isMobile } from '../../core/tauri-env';
 
 import { ToastState } from '../../shared/toast/toast-state';
@@ -31,7 +30,6 @@ import { NotePropertiesState } from '../note-properties-state';
 import { NotesState } from '../notes-state';
 import { sameProperties } from '../properties';
 import { VaultState } from '../vault-state';
-import { VaultRootState } from '../vault-root-state';
 import { ContextMenuState } from '../../shared/context-menu/context-menu-state';
 import { formatError } from '../../core/logger';
 import { DialogState } from '../../shared/dialog/dialog-state';
@@ -189,7 +187,6 @@ export class NoteEditor {
   private readonly editorFocus = inject(EditorFocusState);
   private readonly slashMenuState = inject(SlashMenuState);
   private readonly destroyRef = inject(DestroyRef);
-  private readonly vaultRoot = inject(VaultRootState).path;
   private readonly vaultState = inject(VaultState);
   private readonly attachments = inject(AttachmentsState);
   private readonly contextMenuState = inject(ContextMenuState);
@@ -448,7 +445,7 @@ export class NoteEditor {
    * `mantle://` protocol (`attachments.rs`), which decrypts sealed ones.
    */
   private imageContext(): ImageContext {
-    const args = () => ({ vaultRoot: this.vaultRoot() ?? '', noteRelPath: this.noteId() });
+    const args = () => ({ noteRelPath: this.noteId() });
     const save = async (file: File) => {
       // A data URL is the cheapest way to get base64 out of a File.
       const dataUrl = await new Promise<string>((resolve, reject) => {
@@ -477,13 +474,9 @@ export class NoteEditor {
           const file = await chooseFile([...IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS, 'pdf'].map((ext) => `.${ext}`).join(','));
           return file && save(file);
         }
-        const sourcePath = await open({
-          multiple: false,
-          filters: [{ name: 'Images, Videos and PDFs', extensions: [...IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS, 'pdf'] }],
-        });
-        return sourcePath ? invoke<string>('import_attachment', { ...args(), sourcePath }) : null;
+        return invoke<string | null>('import_attachment', args());
 }),
-      url: (src) => attachmentUrl(args().vaultRoot, args().noteRelPath, src),
+      url: (src) => attachmentUrl(args().noteRelPath, src),
       open: (src) => void this.attachments.openLinked(this.noteId(), src),
       contextMenu: (event, view, pos, node) => void this.openImageMenu(event, view, pos, node),
     };

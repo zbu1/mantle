@@ -14,6 +14,8 @@
 //! (see [`crate::hidden`]), whose path is sealed inside it: a scan only lists
 //! it while its profile is unlocked, and moving it means resealing it.
 
+use crate::session::ActiveVault;
+
 use crate::attachments::{reseal_attachments, Relink};
 use crate::credentials::{HiddenNote, SessionKeys};
 use crate::hidden::{self, resolve_note};
@@ -549,25 +551,21 @@ pub(crate) fn resolve_rel_path(vault_root: &str, rel_path: &str) -> Result<PathB
 }
 
 /// Creates a new, empty vault directory at `path` and seeds its
-/// `.mantle/state.json`, returning `path` for the frontend to open.
+/// `.mantle/state.json`.
 ///
 /// The directory itself must not exist yet — creating a vault never adopts or
 /// overwrites an existing folder (use "Open Vault" for that) — but its parent
 /// must, so a typo in the location fails instead of silently creating a chain
 /// of directories. `path` is returned as given rather than canonicalized, so
 /// Windows callers don't get a `\\?\` verbatim prefix back.
-#[tauri::command]
-pub fn create_vault(path: String) -> Result<String, String> {
-    logged("create_vault", || {
-        let dir = PathBuf::from(&path);
-        check_new_vault_path(&dir)?;
-        fs::create_dir(&dir).map_err(|e| format!("Failed to create vault folder: {e}"))?;
-        crate::vault_meta::write_vault_meta(&path, &crate::vault_meta::VaultMeta::default())?;
-        Ok(path)
-    })
+pub(crate) fn create_vault_at(path: &str) -> Result<(), String> {
+    let dir = PathBuf::from(path);
+    check_new_vault_path(&dir)?;
+    fs::create_dir(&dir).map_err(|e| format!("Failed to create vault folder: {e}"))?;
+    crate::vault_meta::write_vault_meta(path, &crate::vault_meta::VaultMeta::default())
 }
 
-/// A folder in [`list_folders`]' listing.
+/// A folder in [`list_folders_at`]' listing.
 #[derive(Serialize)]
 pub struct FolderEntry {
     name: String,
@@ -577,20 +575,17 @@ pub struct FolderEntry {
 
 /// The visible subfolders of the absolute directory `path`, by name, for the
 /// in-app folder browser that stands in for a native folder dialog on Android.
-#[tauri::command]
-pub fn list_folders(path: String) -> Result<Vec<FolderEntry>, String> {
-    logged("list_folders", || {
-        let mut folders: Vec<FolderEntry> = fs::read_dir(&path)
-            .map_err(|e| format!("Failed to read folder: {e}"))?
-            .flatten()
-            .filter(|entry| entry.file_type().is_ok_and(|t| t.is_dir()))
-            .filter_map(|entry| entry.file_name().into_string().ok())
-            .filter(|name| !name.starts_with('.'))
-            .map(|name| FolderEntry { vault: Path::new(&path).join(&name).join(".mantle").is_dir(), name })
-            .collect();
-        folders.sort_by_key(|f| f.name.to_lowercase());
-        Ok(folders)
-    })
+pub(crate) fn list_folders_at(path: &str) -> Result<Vec<FolderEntry>, String> {
+    let mut folders: Vec<FolderEntry> = fs::read_dir(path)
+        .map_err(|e| format!("Failed to read folder: {e}"))?
+        .flatten()
+        .filter(|entry| entry.file_type().is_ok_and(|t| t.is_dir()))
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|name| !name.starts_with('.'))
+        .map(|name| FolderEntry { vault: Path::new(path).join(&name).join(".mantle").is_dir(), name })
+        .collect();
+    folders.sort_by_key(|f| f.name.to_lowercase());
+    Ok(folders)
 }
 
 /// Renames or moves the vault directory `from` to `to`, returning `to`.
@@ -598,16 +593,12 @@ pub fn list_folders(path: String) -> Result<Vec<FolderEntry>, String> {
 /// `to` is checked like a new vault's path: its parent must exist and it must
 /// not. A plain `fs::rename`, so moving to another drive fails rather than
 /// copying.
-#[tauri::command]
-pub fn move_vault(from: String, to: String) -> Result<String, String> {
-    logged("move_vault", || {
-        if !Path::new(&from).is_dir() {
-            return Err("The vault folder no longer exists".to_string());
-        }
-        check_new_vault_path(Path::new(&to))?;
-        fs::rename(&from, &to).map_err(|e| format!("Failed to move vault folder: {e}"))?;
-        Ok(to)
-    })
+pub(crate) fn move_vault_dir(from: &str, to: &str) -> Result<(), String> {
+    if !Path::new(from).is_dir() {
+        return Err("The vault folder no longer exists".to_string());
+    }
+    check_new_vault_path(Path::new(to))?;
+    fs::rename(from, to).map_err(|e| format!("Failed to move vault folder: {e}"))
 }
 
 /// Checks that `dir` is a valid place for a vault folder that doesn't exist yet.
@@ -634,7 +625,8 @@ fn check_new_vault_path(dir: &Path) -> Result<(), String> {
 /// Reading tags means decrypting every note of every unlocked profile, so the
 /// frontend rescans when a profile is unlocked or locked, to add or drop them.
 #[tauri::command(async)]
-pub fn scan_vault(vault_root: String, keys: State<SessionKeys>) -> Result<VaultNode, String> {
+pub fn scan_vault(active_vault: State<'_, ActiveVault>, keys: State<SessionKeys>) -> Result<VaultNode, String> {
+    let vault_root = active_vault.root()?;
     logged("scan_vault", || scan_vault_inner(&vault_root, &keys))
 }
 
@@ -779,10 +771,11 @@ fn clean_properties(properties: &[NoteProperty]) -> Vec<NoteProperty> {
 
 #[tauri::command]
 pub fn read_note(
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     rel_path: String,
     keys: State<SessionKeys>,
 ) -> Result<NoteDocument, String> {
+    let vault_root = active_vault.root()?;
     logged("read_note", || read_note_inner(&vault_root, &rel_path, &keys))
 }
 
@@ -823,13 +816,14 @@ pub(crate) fn read_note_inner(
 /// [`write_note_inner`]) with its new one, for the editor to follow.
 #[tauri::command]
 pub fn write_note(
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     rel_path: String,
     content: String,
     tags: Vec<String>,
     properties: Option<Vec<NoteProperty>>,
     keys: State<SessionKeys>,
 ) -> Result<HashMap<String, String>, String> {
+    let vault_root = active_vault.root()?;
     logged("write_note", || {
         write_note_inner(&vault_root, &rel_path, &content, &tags, properties.as_deref(), &keys)
     })
@@ -982,11 +976,12 @@ pub(crate) fn sealed_hidden(blob: &[u8]) -> bool {
 /// note itself, so a locked vault doesn't reveal which notes are favorites.
 #[tauri::command]
 pub fn set_note_favorite(
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     rel_path: String,
     favorite: bool,
     keys: State<SessionKeys>,
 ) -> Result<(), String> {
+    let vault_root = active_vault.root()?;
     logged("set_note_favorite", || {
         set_note_favorite_inner(&vault_root, &rel_path, favorite, &keys)
     })
@@ -1008,12 +1003,13 @@ pub(crate) fn set_note_favorite_inner(
 /// Set (or clear, with `None`) an encrypted note's sealed icon and color.
 #[tauri::command]
 pub fn set_note_style(
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     rel_path: String,
     icon: Option<String>,
     color: Option<String>,
     keys: State<SessionKeys>,
 ) -> Result<(), String> {
+    let vault_root = active_vault.root()?;
     logged("set_note_style", || set_note_style_inner(&vault_root, &rel_path, icon, color, &keys))
 }
 
@@ -1094,11 +1090,12 @@ pub struct CreatedNote {
 
 #[tauri::command]
 pub fn create_note(
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     rel_dir: String,
     name: String,
     keys: State<SessionKeys>,
 ) -> Result<CreatedNote, String> {
+    let vault_root = active_vault.root()?;
     logged("create_note", || {
         if !is_valid_name(&name) {
             return Err("Invalid note name".to_string());
@@ -1125,11 +1122,12 @@ pub fn create_note(
 
 #[tauri::command]
 pub fn rename_note(
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     rel_path: String,
     new_name: String,
     keys: State<SessionKeys>,
 ) -> Result<CreatedNote, String> {
+    let vault_root = active_vault.root()?;
     logged("rename_note", || rename_note_inner(&vault_root, &rel_path, &new_name, &keys))
 }
 
@@ -1177,7 +1175,8 @@ pub(crate) fn rename_note_inner(
 }
 
 #[tauri::command]
-pub fn delete_note(vault_root: String, rel_path: String, keys: State<SessionKeys>) -> Result<(), String> {
+pub fn delete_note(active_vault: State<'_, ActiveVault>, rel_path: String, keys: State<SessionKeys>) -> Result<(), String> {
+    let vault_root = active_vault.root()?;
     logged("delete_note", || {
         let hidden = keys.hidden_note(&vault_root, &rel_path)?;
         let path = resolve_note(&vault_root, &rel_path, &keys)?;
@@ -1201,7 +1200,8 @@ const EXECUTABLE_EXTS: [&str; 30] = [
 /// `.enc` file: that is ciphertext to any other app, and decrypting it to
 /// disk for one would defeat the point.
 #[tauri::command]
-pub fn open_vault_file(app: tauri::AppHandle, vault_root: String, rel_path: String) -> Result<(), String> {
+pub fn open_vault_file(app: tauri::AppHandle, active_vault: State<'_, ActiveVault>, rel_path: String) -> Result<(), String> {
+    let vault_root = active_vault.root()?;
     use tauri_plugin_opener::OpenerExt;
     logged("open_vault_file", || {
         if rel_path.ends_with(".enc") {
@@ -1220,7 +1220,8 @@ pub fn open_vault_file(app: tauri::AppHandle, vault_root: String, rel_path: Stri
 }
 
 #[tauri::command]
-pub fn delete_folder(vault_root: String, rel_path: String, keys: State<SessionKeys>) -> Result<(), String> {
+pub fn delete_folder(active_vault: State<'_, ActiveVault>, rel_path: String, keys: State<SessionKeys>) -> Result<(), String> {
+    let vault_root = active_vault.root()?;
     logged("delete_folder", || delete_folder_inner(&vault_root, &rel_path, &keys))
 }
 
@@ -1259,7 +1260,8 @@ pub(crate) fn move_to_trash(path: &Path) -> Result<(), String> {
 /// overwriting, when something new sits at the path or the item is gone from
 /// the trash.
 #[tauri::command]
-pub fn restore_from_trash(vault_root: String, rel_paths: Vec<String>, keys: State<SessionKeys>) -> Result<(), String> {
+pub fn restore_from_trash(active_vault: State<'_, ActiveVault>, rel_paths: Vec<String>, keys: State<SessionKeys>) -> Result<(), String> {
+    let vault_root = active_vault.root()?;
     logged("restore_from_trash", || restore_from_trash_inner(&vault_root, &rel_paths, &keys))
 }
 
@@ -1391,7 +1393,8 @@ pub(crate) fn join_rel_note_path(dir_rel: &str, stem: &str, ext: &str) -> String
 }
 
 #[tauri::command]
-pub fn duplicate_note(vault_root: String, rel_path: String, keys: State<SessionKeys>) -> Result<CreatedNote, String> {
+pub fn duplicate_note(active_vault: State<'_, ActiveVault>, rel_path: String, keys: State<SessionKeys>) -> Result<CreatedNote, String> {
+    let vault_root = active_vault.root()?;
     logged("duplicate_note", || {
         let (dir_rel, _, _) = split_rel_note_path(&rel_path);
         copy_note_inner(&vault_root, &rel_path, &dir_rel, true, &keys)
@@ -1400,11 +1403,12 @@ pub fn duplicate_note(vault_root: String, rel_path: String, keys: State<SessionK
 
 #[tauri::command]
 pub fn copy_note(
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     source_rel_path: String,
     dest_rel_dir: String,
     keys: State<SessionKeys>,
 ) -> Result<CreatedNote, String> {
+    let vault_root = active_vault.root()?;
     logged("copy_note", || copy_note_inner(&vault_root, &source_rel_path, &dest_rel_dir, false, &keys))
 }
 
@@ -1456,11 +1460,12 @@ pub struct CreatedFolder {
 
 #[tauri::command]
 pub fn create_folder(
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     rel_dir: String,
     name: String,
     keys: State<SessionKeys>,
 ) -> Result<CreatedFolder, String> {
+    let vault_root = active_vault.root()?;
     logged("create_folder", || create_folder_inner(&vault_root, &rel_dir, &name, &keys))
 }
 
@@ -1485,11 +1490,12 @@ pub(crate) fn create_folder_inner(
 
 #[tauri::command]
 pub fn rename_folder(
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     rel_path: String,
     new_name: String,
     keys: State<SessionKeys>,
 ) -> Result<CreatedFolder, String> {
+    let vault_root = active_vault.root()?;
     logged("rename_folder", || rename_folder_inner(&vault_root, &rel_path, &new_name, &keys))
 }
 
@@ -1517,11 +1523,12 @@ pub(crate) fn rename_folder_inner(
 
 #[tauri::command]
 pub fn move_note(
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     source_rel_path: String,
     dest_rel_dir: String,
     keys: State<SessionKeys>,
 ) -> Result<CreatedNote, String> {
+    let vault_root = active_vault.root()?;
     logged("move_note", || move_note_inner(&vault_root, &source_rel_path, &dest_rel_dir, &keys))
 }
 
@@ -1558,11 +1565,12 @@ pub(crate) fn move_note_inner(
 
 #[tauri::command]
 pub fn move_folder(
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     source_rel_path: String,
     dest_rel_dir: String,
     keys: State<SessionKeys>,
 ) -> Result<CreatedFolder, String> {
+    let vault_root = active_vault.root()?;
     logged("move_folder", || move_folder_inner(&vault_root, &source_rel_path, &dest_rel_dir, &keys))
 }
 
@@ -1630,7 +1638,7 @@ mod tests {
     fn create_vault_creates_the_folder_and_its_state_file() {
         let parent = temp_dir("create-vault");
         let path = parent.join("My Vault").to_string_lossy().into_owned();
-        assert_eq!(create_vault(path.clone()).unwrap(), path);
+        create_vault_at(&path).unwrap();
         assert!(parent.join("My Vault").join(".mantle").join("state.json").is_file());
         assert!(matches!(scan_vault_inner(&path, &SessionKeys::default()).unwrap(), VaultNode::Folder { children, .. } if children.is_empty()));
     }
@@ -1642,7 +1650,7 @@ mod tests {
         fs::create_dir(parent.join("Archive")).unwrap();
         fs::create_dir(parent.join(".hidden")).unwrap();
         fs::write(parent.join("file.md"), "").unwrap();
-        let folders = list_folders(parent.to_string_lossy().into_owned()).unwrap();
+        let folders = list_folders_at(&parent.to_string_lossy()).unwrap();
         let listed: Vec<_> = folders.iter().map(|f| (f.name.as_str(), f.vault)).collect();
         assert_eq!(listed, [("Archive", false), ("notes", true)]);
     }
@@ -1651,9 +1659,9 @@ mod tests {
     fn create_vault_rejects_existing_paths_and_missing_parents() {
         let parent = temp_dir("create-vault-reject");
         fs::create_dir(parent.join("taken")).unwrap();
-        assert!(create_vault(parent.join("taken").to_string_lossy().into_owned()).is_err());
-        assert!(create_vault(parent.join("missing").join("vault").to_string_lossy().into_owned()).is_err());
-        assert!(create_vault(parent.join(".hidden").to_string_lossy().into_owned()).is_err());
+        assert!(create_vault_at(&parent.join("taken").to_string_lossy().into_owned()).is_err());
+        assert!(create_vault_at(&parent.join("missing").join("vault").to_string_lossy().into_owned()).is_err());
+        assert!(create_vault_at(&parent.join(".hidden").to_string_lossy().into_owned()).is_err());
     }
 
     #[test]
@@ -1661,13 +1669,13 @@ mod tests {
         let parent = temp_dir("move-vault");
         let from = parent.join("A").to_string_lossy().into_owned();
         let to = parent.join("B").to_string_lossy().into_owned();
-        create_vault(from.clone()).unwrap();
+        create_vault_at(&from).unwrap();
         fs::create_dir(parent.join("taken")).unwrap();
-        assert!(move_vault(from.clone(), parent.join("taken").to_string_lossy().into_owned()).is_err());
-        assert_eq!(move_vault(from.clone(), to.clone()).unwrap(), to);
+        assert!(move_vault_dir(&from, &parent.join("taken").to_string_lossy()).is_err());
+        move_vault_dir(&from, &to).unwrap();
         assert!(!Path::new(&from).exists());
         assert!(parent.join("B").join(".mantle").join("state.json").is_file());
-        assert!(move_vault(from, parent.join("C").to_string_lossy().into_owned()).is_err());
+        assert!(move_vault_dir(&from, &parent.join("C").to_string_lossy()).is_err());
     }
 
     #[test]

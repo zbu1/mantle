@@ -243,7 +243,6 @@ describe('NewEncryptedNote', () => {
       await render();
 
       expect(invokeArgs(mock, 'unlock_credential_profile')).toMatchObject({
-        vaultRoot: '/vault',
         profileId: 'work',
         password: 'hunter22',
       });
@@ -307,7 +306,6 @@ describe('NewEncryptedNote', () => {
       await render();
 
       expect(invokeArgs(mock, 'create_credential_profile')).toMatchObject({
-        vaultRoot: '/vault',
         displayName: 'Work',
         password: 'correct horse',
       });
@@ -458,7 +456,6 @@ describe('NewEncryptedNote', () => {
       await render();
 
       expect(invokeArgs(mock, 'create_encrypted_note')).toMatchObject({
-        vaultRoot: '/vault',
         relDir: 'Work',
         name: 'Ideas',
         profileId: 'work',

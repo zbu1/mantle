@@ -9,6 +9,8 @@
 //! As in [`crate::notes_crypto`], errors here reach the on-disk log — never
 //! interpolate decrypted note content into one.
 
+use crate::session::ActiveVault;
+
 use crate::credentials::SessionKeys;
 use crate::logging::logged;
 use crate::vault::{
@@ -36,11 +38,12 @@ pub struct TagEditReport {
 /// onto an existing tag merges the two.
 #[tauri::command(async)]
 pub fn rename_tag(
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     from: String,
     to: String,
     keys: State<SessionKeys>,
 ) -> Result<TagEditReport, String> {
+    let vault_root = active_vault.root()?;
     logged("rename_tag", || {
         let to = mntl_core::normalize_tag(&to).ok_or_else(|| {
             "Tags can only contain letters, numbers, - and _, and can't be only numbers".to_string()
@@ -52,10 +55,11 @@ pub fn rename_tag(
 /// Remove the tag `tag` from every note that has it, matching case-insensitively.
 #[tauri::command(async)]
 pub fn remove_tag(
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     tag: String,
     keys: State<SessionKeys>,
 ) -> Result<TagEditReport, String> {
+    let vault_root = active_vault.root()?;
     logged("remove_tag", || edit_tag_in_vault(&vault_root, &tag, None, &keys))
 }
 
@@ -88,10 +92,11 @@ pub(crate) fn edit_tag_in_vault(
 /// skipping it would leave the undo half done without saying so.
 #[tauri::command]
 pub fn set_note_tags(
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     tags_by_note: HashMap<String, Vec<String>>,
     keys: State<SessionKeys>,
 ) -> Result<(), String> {
+    let vault_root = active_vault.root()?;
     logged("set_note_tags", || set_note_tags_inner(&vault_root, &tags_by_note, &keys))
 }
 

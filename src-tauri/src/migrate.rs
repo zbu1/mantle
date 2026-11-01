@@ -7,7 +7,6 @@
 use crate::attachments::link_sources;
 use crate::credentials::{load_registry, SessionKeys};
 use crate::export::empty_destination;
-use crate::logging::logged;
 use crate::notes_crypto::{convert_markdown_batch, ConvertFailure, ConvertRequest};
 use crate::vault::{is_markdown_note, is_note_file, split_rel_note_path};
 use crate::vault_meta::{write_vault_meta, VaultMeta};
@@ -15,12 +14,11 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use tauri::State;
 
 /// Obsidian's own settings folder, which stays behind.
 const OBSIDIAN_DIR: &str = ".obsidian";
 
-/// What [`import_obsidian_vault`] did.
+/// What [`crate::session::import_obsidian_vault`] did.
 #[derive(Serialize, Debug, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportReport {
@@ -31,14 +29,17 @@ pub struct ImportReport {
     pub failed: Vec<ConvertFailure>,
 }
 
-/// Copy the Obsidian vault `source` into `dest`, a new or empty folder, as a
-/// new Mantle vault for the frontend to open.
-#[tauri::command(async)]
-pub fn import_obsidian_vault(source: String, dest: String, keys: State<SessionKeys>) -> Result<ImportReport, String> {
-    logged("import_obsidian_vault", || import_obsidian_inner(Path::new(&source), Path::new(&dest), &keys))
+/// The new vault and what went into it.
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportOutcome {
+    pub path: String,
+    pub report: ImportReport,
 }
 
-fn import_obsidian_inner(source: &Path, dest: &Path, keys: &SessionKeys) -> Result<ImportReport, String> {
+/// Copies the Obsidian vault `source` into `dest`, a new or empty folder, as a
+/// new Mantle vault.
+pub(crate) fn import_obsidian_inner(source: &Path, dest: &Path, keys: &SessionKeys) -> Result<ImportReport, String> {
     let source = source.canonicalize().map_err(|e| format!("Can't open the Obsidian vault: {e}"))?;
     if !source.is_dir() {
         return Err("The Obsidian vault must be a folder".to_string());

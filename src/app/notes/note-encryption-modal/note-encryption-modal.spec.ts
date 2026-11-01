@@ -149,7 +149,6 @@ describe('NoteEncryptionModal', () => {
       await click(buttonByText('Encrypt note')!);
 
       expect(invokeArgs(mock, 'encrypt_note_to_profile')).toMatchObject({
-        vaultRoot: '/vault',
         relPath: 'Work/Journal.mntl',
         profileId: 'work',
       });
@@ -224,7 +223,6 @@ describe('NoteEncryptionModal', () => {
       await click(buttonByText('Move note')!);
 
       expect(invokeArgs(mock, 'move_note_to_profile')).toMatchObject({
-        vaultRoot: '/vault',
         relPath: 'Diary.mntl.enc',
         profileId: 'home',
       });
@@ -260,7 +258,7 @@ describe('NoteEncryptionModal', () => {
 
       await click(buttonByText('Decrypt note')!);
 
-      expect(invokeArgs(mock, 'decrypt_note_to_plaintext')).toMatchObject({ vaultRoot: '/vault', relPath: 'Diary.mntl.enc' });
+      expect(invokeArgs(mock, 'decrypt_note_to_plaintext')).toMatchObject({ relPath: 'Diary.mntl.enc' });
       expect(TestBed.inject(DialogState).request()).toBeNull();
       expect(state.isOpen()).toBe(false);
     });

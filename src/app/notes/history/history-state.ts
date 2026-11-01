@@ -45,27 +45,27 @@ export class HistoryState {
   }
 
   list(noteId: string): Promise<SnapshotInfo[]> {
-    return invoke('list_snapshots', { vaultRoot: this.root, relPath: noteId });
+    return invoke('list_snapshots', { relPath: noteId });
   }
 
   deleted(): Promise<DeletedNote[]> {
-    return invoke('list_deleted_notes', { vaultRoot: this.root });
+    return invoke('list_deleted_notes');
   }
 
   read(id: string): Promise<string> {
-    return invoke('read_snapshot', { vaultRoot: this.root, id });
+    return invoke('read_snapshot', { id });
   }
 
   /** Saves a snapshot's text as the note's content, as a snapshot of its own so the version it replaces stays. */
   async restore(noteId: string, content: string): Promise<void> {
     await this.notesState.flushPending([noteId]);
-    await invoke('close_snapshot', { vaultRoot: this.root, relPath: noteId });
+    await invoke('close_snapshot', { relPath: noteId });
     this.notesState.updateContent(noteId, content);
     await this.notesState.flushPending([noteId]);
   }
 
   async restoreDeleted(id: string): Promise<void> {
-    const created = await invoke<{ name: string; relPath: string }>('restore_deleted_note', { vaultRoot: this.root, id });
+    const created = await invoke<{ name: string; relPath: string }>('restore_deleted_note', { id });
     await this.vaultState.refresh();
     this.tabsState.openNote({ id: created.relPath, title: created.name });
   }

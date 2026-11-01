@@ -204,7 +204,7 @@ export class NoteEncryptionActions {
     if (!root || notes.length === 0) return null;
     await this.notesState.flushPending(notes.map((n) => n.relPath));
     try {
-      const report = await invoke<ConvertReport>('convert_markdown_notes', { vaultRoot: root, notes, removeOriginals });
+      const report = await invoke<ConvertReport>('convert_markdown_notes', { notes, removeOriginals });
       for (const c of report.converted) {
         this.retarget(c.from, c);
         logInfo(`Converted "${c.from}" to "${c.relPath}"`);
@@ -240,7 +240,6 @@ export class NoteEncryptionActions {
 
     try {
       const created = await invoke<CreatedNote>('encrypt_note_to_profile', {
-        vaultRoot: root,
         relPath: note.relPath,
         profileId,
       });
@@ -307,7 +306,6 @@ export class NoteEncryptionActions {
 
     try {
       const created = await invoke<CreatedNote>('decrypt_note_to_plaintext', {
-        vaultRoot: root,
         relPath: note.relPath,
         name,
       });
@@ -349,7 +347,7 @@ export class NoteEncryptionActions {
     await this.notesState.flushPending([note.relPath]);
 
     try {
-      const created = await invoke<CreatedNote>('move_note_to_profile', { vaultRoot: root, relPath: note.relPath, profileId });
+      const created = await invoke<CreatedNote>('move_note_to_profile', { relPath: note.relPath, profileId });
       this.retarget(note.relPath, created);
       // The content is unchanged but the entry was decrypted under the old
       // profile's key, so re-read it rather than trusting what's cached.
@@ -431,13 +429,13 @@ export class NoteEncryptionActions {
         if (target === null) {
           const wasFavorite = this.favorites.isFavorite(note.relPath);
           const style = this.styles.of(note.relPath);
-          created = await invoke<CreatedNote>('decrypt_note_to_plaintext', { vaultRoot: root, relPath: note.relPath });
+          created = await invoke<CreatedNote>('decrypt_note_to_plaintext', { relPath: note.relPath });
           this.retarget(note.relPath, created);
           if (wasFavorite) this.vaultMeta.addFavorites([created.relPath]);
           this.vaultMeta.setStyle(created.relPath, style);
         } else {
           const command = note.encrypted ? 'move_note_to_profile' : 'encrypt_note_to_profile';
-          created = await invoke<CreatedNote>(command, { vaultRoot: root, relPath: note.relPath, profileId: target });
+          created = await invoke<CreatedNote>(command, { relPath: note.relPath, profileId: target });
           this.retarget(note.relPath, created);
           if (note.encrypted) this.notesState.reload(created.relPath);
         }
@@ -473,7 +471,6 @@ export class NoteEncryptionActions {
 
     try {
       const created = await invoke<CreatedNote>('create_encrypted_note', {
-        vaultRoot: root,
         relDir,
         name,
         profileId,

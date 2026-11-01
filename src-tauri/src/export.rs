@@ -12,6 +12,8 @@
 //! As in [`crate::notes_crypto`], errors reach the on-disk log, so never put
 //! note content into one.
 
+use crate::session::{ask_path, ActiveVault, Ask};
+
 use crate::attachments::{
     is_managed, link_sources, load, resolve_attachment, unreferenced, ATTACHMENTS_DIR, EXT_SEALED,
 };
@@ -28,7 +30,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
-use tauri::State;
+use tauri::{AppHandle, State};
 use zeroize::Zeroizing;
 
 const EXT_MARKDOWN: &str = ".md";
@@ -290,12 +292,13 @@ pub struct ToMarkdownReport {
 /// A note that fails is reported and the rest carry on.
 #[tauri::command(async)]
 pub fn convert_to_markdown(
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     notes: Vec<ToMarkdownRequest>,
     placement: Placement,
     remove_unused: bool,
     keys: State<SessionKeys>,
 ) -> Result<ToMarkdownReport, String> {
+    let vault_root = active_vault.root()?;
     logged("convert_to_markdown", || {
         convert_to_markdown_inner(&vault_root, &notes, &placement, remove_unused, &keys)
     })
@@ -404,15 +407,22 @@ pub struct ExportReport {
 /// Write a plain Markdown copy of the vault to `dest`, a new or empty folder.
 /// Notes become `.md` files, every other file is copied as it is, and
 /// `.mantle/` (like every dot entry the tree doesn't show) is left out. The
-/// vault itself isn't changed.
+/// vault itself isn't changed. The folder is picked in the OS dialog; `None`
+/// if the user cancelled.
 #[tauri::command(async)]
 pub fn export_vault(
-    vault_root: String,
-    dest: String,
     placement: Placement,
+    app: AppHandle,
+    active_vault: State<'_, ActiveVault>,
     keys: State<SessionKeys>,
-) -> Result<ExportReport, String> {
-    logged("export_vault", || export_vault_inner(&vault_root, Path::new(&dest), &placement, &keys))
+) -> Result<Option<ExportReport>, String> {
+    let vault_root = active_vault.root()?;
+    logged("export_vault", || {
+        let Some(dest) = ask_path(&app, &active_vault, Ask::ExportTo, "Export to a new or empty folder", None)? else {
+            return Ok(None);
+        };
+        export_vault_inner(&vault_root, &dest, &placement, &keys).map(Some)
+    })
 }
 
 fn export_vault_inner(

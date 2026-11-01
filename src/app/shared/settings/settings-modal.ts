@@ -213,7 +213,7 @@ export class SettingsModal {
   }
 
   protected clearRecentVaults(): void {
-    this.vaultState.recentVaults.set([]);
+    this.vaultState.clearRecentVaults();
   }
 
   protected async revealVault(): Promise<void> {

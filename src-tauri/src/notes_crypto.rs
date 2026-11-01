@@ -10,6 +10,8 @@
 //! [`crate::logging::logged`] — never interpolate a password, key, or
 //! decrypted note content into one.
 
+use crate::session::ActiveVault;
+
 use crate::attachments::{reseal_attachments, unreferenced, Relink};
 use crate::credentials::SessionKeys;
 use crate::hidden;
@@ -131,11 +133,12 @@ fn reseal_document(
 /// 4. Only then shred the original.
 #[tauri::command(async)]
 pub fn encrypt_note_to_profile(
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     rel_path: String,
     profile_id: String,
     keys: State<SessionKeys>,
 ) -> Result<CreatedNote, String> {
+    let vault_root = active_vault.root()?;
     logged("encrypt_note_to_profile", || {
         encrypt_note_inner(&vault_root, &rel_path, &profile_id, &keys)
     })
@@ -235,11 +238,12 @@ pub struct ConvertReport {
 /// recoverable. A file that fails is reported and the rest carry on.
 #[tauri::command(async)]
 pub fn convert_markdown_notes(
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     notes: Vec<ConvertRequest>,
     remove_originals: bool,
     keys: State<SessionKeys>,
 ) -> Result<ConvertReport, String> {
+    let vault_root = active_vault.root()?;
     logged("convert_markdown_notes", || {
         convert_markdown_batch(&vault_root, &notes, remove_originals, discard, &keys)
     })
@@ -340,11 +344,12 @@ fn convert_markdown_inner(
 /// in its folder when that's taken.
 #[tauri::command(async)]
 pub fn decrypt_note_to_plaintext(
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     rel_path: String,
     name: Option<String>,
     keys: State<SessionKeys>,
 ) -> Result<CreatedNote, String> {
+    let vault_root = active_vault.root()?;
     logged("decrypt_note_to_plaintext", || {
         decrypt_note_inner(&vault_root, &rel_path, name.as_deref(), &keys)
     })
@@ -421,12 +426,13 @@ fn decrypt_note_inner(
 /// invalidates the existing ciphertext.
 #[tauri::command(async)]
 pub fn move_note_to_profile(
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     rel_path: String,
     profile_id: String,
     name: Option<String>,
     keys: State<SessionKeys>,
 ) -> Result<CreatedNote, String> {
+    let vault_root = active_vault.root()?;
     logged("move_note_to_profile", || {
         move_note_inner(&vault_root, &rel_path, &profile_id, name.as_deref(), &keys)
     })
@@ -489,12 +495,13 @@ fn move_note_inner(
 /// contents never touch the disk in plaintext.
 #[tauri::command]
 pub fn create_encrypted_note(
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     rel_dir: String,
     name: String,
     profile_id: String,
     keys: State<SessionKeys>,
 ) -> Result<CreatedNote, String> {
+    let vault_root = active_vault.root()?;
     logged("create_encrypted_note", || {
         create_encrypted_note_inner(&vault_root, &rel_dir, &name, &profile_id, &keys)
     })

@@ -161,7 +161,7 @@ export class FolderPicker {
   protected async go(path: string, fallback?: string): Promise<void> {
     this.loading.set(true);
     try {
-      this.folders.set(await invoke<FolderEntry[]>('list_folders', { path }));
+      this.folders.set(await invoke<FolderEntry[]>('browse_folders', { path }));
       this.dir.set(path);
       this.error.set(null);
       if (!this.state.request()?.root) this.state.lastDir.set(path);

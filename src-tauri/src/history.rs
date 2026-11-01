@@ -5,6 +5,8 @@
 //! sealed under the profile's master key, so a locked vault shows nothing but
 //! file names. The path is the one the frontend knows (virtual for hidden notes).
 
+use crate::session::ActiveVault;
+
 use crate::credentials::SessionKeys;
 use crate::logging::logged;
 use crate::vault::{read_header_prefix, resolve_rel_dir, split_rel_note_path, write_atomic, CreatedNote};
@@ -212,7 +214,7 @@ pub(crate) fn record(
     content: &str,
     scope: Option<(&str, &mntl_core::MasterKey)>,
 ) -> Result<(), String> {
-    let meta = crate::vault_meta::load_vault_meta(vault_root.to_string())?;
+    let meta = crate::vault_meta::read_vault_meta(vault_root)?;
     if !meta.snapshots_enabled {
         return Ok(());
     }
@@ -232,7 +234,8 @@ pub(crate) fn close(vault_root: &str, rel_path: &str) {
 }
 
 #[tauri::command]
-pub fn close_snapshot(vault_root: String, rel_path: String) {
+pub fn close_snapshot(active_vault: State<'_, ActiveVault>, rel_path: String) {
+    let Ok(vault_root) = active_vault.root() else { return };
     close(&vault_root, &rel_path);
 }
 
@@ -314,7 +317,8 @@ fn follow_inner(vault_root: &str, from: &str, to: &str, scope: Scope, keys: &Ses
 }
 
 #[tauri::command]
-pub fn list_snapshots(vault_root: String, rel_path: String, keys: State<SessionKeys>) -> Result<Vec<SnapshotInfo>, String> {
+pub fn list_snapshots(active_vault: State<'_, ActiveVault>, rel_path: String, keys: State<SessionKeys>) -> Result<Vec<SnapshotInfo>, String> {
+    let vault_root = active_vault.root()?;
     logged("list_snapshots", || {
         let mut found: Vec<_> = all(&vault_root, &keys)?
             .into_iter()
@@ -327,7 +331,8 @@ pub fn list_snapshots(vault_root: String, rel_path: String, keys: State<SessionK
 }
 
 #[tauri::command]
-pub fn read_snapshot(vault_root: String, id: String, keys: State<SessionKeys>) -> Result<String, String> {
+pub fn read_snapshot(active_vault: State<'_, ActiveVault>, id: String, keys: State<SessionKeys>) -> Result<String, String> {
+    let vault_root = active_vault.root()?;
     logged("read_snapshot", || find(&vault_root, &id, &keys).map(|s| s.content))
 }
 
@@ -350,7 +355,8 @@ fn exists(vault_root: &str, path: &str, keys: &SessionKeys) -> Result<bool, Stri
 
 /// Notes that are gone but still have history, newest first.
 #[tauri::command(async)]
-pub fn list_deleted_notes(vault_root: String, keys: State<SessionKeys>) -> Result<Vec<DeletedNote>, String> {
+pub fn list_deleted_notes(active_vault: State<'_, ActiveVault>, keys: State<SessionKeys>) -> Result<Vec<DeletedNote>, String> {
+    let vault_root = active_vault.root()?;
     logged("list_deleted_notes", || {
         let mut newest: HashMap<String, Entry> = HashMap::new();
         for snap in all(&vault_root, &keys)? {
@@ -373,7 +379,8 @@ pub fn list_deleted_notes(vault_root: String, keys: State<SessionKeys>) -> Resul
 /// Recreate a deleted note from one of its snapshots, at its old path or, if
 /// that's taken, a free name beside it.
 #[tauri::command]
-pub fn restore_deleted_note(vault_root: String, id: String, keys: State<SessionKeys>) -> Result<CreatedNote, String> {
+pub fn restore_deleted_note(active_vault: State<'_, ActiveVault>, id: String, keys: State<SessionKeys>) -> Result<CreatedNote, String> {
+    let vault_root = active_vault.root()?;
     logged("restore_deleted_note", || {
         let snap = find(&vault_root, &id, &keys)?;
         let (dir_rel, stem, ext) = split_rel_note_path(&snap.entry.path);
@@ -402,9 +409,10 @@ pub fn restore_deleted_note(vault_root: String, id: String, keys: State<SessionK
 /// Delete snapshots older than the vault's retention. Sealed ones are only
 /// judged once their profile is unlocked, since their time is sealed.
 #[tauri::command(async)]
-pub fn prune_history(vault_root: String, keys: State<SessionKeys>) -> Result<(), String> {
+pub fn prune_history(active_vault: State<'_, ActiveVault>, keys: State<SessionKeys>) -> Result<(), String> {
+    let vault_root = active_vault.root()?;
     logged("prune_history", || {
-        let meta = crate::vault_meta::load_vault_meta(vault_root.clone())?;
+        let meta = crate::vault_meta::read_vault_meta(&vault_root)?;
         let cutoff = now_ms().saturating_sub(u64::from(meta.snapshot_days) * 24 * 60 * 60 * 1000);
         let _guard = lock();
         let (old, _): (Vec<_>, Vec<_>) = all(&vault_root, &keys)?.into_iter().partition(|s| s.entry.time < cutoff);

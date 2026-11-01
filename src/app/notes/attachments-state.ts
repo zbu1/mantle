@@ -53,9 +53,9 @@ export function isPdfPath(relPath: string): boolean {
  * `noteRelPath` (empty for a path relative to the vault root), through the
  * `mantle://` protocol (`attachments.rs`), which decrypts sealed ones.
  */
-export function attachmentUrl(vaultRoot: string, noteRelPath: string, src: string): string {
+export function attachmentUrl(noteRelPath: string, src: string): string {
   if (/^[a-z][a-z0-9+.-]*:/i.test(src)) return src; // http:, data:, …
-  const query = new URLSearchParams({ vault: vaultRoot, note: noteRelPath, src });
+  const query = new URLSearchParams({ note: noteRelPath, src });
   // URLSearchParams writes a space as `+`, which the protocol doesn't decode.
   return `${convertFileSrc('', 'mantle')}?${query.toString().replace(/\+/g, '%20')}`;
 }
@@ -84,7 +84,7 @@ export class AttachmentsState {
   async info(noteRelPath: string, src: string): Promise<AttachmentInfo | null> {
     const vaultRoot = this.vaultState.rootPath();
     if (!vaultRoot) return null;
-    return invoke<AttachmentInfo | null>('attachment_info', { vaultRoot, noteRelPath, src });
+    return invoke<AttachmentInfo | null>('attachment_info', { noteRelPath, src });
   }
 
   /** Opens the vault file a link `href` in the note `noteRelPath` leads to, in a preview tab. */
@@ -104,10 +104,9 @@ export class AttachmentsState {
   async saveDecryptedCopy(relPath: string): Promise<void> {
     const vaultRoot = this.vaultState.rootPath();
     if (!vaultRoot) return;
-    const destPath = await this.folderPicker.pickNewPath('Save Decrypted Copy', fileNameOf(relPath).replace(/\.enc$/, ''));
-    if (!destPath) return;
+    if (!(await this.folderPicker.approve('copyTo', 'Save Decrypted Copy', fileNameOf(relPath).replace(/\.enc$/, '')))) return;
     try {
-      await invoke('save_attachment_copy', { vaultRoot, relPath, destPath });
+      if (!(await invoke<boolean>('save_attachment_copy', { relPath }))) return;
       logInfo(`Saved a decrypted copy of "${relPath}"`);
     } catch (err) {
       logError(`Failed to save a decrypted copy of "${relPath}": ${formatError(err)}`);
@@ -120,7 +119,7 @@ export class AttachmentsState {
     const vaultRoot = this.vaultState.rootPath();
     if (!vaultRoot) return;
     try {
-      await invoke('open_vault_file', { vaultRoot, relPath });
+      await invoke('open_vault_file', { relPath });
     } catch (err) {
       logError(`Failed to open "${relPath}": ${formatError(err)}`);
       await this.dialogState.alert(formatError(err), { title: "Couldn't Open File", tone: 'error' });
@@ -132,7 +131,7 @@ export class AttachmentsState {
     const vaultRoot = this.vaultState.rootPath();
     if (!vaultRoot || paths.length === 0) return;
     try {
-      await invoke('delete_attachments', { vaultRoot, paths });
+      await invoke('delete_attachments', { paths });
       logInfo(`Moved ${plural(paths.length, 'attachment')} to the trash`);
     } catch (err) {
       logError(`Failed to delete attachments: ${formatError(err)}`);
@@ -144,7 +143,7 @@ export class AttachmentsState {
   async ofProfile(profileId: string): Promise<string[]> {
     const vaultRoot = this.vaultState.rootPath();
     if (!vaultRoot) return [];
-    return invoke<string[]>('profile_attachments', { vaultRoot, profileId });
+    return invoke<string[]>('profile_attachments', { profileId });
   }
 
   /**
@@ -211,7 +210,7 @@ export class AttachmentsState {
     if (!vaultRoot) return { paths: [], unchecked: [] };
     await this.notesState.flushPending();
     try {
-      return await invoke<UnusedAttachments>('unused_attachments', { vaultRoot, deleting, candidates });
+      return await invoke<UnusedAttachments>('unused_attachments', { deleting, candidates });
     } catch (err) {
       logError(`Failed to check which attachments are unused: ${formatError(err)}`);
       return { paths: [], unchecked: [] };

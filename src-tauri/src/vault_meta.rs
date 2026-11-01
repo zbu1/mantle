@@ -12,11 +12,14 @@
 //! encrypted, but its filename is not — so it stays plaintext unconditionally
 //! rather than needing its own encryption story for encrypted vaults.
 
+use crate::session::ActiveVault;
+
 use crate::logging::logged;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::PathBuf;
+use tauri::State;
 
 /// The vault-local metadata directory. Dotfile-prefixed, so `vault::scan_dir`
 /// and `watcher::is_hidden` both skip it for free.
@@ -150,15 +153,18 @@ fn state_path(vault_root: &str) -> Result<PathBuf, String> {
 /// this feature) is not an error — it just means every field is at its
 /// default.
 #[tauri::command]
-pub fn load_vault_meta(vault_root: String) -> Result<VaultMeta, String> {
-    logged("load_vault_meta", || {
-        let path = state_path(&vault_root)?;
-        if !path.exists() {
-            return Ok(VaultMeta::default());
-        }
-        let raw = fs::read_to_string(&path).map_err(|e| format!("Failed to read vault state: {e}"))?;
-        serde_json::from_str(&raw).map_err(|e| format!("Failed to parse vault state: {e}"))
-    })
+pub fn load_vault_meta(active_vault: State<'_, ActiveVault>) -> Result<VaultMeta, String> {
+    let vault_root = active_vault.root()?;
+    logged("load_vault_meta", || read_vault_meta(&vault_root))
+}
+
+pub(crate) fn read_vault_meta(vault_root: &str) -> Result<VaultMeta, String> {
+    let path = state_path(vault_root)?;
+    if !path.exists() {
+        return Ok(VaultMeta::default());
+    }
+    let raw = fs::read_to_string(&path).map_err(|e| format!("Failed to read vault state: {e}"))?;
+    serde_json::from_str(&raw).map_err(|e| format!("Failed to parse vault state: {e}"))
 }
 
 /// Saves `.mantle/state.json`, creating the `.mantle` directory if this is
@@ -166,7 +172,8 @@ pub fn load_vault_meta(vault_root: String) -> Result<VaultMeta, String> {
 /// it over the target so a crash or power loss mid-write can't leave
 /// `state.json` truncated or corrupt.
 #[tauri::command]
-pub fn save_vault_meta(vault_root: String, state: VaultMeta) -> Result<(), String> {
+pub fn save_vault_meta(active_vault: State<'_, ActiveVault>, state: VaultMeta) -> Result<(), String> {
+    let vault_root = active_vault.root()?;
     logged("save_vault_meta", || write_vault_meta(&vault_root, &state))
 }
 
@@ -195,7 +202,7 @@ mod tests {
         let root = temp_dir("missing");
         let root_str = root.to_string_lossy().into_owned();
 
-        assert_eq!(load_vault_meta(root_str).unwrap(), VaultMeta::default());
+        assert_eq!(read_vault_meta(&root_str).unwrap(), VaultMeta::default());
 
         let _ = fs::remove_dir_all(&root);
     }
@@ -221,10 +228,10 @@ mod tests {
             snapshots_enabled: false,
             snapshot_days: 7,
         };
-        save_vault_meta(root_str.clone(), state.clone()).unwrap();
+        write_vault_meta(&root_str, &state).unwrap();
 
         assert!(root.join(".mantle").join("state.json").is_file());
-        assert_eq!(load_vault_meta(root_str).unwrap(), state);
+        assert_eq!(read_vault_meta(&root_str).unwrap(), state);
 
         let _ = fs::remove_dir_all(&root);
     }
@@ -236,7 +243,7 @@ mod tests {
         fs::write(root.join(".mantle").join("state.json"), r#"{"version":1}"#).unwrap();
         let root_str = root.to_string_lossy().into_owned();
 
-        let loaded = load_vault_meta(root_str).unwrap();
+        let loaded = read_vault_meta(&root_str).unwrap();
         assert_eq!(loaded, VaultMeta::default());
         assert!(loaded.recent_notes.is_empty());
 
@@ -252,7 +259,7 @@ mod tests {
             recent_notes: vec![RecentNote { rel_path: "a.mntl".to_string(), opened_at: 42 }],
             ..VaultMeta::default()
         };
-        save_vault_meta(root_str, state).unwrap();
+        write_vault_meta(&root_str, &state).unwrap();
 
         let raw = fs::read_to_string(root.join(".mantle").join("state.json")).unwrap();
         assert!(raw.contains("\"recentNotes\""));

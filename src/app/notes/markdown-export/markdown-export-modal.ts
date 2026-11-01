@@ -1,7 +1,6 @@
 import { Component, ElementRef, HostListener, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
 import { LucideFileDown, LucideLock, LucideLockOpen } from '@lucide/angular';
 import { formatError } from '../../core/logger';
-import { FolderPickerState } from '../../shared/folder-picker/folder-picker-state';
 import { CredentialsState } from '../credentials-state';
 import { VaultState } from '../vault-state';
 import { VaultNoteNode, flattenAllNotes } from '../vault-tree.model';
@@ -35,7 +34,6 @@ export class MarkdownExportModal {
   private readonly state = inject(MarkdownExportState);
   private readonly credentialsState = inject(CredentialsState);
   private readonly vaultState = inject(VaultState);
-  private readonly folderPicker = inject(FolderPickerState);
 
   protected readonly request = this.state.request;
   protected readonly exporting = computed(() => this.request()?.mode === 'export');
@@ -44,7 +42,6 @@ export class MarkdownExportModal {
   protected readonly subfolder = signal(MANAGED_DIR);
   protected readonly folder = signal('');
   protected readonly removeUnused = signal(false);
-  protected readonly dest = signal<string | null>(null);
   protected readonly busy = signal(false);
   protected readonly error = signal<string | null>(null);
 
@@ -117,7 +114,6 @@ export class MarkdownExportModal {
     if (this.busy()) return null;
     const placementError = this.placementError();
     if (placementError) return placementError;
-    if (this.exporting()) return this.dest() ? null : 'Choose a new or empty folder to export to.';
     const readable = this.notes().some((n) => !n.encrypted || this.credentialsState.isUnlocked(n.profile));
     return readable ? null : 'Every note here is in a locked profile. Unlock one above to continue.';
   });
@@ -150,14 +146,6 @@ export class MarkdownExportModal {
     await this.credentialsState.promptUnlock(profileId);
   }
 
-  protected async chooseDest(): Promise<void> {
-    const picked = await this.folderPicker.pickFolder('Export to a new or empty folder');
-    if (picked) {
-      this.dest.set(picked);
-      this.error.set(null);
-    }
-  }
-
   protected async submit(): Promise<void> {
     const request = this.request();
     if (!request || this.busy() || this.disabledReason() !== null) return;
@@ -166,10 +154,8 @@ export class MarkdownExportModal {
     this.error.set(null);
     try {
       if (request.mode === 'export') {
-        const dest = this.dest();
-        if (!dest) return;
-        await this.state.export(dest, placement);
-        this.state.close();
+        // Cancelling the folder choice leaves the dialog as it is.
+        if (await this.state.export(placement)) this.state.close();
       } else {
         // Closed first: a name clash asks in the shared dialog, which mustn't sit behind this one.
         this.state.close();
@@ -200,7 +186,6 @@ export class MarkdownExportModal {
     this.subfolder.set(MANAGED_DIR);
     this.folder.set('');
     this.removeUnused.set(false);
-    this.dest.set(null);
     this.busy.set(false);
     this.error.set(null);
   }

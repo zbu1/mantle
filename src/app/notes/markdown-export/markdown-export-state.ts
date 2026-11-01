@@ -2,6 +2,7 @@ import { Injectable, inject, signal } from '@angular/core';
 import { invoke } from '@tauri-apps/api/core';
 import { formatError, logError, logInfo } from '../../core/logger';
 import { DialogState } from '../../shared/dialog/dialog-state';
+import { FolderPickerState } from '../../shared/folder-picker/folder-picker-state';
 import { FavoritesState } from '../favorites-state';
 import { NotesState, titleFromRelPath } from '../notes-state';
 import { TabsState } from '../tabs-state';
@@ -61,6 +62,7 @@ export class MarkdownExportState {
   private readonly history = inject(VaultHistoryState);
   private readonly vaultActions = inject(VaultActions);
   private readonly dialogState = inject(DialogState);
+  private readonly folderPicker = inject(FolderPickerState);
 
   readonly request = signal<MarkdownExportRequest | null>(null);
 
@@ -149,7 +151,7 @@ export class MarkdownExportState {
     const vaultRoot = this.vaultState.rootPath();
     if (!vaultRoot) throw new Error('No vault is open.');
     await this.notesState.flushPending(notes.map((n) => n.relPath));
-    const report = await invoke<ToMarkdownReport>('convert_to_markdown', { vaultRoot, notes, placement, removeUnused });
+    const report = await invoke<ToMarkdownReport>('convert_to_markdown', { notes, placement, removeUnused });
     for (const c of report.converted) {
       this.follow(c.from, c.relPath);
       if (sealedFavorites.has(c.from)) this.vaultMeta.addFavorites([c.relPath]);
@@ -173,16 +175,21 @@ export class MarkdownExportState {
     });
   }
 
-  /** Write a Markdown copy of the vault to `dest`, then say what was and wasn't included. */
-  async export(dest: string, placement: Placement): Promise<void> {
+  /**
+   * Write a Markdown copy of the vault to a folder the user picks, then say what was and wasn't included.
+   * Resolves false if they cancelled the folder choice.
+   */
+  async export(placement: Placement): Promise<boolean> {
     const vaultRoot = this.vaultState.rootPath();
     if (!vaultRoot) throw new Error('No vault is open.');
+    if (!(await this.folderPicker.approve('exportTo', 'Export to a new or empty folder'))) return false;
     await this.notesState.flushPending();
-    const report = await invoke<ExportReport>('export_vault', { vaultRoot, dest, placement });
-    logInfo(`Exported ${report.notes} notes and ${report.files} files to "${dest}"`);
+    const report = await invoke<ExportReport | null>('export_vault', { placement });
+    if (!report) return false;
+    logInfo(`Exported ${report.notes} notes and ${report.files} files`);
     for (const f of report.failed) logError(`Failed to export "${f.relPath}": ${f.error}`);
 
-    const sections = [`${plural(report.notes, 'note')} and ${plural(report.files, 'other file')} written to ${dest}.`];
+    const sections = [`${plural(report.notes, 'note')} and ${plural(report.files, 'other file')} written to the folder you chose.`];
     if (report.locked.length > 0) {
       sections.push(
         `Left out, as their profiles are locked:\n` +
@@ -199,6 +206,7 @@ export class MarkdownExportState {
       title: report.failed.length > 0 ? 'Export Finished With Errors' : 'Export Finished',
       tone: report.failed.length > 0 ? 'error' : report.locked.length > 0 ? 'warning' : 'default',
     });
+    return true;
   }
 
   /** Points loaded notes, tabs and `state.json` at a note's new path. */

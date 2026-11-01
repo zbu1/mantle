@@ -16,7 +16,7 @@ describe('VaultMetaState', () => {
   let mock: ReturnType<typeof installTauriMock>;
   let state: VaultMetaState;
 
-  function saves(): { vaultRoot: string; state: VaultMeta }[] {
+  function saves(): { state: VaultMeta }[] {
     return mock.invoke.mock.calls.filter(([command]) => command === 'save_vault_meta').map(([, args]) => args);
   }
 
@@ -37,7 +37,7 @@ describe('VaultMetaState', () => {
 
       await state.load('/vault');
 
-      expect(mock.invoke).toHaveBeenCalledWith('load_vault_meta', { vaultRoot: '/vault' }, undefined);
+      expect(mock.invoke).toHaveBeenCalledWith('load_vault_meta', {}, undefined);
       expect(state.loaded()).toBe(true);
       expect(state.recentNotes()).toEqual([{ relPath: 'a.mntl', openedAt: 5 }]);
     });
@@ -288,7 +288,6 @@ describe('VaultMetaState', () => {
       jest.advanceTimersByTime(600);
 
       expect(saves()[0]).toEqual({
-        vaultRoot: '/vault',
         state: meta({
           favorites: ['fav.mntl'],
           order: { '': ['a.mntl'] },
@@ -332,7 +331,6 @@ describe('VaultMetaState', () => {
       await state.load('/other-vault');
 
       expect(saves()).toHaveLength(1);
-      expect(saves()[0].vaultRoot).toBe('/vault');
       expect(saves()[0].state.recentNotes).toEqual([{ relPath: 'a.mntl', openedAt: 1 }]);
       expect(state.recentNotes()).toEqual([]);
     });

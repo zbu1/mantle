@@ -9,6 +9,8 @@
 //! As in [`crate::credentials`], errors reach the on-disk log: never interpolate
 //! a password, key or note content.
 
+use crate::session::ActiveVault;
+
 use crate::credentials::{install_rotated_key, state_file, unlock_profile_inner, SessionKeys};
 use crate::logging::logged;
 use crate::vault::{note_paths, read_header_prefix, resolve_rel_path, write_atomic, EXT_ENCRYPTED};
@@ -39,11 +41,12 @@ struct Pending {
 #[tauri::command(async)]
 pub fn rotate_master_key(
     app: tauri::AppHandle,
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     profile_id: String,
     password: String,
     keys: State<SessionKeys>,
 ) -> Result<String, String> {
+    let vault_root = active_vault.root()?;
     let password = Zeroizing::new(password);
     logged("rotate_master_key", || {
         let recovery_key = rotate_inner(&vault_root, &profile_id, &password, &keys)?;

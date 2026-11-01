@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { provideZonelessChangeDetection } from '@angular/core';
+import { VaultRootState } from '../../notes/vault-root-state';
 import { VaultState } from '../../notes/vault-state';
 import { ContextMenuState } from '../../shared/context-menu/context-menu-state';
 import { DialogState } from '../../shared/dialog/dialog-state';
@@ -54,7 +55,7 @@ describe('Welcome', () => {
   });
 
   it('lists recent vaults, numbered, and opens one by its number key', () => {
-    localStorage.setItem('mantle.vault.recent.v1', JSON.stringify(['/home/me/Journal', '/home/me/Work']));
+    TestBed.inject(VaultRootState).recents.set(['/home/me/Journal', '/home/me/Work']);
     const switchVault = jest.spyOn(TestBed.inject(VaultState), 'switchVault').mockResolvedValue();
     const el: HTMLElement = render().nativeElement;
 
@@ -80,7 +81,7 @@ describe('Welcome', () => {
   });
 
   it('removes a vault from recents through its menu', () => {
-    localStorage.setItem('mantle.vault.recent.v1', JSON.stringify(['/home/me/Journal', '/home/me/Work']));
+    TestBed.inject(VaultRootState).recents.set(['/home/me/Journal', '/home/me/Work']);
     const fixture = render();
     fixture.nativeElement.querySelector('[data-welcome-vault-menu]').click();
     const items = TestBed.inject(ContextMenuState).menu()!.items;
@@ -90,7 +91,7 @@ describe('Welcome', () => {
   });
 
   it('clears recents only once confirmed', async () => {
-    localStorage.setItem('mantle.vault.recent.v1', JSON.stringify(['/home/me/Journal']));
+    TestBed.inject(VaultRootState).recents.set(['/home/me/Journal']);
     const confirm = jest.spyOn(TestBed.inject(DialogState), 'confirm').mockResolvedValueOnce(false);
     const fixture = render();
     const clear = () => fixture.nativeElement.querySelector('[data-welcome-clear]').click();

@@ -197,10 +197,10 @@ export class VaultMetaState {
     const generation = this.generation;
     this.root = vaultRoot;
     try {
-      const raw = await invoke<unknown>('load_vault_meta', { vaultRoot });
+      const raw = await invoke<unknown>('load_vault_meta');
       if (generation !== this.generation) return;
       this.meta.set(normalizeMeta(raw));
-      void invoke('prune_history', { vaultRoot }).catch((err) => logError(`Failed to prune note history: ${formatError(err)}`));
+      void invoke('prune_history').catch((err) => logError(`Failed to prune note history: ${formatError(err)}`));
     } catch (err) {
       if (generation !== this.generation) return;
       logError(`Failed to load vault state for "${vaultRoot}": ${formatError(err)}`);
@@ -223,7 +223,7 @@ export class VaultMetaState {
     const meta = this.meta();
     if (!this.root || !meta) return;
     const vaultRoot = this.root;
-    void invoke('save_vault_meta', { vaultRoot, state: meta }).catch((err) => {
+    void invoke('save_vault_meta', { state: meta }).catch((err) => {
       logError(`Failed to save vault state for "${vaultRoot}": ${formatError(err)}`);
     });
   }

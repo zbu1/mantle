@@ -349,7 +349,7 @@ export class TabsState {
   private endSnapshot(noteId: string | null | undefined, closingTabId: string): void {
     const root = this.vaultRoot.path();
     if (!noteId || !root || this.tabs().some((tab) => tab.id !== closingTabId && tab.noteId === noteId)) return;
-    void invoke('close_snapshot', { vaultRoot: root, relPath: noteId }).catch(() => undefined);
+    void invoke('close_snapshot', { relPath: noteId }).catch(() => undefined);
   }
 
   setActive(id: string): void {

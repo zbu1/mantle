@@ -14,6 +14,8 @@
 //! lock, and every command that takes a note path goes through
 //! [`resolve_note`] to find it.
 
+use crate::session::ActiveVault;
+
 use crate::credentials::{load_registry, save_registry, HiddenNote, SessionKeys};
 use crate::logging::logged;
 use crate::vault::{
@@ -425,12 +427,13 @@ pub struct HidingClash {
 /// clash: hiding picks a free disk name by itself.
 #[tauri::command(async)]
 pub fn hiding_clashes(
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     profile_id: String,
     hide_locations: bool,
     hide_names: bool,
     keys: State<SessionKeys>,
 ) -> Result<Vec<HidingClash>, String> {
+    let vault_root = active_vault.root()?;
     logged("hiding_clashes", || {
         hiding_clashes_inner(&vault_root, &profile_id, Hiding { locations: hide_locations, names: hide_names }, &keys)
     })
@@ -483,7 +486,7 @@ pub struct HidingFailure {
 /// (`report.failed` is non-empty) and the call can simply be repeated.
 #[tauri::command(async)]
 pub fn set_profile_hiding(
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     profile_id: String,
     hide_locations: bool,
     hide_names: bool,
@@ -491,6 +494,7 @@ pub fn set_profile_hiding(
     skip: Vec<String>,
     keys: State<SessionKeys>,
 ) -> Result<HidingReport, String> {
+    let vault_root = active_vault.root()?;
     logged("set_profile_hiding", || {
         let hiding = Hiding { locations: hide_locations, names: hide_names };
         set_profile_hiding_inner(&vault_root, &profile_id, hiding, &renames, &skip, &keys)
@@ -574,7 +578,8 @@ pub(crate) fn set_profile_hiding_inner(
 /// The absolute path of the file the note `rel_path` is stored in, for
 /// "Show in File Explorer": a hidden note's random or root file.
 #[tauri::command]
-pub fn note_disk_path(vault_root: String, rel_path: String, keys: State<SessionKeys>) -> Result<String, String> {
+pub fn note_disk_path(active_vault: State<'_, ActiveVault>, rel_path: String, keys: State<SessionKeys>) -> Result<String, String> {
+    let vault_root = active_vault.root()?;
     logged("note_disk_path", || {
         let path = resolve_note(&vault_root, &rel_path, &keys)?;
         let text = path.to_string_lossy();

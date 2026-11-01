@@ -6,6 +6,8 @@
 //! [`crate::tags`] applies a tag rename. Notes of locked profiles are skipped
 //! and reported.
 
+use crate::session::ActiveVault;
+
 use crate::attachments::link_sources;
 use crate::credentials::SessionKeys;
 use crate::hidden;
@@ -37,10 +39,11 @@ pub struct LinkRewriteReport {
 
 #[tauri::command]
 pub fn rewrite_links(
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     rewrites: Vec<LinkRewrite>,
     keys: State<SessionKeys>,
 ) -> Result<LinkRewriteReport, String> {
+    let vault_root = active_vault.root()?;
     logged("rewrite_links", || rewrite_links_inner(&vault_root, &rewrites, &keys))
 }
 

@@ -182,7 +182,6 @@ describe('CredentialsState', () => {
       await credentials.lock('my-diary');
 
       expect(invokeArgs(mock, 'lock_credential_profile')).toEqual({
-        vaultRoot: '/vault',
         profileId: 'my-diary',
       });
     });
@@ -222,7 +221,6 @@ describe('CredentialsState', () => {
 
       expect(error).toBeNull();
       expect(invokeArgs(mock, 'unlock_credential_profile')).toMatchObject({
-        vaultRoot: '/vault',
         profileId: 'my-diary',
         password: 'hunter22',
       });
@@ -272,7 +270,6 @@ describe('CredentialsState', () => {
 
       expect(result).toEqual({ id: 'work' });
       expect(invokeArgs(mock, 'create_credential_profile')).toMatchObject({
-        vaultRoot: '/vault',
         displayName: 'Work',
         password: 'correct horse',
       });

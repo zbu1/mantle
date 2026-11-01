@@ -106,7 +106,7 @@ export class NotesState {
       return;
     }
     try {
-      const { content, tags, properties } = await invoke<NoteDocument>('read_note', { vaultRoot: root, relPath: id });
+      const { content, tags, properties } = await invoke<NoteDocument>('read_note', { relPath: id });
       const note: Note = { id, title: titleFromRelPath(id), content, tags, properties };
       this.entries.update((entries) => ({ ...entries, [id]: { status: 'loaded', note } }));
     } catch (err) {
@@ -156,7 +156,7 @@ export class NotesState {
     if (!root || this.entries()[id]?.status !== 'loaded' || this.pendingWrites.has(id)) return;
     let doc: NoteDocument;
     try {
-      doc = await invoke<NoteDocument>('read_note', { vaultRoot: root, relPath: id });
+      doc = await invoke<NoteDocument>('read_note', { relPath: id });
     } catch {
       return; // gone or locked; the rescan deals with it
     }
@@ -304,7 +304,6 @@ export class NotesState {
     if (!root || !entry || entry.status !== 'loaded') return;
     try {
       const sources = await invoke<Record<string, string>>('write_note', {
-        vaultRoot: root,
         relPath: id,
         content: entry.note.content,
         tags: entry.note.tags,

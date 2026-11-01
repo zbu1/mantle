@@ -26,6 +26,9 @@ Package manager is **pnpm**. Run `pnpm test` and `cargo test` after changes.
 - Menus extend `MenuSurface`/`MenuItem`/`MenuSeparator` in `src/app/shared/menu/`.
 - Icons: import individual `Lucide*` icons from `@lucide/angular`.
 - Tauri commands go in `src-tauri/src/` and are registered in `generate_handler!`.
+  They read the vault root from `ActiveVault` (`session.rs`), never from the
+  webview, and pick paths with `ask_path` (backend dialog; on Android the
+  in-app picker's `android_approve`).
   Crypto and note-format logic belongs in `mntl-core`, not `src-tauri`.
 - Rust tests needing an unlocked profile use `SessionKeys::unlock_for_test` and
   cheap `KdfParams`.

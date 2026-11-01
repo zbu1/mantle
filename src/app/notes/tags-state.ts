@@ -106,7 +106,7 @@ export class TagsState {
       undo: async () => {
         const vaultRoot = this.vaultState.rootPath();
         await this.notesState.flushPending();
-        await invoke('set_note_tags', { vaultRoot, tagsByNote });
+        await invoke('set_note_tags', { tagsByNote });
         this.notesState.setLoadedTags(tagsByNote);
         await this.vaultState.refresh();
       },
@@ -121,7 +121,7 @@ export class TagsState {
     // debounced save landing afterwards would put the old tags back.
     await this.notesState.flushPending();
     try {
-      return await invoke<TagEditReport>(command, { vaultRoot: root, ...args });
+      return await invoke<TagEditReport>(command, { ...args });
     } catch (err) {
       logError(`Failed to ${command.replace('_', ' ')}: ${formatError(err)}`);
       throw new Error(formatError(err));

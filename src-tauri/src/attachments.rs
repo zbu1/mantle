@@ -19,6 +19,8 @@
 //! ([`reseal_attachments`]) writes new copies. They are deleted only when the
 //! user asks, once nothing uses them ([`unused_attachments`]).
 
+use crate::session::{ask_path, ActiveVault, Ask};
+
 use crate::credentials::SessionKeys;
 use crate::logging::logged;
 use crate::vault::{
@@ -36,7 +38,7 @@ use std::fs;
 use std::ops::Range;
 use std::path::Path;
 use tauri::http::{header, Request, Response, StatusCode};
-use tauri::{Manager, Runtime, State, UriSchemeContext};
+use tauri::{AppHandle, Manager, Runtime, State, UriSchemeContext};
 use zeroize::Zeroizing;
 
 pub(crate) const ATTACHMENTS_DIR: &str = "attachments";
@@ -62,6 +64,12 @@ const MEDIA_TYPES: [(&str, &str); 14] = [
     ("mov", "video/quicktime"),
     ("ogv", "video/ogg"),
 ];
+
+/// The extensions Mantle can show, for the attachment file dialog.
+#[cfg(not(target_os = "android"))]
+pub(crate) fn picker_extensions() -> Vec<&'static str> {
+    MEDIA_TYPES.iter().map(|(ext, _)| *ext).collect()
+}
 
 fn media_type(ext: &str) -> Option<&'static str> {
     MEDIA_TYPES
@@ -566,7 +574,8 @@ pub struct AttachmentInfo {
 /// What the attachment `src` in the note at `note_rel_path` resolves to, or
 /// `None` for a remote URL or a missing file.
 #[tauri::command]
-pub fn attachment_info(vault_root: String, note_rel_path: String, src: String) -> Option<AttachmentInfo> {
+pub fn attachment_info(active_vault: State<'_, ActiveVault>, note_rel_path: String, src: String) -> Option<AttachmentInfo> {
+    let vault_root = active_vault.root().ok()?;
     let rel_path = resolve_attachment(&vault_root, &note_rel_path, &src)?;
     Some(AttachmentInfo {
         managed: is_managed(&rel_path),
@@ -632,11 +641,12 @@ pub struct UnusedAttachments {
 /// Every readable note is checked; see [`unreferenced`] for a locked one.
 #[tauri::command(async)]
 pub fn unused_attachments(
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     deleting: Vec<String>,
     candidates: Vec<String>,
     keys: State<SessionKeys>,
 ) -> Result<UnusedAttachments, String> {
+    let vault_root = active_vault.root()?;
     logged("unused_attachments", || unused_attachments_inner(&vault_root, &deleting, &candidates, &keys))
 }
 
@@ -719,24 +729,28 @@ pub(crate) fn unreferenced(
 
 /// Every attachment sealed under `profile_id`.
 #[tauri::command(async)]
-pub fn profile_attachments(vault_root: String, profile_id: String) -> Result<Vec<String>, String> {
-    logged("profile_attachments", || {
-        let Ok(entries) = fs::read_dir(resolve_rel_dir(&vault_root, "")?.join(ATTACHMENTS_DIR)) else {
-            return Ok(Vec::new());
-        };
-        Ok(entries
-            .flatten()
-            .map(|entry| format!("{ATTACHMENTS_DIR}/{}", entry.file_name().to_string_lossy()))
-            .filter(|rel| rel.ends_with(EXT_SEALED))
-            .filter(|rel| sealed_profile(&vault_root, rel).as_deref() == Some(profile_id.as_str()))
-            .collect())
-    })
+pub fn profile_attachments(active_vault: State<'_, ActiveVault>, profile_id: String) -> Result<Vec<String>, String> {
+    let vault_root = active_vault.root()?;
+    logged("profile_attachments", || profile_attachments_inner(&vault_root, &profile_id))
+}
+
+pub(crate) fn profile_attachments_inner(vault_root: &str, profile_id: &str) -> Result<Vec<String>, String> {
+    let Ok(entries) = fs::read_dir(resolve_rel_dir(vault_root, "")?.join(ATTACHMENTS_DIR)) else {
+        return Ok(Vec::new());
+    };
+    Ok(entries
+        .flatten()
+        .map(|entry| format!("{ATTACHMENTS_DIR}/{}", entry.file_name().to_string_lossy()))
+        .filter(|rel| rel.ends_with(EXT_SEALED))
+        .filter(|rel| sealed_profile(vault_root, rel).as_deref() == Some(profile_id))
+        .collect())
 }
 
 /// Move managed attachments to the OS trash. Only ever files directly in
 /// `attachments/`: a user's own files are theirs to delete.
 #[tauri::command(async)]
-pub fn delete_attachments(vault_root: String, paths: Vec<String>) -> Result<(), String> {
+pub fn delete_attachments(active_vault: State<'_, ActiveVault>, paths: Vec<String>) -> Result<(), String> {
+    let vault_root = active_vault.root()?;
     logged("delete_attachments", || delete_attachments_inner(&vault_root, &paths))
 }
 
@@ -777,12 +791,13 @@ fn save_for_note(
 /// `note_rel_path`, returning the vault-relative path to reference it by.
 #[tauri::command]
 pub fn save_attachment(
-    vault_root: String,
+    active_vault: State<'_, ActiveVault>,
     note_rel_path: String,
     data: String,
     ext: String,
     keys: State<SessionKeys>,
 ) -> Result<String, String> {
+    let vault_root = active_vault.root()?;
     logged("save_attachment", || {
         if data.len() as u64 / 4 * 3 > MAX_ATTACHMENT_BYTES {
             return Err(too_large());
@@ -792,42 +807,55 @@ pub fn save_attachment(
     })
 }
 
-/// Copy the image file at `source_path` (picked from the OS file dialog) in
-/// for the note at `note_rel_path`, as [`save_attachment`] does.
-#[tauri::command]
+/// Copy an image, video or PDF the user picks from the OS file dialog in for
+/// the note at `note_rel_path`, as [`save_attachment`] does. `None` if they
+/// cancelled. (Android reads the file in the webview and uses `save_attachment`.)
+#[tauri::command(async)]
 pub fn import_attachment(
-    vault_root: String,
     note_rel_path: String,
-    source_path: String,
+    app: AppHandle,
+    active_vault: State<'_, ActiveVault>,
     keys: State<SessionKeys>,
-) -> Result<String, String> {
+) -> Result<Option<String>, String> {
+    let vault_root = active_vault.root()?;
     logged("import_attachment", || {
+        let Some(source) = ask_path(&app, &active_vault, Ask::Attachment, "Attach a File", None)? else {
+            return Ok(None);
+        };
+        let source_path = source.to_string_lossy().into_owned();
         let (ext, _) = image_ext(&source_path).ok_or("Not a supported image, video or PDF file")?;
         if !note_rel_path.ends_with(EXT_ENCRYPTED) {
-            return store_plain_file(&vault_root, Path::new(&source_path), &ext);
+            return store_plain_file(&vault_root, &source, &ext).map(Some);
         }
-        let size = fs::metadata(&source_path).map_err(|e| format!("Failed to read image: {e}"))?.len();
+        let size = fs::metadata(&source).map_err(|e| format!("Failed to read image: {e}"))?.len();
         if size > MAX_ATTACHMENT_BYTES {
             return Err(too_large());
         }
-        let bytes = Zeroizing::new(fs::read(&source_path).map_err(|e| format!("Failed to read image: {e}"))?);
-        save_for_note(&vault_root, &note_rel_path, &bytes, &ext, &keys)
+        let bytes = Zeroizing::new(fs::read(&source).map_err(|e| format!("Failed to read image: {e}"))?);
+        save_for_note(&vault_root, &note_rel_path, &bytes, &ext, &keys).map(Some)
     })
 }
 
-/// Write the attachment at `rel_path`, decrypted if it is sealed, to
-/// `dest_path` (picked from the OS save dialog). The one way a sealed
-/// attachment leaves Mantle as plaintext, and only on the user's say.
-#[tauri::command]
+/// Write the attachment at `rel_path`, decrypted if it is sealed, to a file
+/// the user picks in the OS save dialog; false if they cancelled. The one way
+/// a sealed attachment leaves Mantle as plaintext, and only on the user's say.
+#[tauri::command(async)]
 pub fn save_attachment_copy(
-    vault_root: String,
     rel_path: String,
-    dest_path: String,
+    app: AppHandle,
+    active_vault: State<'_, ActiveVault>,
     keys: State<SessionKeys>,
-) -> Result<(), String> {
+) -> Result<bool, String> {
+    let vault_root = active_vault.root()?;
     logged("save_attachment_copy", || {
+        let name = rel_path.rsplit('/').next().unwrap_or(&rel_path).trim_end_matches(".enc");
+        let Some(dest) = ask_path(&app, &active_vault, Ask::CopyTo, "Save Decrypted Copy", Some(Path::new(name)))?
+        else {
+            return Ok(false);
+        };
         let bytes = load(&vault_root, &rel_path, &keys)?;
-        fs::write(&dest_path, bytes.as_slice()).map_err(|e| format!("Failed to save the copy: {e}"))
+        fs::write(&dest, bytes.as_slice()).map_err(|e| format!("Failed to save the copy: {e}"))?;
+        Ok(true)
     })
 }
 
@@ -922,7 +950,7 @@ fn load_range(
 /// Responses are `no-store`, so decrypted media is never written to the
 /// webview's disk cache — and so locking a profile takes effect on the next
 /// render rather than whenever a cache entry expires.
-fn serve(keys: &SessionKeys, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
+fn serve(vault_root: &str, keys: &SessionKeys, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
     let respond = |status: StatusCode, media: &str, body: Vec<u8>| {
         Response::builder()
             .status(status)
@@ -938,18 +966,16 @@ fn serve(keys: &SessionKeys, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
             .unwrap_or_default()
     };
     let query = request.uri().query().unwrap_or("");
-    let (Some(vault), Some(note), Some(src)) =
-        (query_param(query, "vault"), query_param(query, "note"), query_param(query, "src"))
-    else {
+    let (Some(note), Some(src)) = (query_param(query, "note"), query_param(query, "src")) else {
         return respond(StatusCode::BAD_REQUEST, "text/plain", Vec::new());
     };
-    let Some((rel, media)) = resolve_attachment(&vault, &note, &src)
+    let Some((rel, media)) = resolve_attachment(vault_root, &note, &src)
         .and_then(|rel| Some((rel.clone(), media_type(&image_ext(&rel)?.0)?)))
     else {
         return respond(StatusCode::NOT_FOUND, "text/plain", Vec::new());
     };
     let range = request.headers().get(header::RANGE).and_then(|value| value.to_str().ok());
-    match load_range(&vault, &rel, range, keys) {
+    match load_range(vault_root, &rel, range, keys) {
         Ok((bytes, Some((start, end)), total)) => {
             let mut response = respond(StatusCode::PARTIAL_CONTENT, media, bytes.to_vec());
             if let Ok(value) = format!("bytes {start}-{}/{total}", end - 1).parse() {
@@ -979,7 +1005,11 @@ pub fn protocol<R: Runtime>(
 ) {
     let app = ctx.app_handle().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        responder.respond(serve(&app.state::<SessionKeys>(), &request));
+        let response = match app.state::<ActiveVault>().root() {
+            Ok(root) => serve(&root, &app.state::<SessionKeys>(), &request),
+            Err(_) => Response::builder().status(StatusCode::NOT_FOUND).body(Vec::new()).unwrap_or_default(),
+        };
+        responder.respond(response);
     });
 }
 
@@ -1151,7 +1181,7 @@ mod tests {
         assert!(unused(&[], &[&sealed], &locked).paths.is_empty(), "t.mntl.enc is locked, so might use it");
         assert_eq!(unused(&["a.mntl", "b.mntl"], &[], &locked).paths, [shared.clone()], "a locked note keeps only its own profile's");
 
-        assert_eq!(profile_attachments(root_str.clone(), "diary".into()).unwrap(), [sealed.clone()]);
+        assert_eq!(profile_attachments_inner(&root_str, "diary").unwrap(), [sealed.clone()]);
         assert!(delete_attachments_inner(&root_str, &["a.mntl".into()]).is_err());
         delete_attachments_inner(&root_str, &[shared.clone()]).unwrap();
         assert!(!root.join(&shared).exists());

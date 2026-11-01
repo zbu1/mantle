@@ -199,10 +199,9 @@ export class CredentialsState {
     this.error.set(null);
     try {
       const profiles = await invoke<CredentialProfile[]>('list_credential_profiles', {
-        vaultRoot: root,
       });
       this.profiles.set(profiles);
-      this.biometric.set(await invoke<{ available: boolean; enabled: string[] }>('biometric_status', { vaultRoot: root }).catch(() => ({ available: false, enabled: [] })));
+      this.biometric.set(await invoke<{ available: boolean; enabled: string[] }>('biometric_status').catch(() => ({ available: false, enabled: [] })));
     } catch (err) {
       logError(`Failed to load credential profiles: ${formatError(err)}`);
       this.error.set(String(err));
@@ -226,7 +225,7 @@ export class CredentialsState {
     await this.notesState.flushPending(paths);
 
     try {
-      await invoke('lock_credential_profile', { vaultRoot: root, profileId });
+      await invoke('lock_credential_profile', { profileId });
     } catch (err) {
       logError(`Failed to lock profile "${profileId}": ${formatError(err)}`);
       return;
@@ -312,7 +311,7 @@ export class CredentialsState {
     if (!root) return 'No vault is open.';
 
     try {
-      await invoke('unlock_credential_profile', { vaultRoot: root, profileId, password });
+      await invoke('unlock_credential_profile', { profileId, password });
     } catch (err) {
       return String(err);
     }
@@ -326,7 +325,7 @@ export class CredentialsState {
     const root = this.vaultState.rootPath();
     if (!root) return 'No vault is open.';
     try {
-      await invoke('unlock_with_biometric', { vaultRoot: root, profileId });
+      await invoke('unlock_with_biometric', { profileId });
     } catch (err) {
       logError(`Windows Hello unlock of "${profileId}" failed: ${formatError(err)}`);
       return String(err);
@@ -340,7 +339,7 @@ export class CredentialsState {
     const root = this.vaultState.rootPath();
     if (!root) return;
     try {
-      await invoke(on ? 'enable_biometric' : 'disable_biometric', { vaultRoot: root, profileId });
+      await invoke(on ? 'enable_biometric' : 'disable_biometric', { profileId });
     } catch (err) {
       logError(`Failed to turn Windows Hello ${on ? 'on' : 'off'} for "${profileId}": ${formatError(err)}`);
       await this.dialogState.alert(String(err), { title: 'Windows Hello' });
@@ -401,7 +400,6 @@ export class CredentialsState {
     let profile: CredentialProfile;
     try {
       profile = await invoke<CredentialProfile>('create_credential_profile', {
-        vaultRoot: root,
         displayName: name.trim(),
         password,
       });
@@ -413,7 +411,7 @@ export class CredentialsState {
     void this.offerRecoveryKey(profile.id);
     await this.refresh();
     const step = (command: string) => async () => {
-      await invoke(command, { vaultRoot: root, profileId: profile.id });
+      await invoke(command, { profileId: profile.id });
       await this.refresh();
     };
     this.history.record({
@@ -430,7 +428,7 @@ export class CredentialsState {
     if (!root) return false;
     let key: string;
     try {
-      key = await invoke<string>('create_recovery_key', { vaultRoot: root, profileId });
+      key = await invoke<string>('create_recovery_key', { profileId });
     } catch (err) {
       logError(`Failed to make a recovery key for "${profileId}": ${formatError(err)}`);
       await this.dialogState.alert(String(err), { title: "Couldn't Make Recovery Key", tone: 'error' });
@@ -475,7 +473,6 @@ Write this down or print it, and keep it somewhere safe. It is shown only once. 
         if (password.length < MIN_PASSWORD_LENGTH) return `Use at least ${MIN_PASSWORD_LENGTH} characters.`;
         try {
           await invoke('recover_credential_profile', {
-            vaultRoot: root,
             profileId,
             recoveryKey: key,
             newPassword: password,
@@ -503,7 +500,7 @@ Write this down or print it, and keep it somewhere safe. It is shown only once. 
     const before = this.profileById(profileId)?.displayName;
 
     try {
-      await invoke('rename_credential_profile', { vaultRoot: root, profileId, displayName: trimmed });
+      await invoke('rename_credential_profile', { profileId, displayName: trimmed });
     } catch (err) {
       logError(`Failed to rename credential profile "${profileId}": ${formatError(err)}`);
       await this.dialogState.alert(String(err), { title: 'Rename Failed', tone: 'error' });
@@ -543,7 +540,6 @@ Write this down or print it, and keep it somewhere safe. It is shown only once. 
         }
         try {
           await invoke('change_credential_profile_password', {
-            vaultRoot: root,
             profileId,
             newPassword: password,
           });
@@ -577,7 +573,7 @@ Write this down or print it, and keep it somewhere safe. It is shown only once. 
         try {
           // A save racing the rotation could leave a note under the old key.
           await this.notesState.flushPending(this.notePathsFor(profileId));
-          recoveryKey = await invoke<string>('rotate_master_key', { vaultRoot: root, profileId, password });
+          recoveryKey = await invoke<string>('rotate_master_key', { profileId, password });
           return null;
         } catch (err) {
           logError(`Failed to rotate the key of "${profileId}": ${formatError(err)}`);
@@ -619,7 +615,7 @@ Your previous recovery key no longer works. Write this one down or print it, and
     const renames: Record<string, string> = {};
     const skip: string[] = [];
     try {
-      const clashes = await invoke<HidingClash[]>('hiding_clashes', { vaultRoot: root, profileId, hideLocations, hideNames });
+      const clashes = await invoke<HidingClash[]>('hiding_clashes', { profileId, hideLocations, hideNames });
       for (const clash of clashes) {
         const choice = await this.dialogState.choose(
           `"${clash.relPath}" already exists, so this note can't go back there. Rename it to "${clash.suggestion}", ` +
@@ -638,7 +634,6 @@ Your previous recovery key no longer works. Write this one down or print it, and
     let report: HidingReport;
     try {
       report = await invoke<HidingReport>('set_profile_hiding', {
-        vaultRoot: root,
         profileId,
         hideLocations,
         hideNames,
@@ -686,7 +681,7 @@ Your previous recovery key no longer works. Write this one down or print it, and
     if (!root) return;
 
     try {
-      await invoke('delete_credential_profile', { vaultRoot: root, profileId });
+      await invoke('delete_credential_profile', { profileId });
     } catch (err) {
       logError(`Failed to delete credential profile "${profileId}": ${formatError(err)}`);
       await this.dialogState.alert(String(err), { title: 'Delete Failed', tone: 'error' });
