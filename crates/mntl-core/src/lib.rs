@@ -80,7 +80,7 @@ pub use keys::{
     KeyEncryptionKey, MasterKey, WRAPPED_KEY_LEN,
 };
 pub use properties::{markdown_properties, set_markdown_property};
-pub use stream::{decrypt_stream, encrypt_stream, ChunkSpan, SealedStream, STREAM_CHUNK, STREAM_VERSION};
+pub use stream::{decrypt_stream, encrypt_stream, ChunkSpan, SealedStream, StreamEncryptor, STREAM_CHUNK, STREAM_VERSION};
 pub use tags::{dedupe_tags, markdown_tags, normalize_tag, same_tag, set_markdown_tags};
 
 /// Ceilings on the cost parameters read back from a profile record. The

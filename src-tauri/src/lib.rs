@@ -43,6 +43,7 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .manage(watcher::WatcherState::default())
         .manage(credentials::SessionKeys::default())
+        .manage(attachments::Uploads::default())
         .setup(|app| {
             let file = session::session_file(app.handle())?;
             app.manage(session::ActiveVault::load(file));
@@ -119,6 +120,10 @@ pub fn run() {
             session::import_obsidian_vault,
             attachments::save_attachment,
             attachments::import_attachment,
+            attachments::begin_attachment_upload,
+            attachments::append_attachment_chunk,
+            attachments::finish_attachment_upload,
+            attachments::abort_attachment_upload,
             attachments::save_attachment_copy,
             attachments::attachment_info,
             attachments::unused_attachments,

@@ -47,44 +47,99 @@ fn nonce(prefix: &[u8; PREFIX_LEN], index: u64, last: bool) -> Result<XNonce, Mn
     Ok(*XNonce::from_slice(&nonce))
 }
 
+/// Seals a payload as it arrives, holding back at most one chunk of plaintext:
+/// a chunk can only be sealed once more bytes show it isn't the last.
+pub struct StreamEncryptor {
+    cipher: XChaCha20Poly1305,
+    prefix: [u8; PREFIX_LEN],
+    aad: Vec<u8>,
+    chunk: usize,
+    index: u64,
+    held: Zeroizing<Vec<u8>>,
+}
+
+impl StreamEncryptor {
+    /// Start an envelope under the profile's master key, `chunk_size` bytes to
+    /// a chunk ([`STREAM_CHUNK`], outside of tests). Returns the encryptor and
+    /// the envelope's opening bytes (magic and header), to write first.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MntlError::KeyWrapError`] if wrapping the content key fails.
+    pub fn new(mk: &MasterKey, profile_id: &str, chunk_size: u32) -> Result<(Self, Vec<u8>), MntlError> {
+        if chunk_size == 0 {
+            return Err(MntlError::InvalidCryptoMetadata("Chunk size must not be zero".into()));
+        }
+        let mut cek = Zeroizing::new([0u8; 32]);
+        OsRng.fill_bytes(cek.as_mut_slice());
+        let mut prefix = [0u8; PREFIX_LEN];
+        OsRng.fill_bytes(&mut prefix);
+
+        let mut wrapped_key = [0u8; WRAPPED_KEY_LEN];
+        KekAes256::from(*mk.expose())
+            .wrap(cek.as_slice(), &mut wrapped_key)
+            .map_err(|_| MntlError::KeyWrapError)?;
+        let crypto = CryptoMeta { iv: BASE64.encode(prefix), wrapped_key: BASE64.encode(wrapped_key) };
+        let header = EncryptedHeader { v: STREAM_VERSION, chunk: Some(chunk_size), ..EncryptedHeader::new(profile_id, crypto) };
+        let aad = serde_json::to_vec(&header)?;
+        let header_len = u32::try_from(aad.len()).map_err(|_| MntlError::InvalidHeaderSize)?;
+
+        let mut head = Vec::with_capacity(HEADER_OFFSET + aad.len());
+        head.extend_from_slice(MAGIC_MENC);
+        head.extend_from_slice(&header_len.to_le_bytes());
+        head.extend_from_slice(&aad);
+        let cipher = XChaCha20Poly1305::new(Key::from_slice(cek.as_slice()));
+        Ok((Self { cipher, prefix, aad, chunk: chunk_size as usize, index: 0, held: Zeroizing::new(Vec::new()) }, head))
+    }
+
+    fn seal(&mut self, plain: &[u8], last: bool, out: &mut Vec<u8>) -> Result<(), MntlError> {
+        let sealed = self
+            .cipher
+            .encrypt(&nonce(&self.prefix, self.index, last)?, Payload { msg: plain, aad: &self.aad })
+            .map_err(|_| MntlError::EncryptionFailed)?;
+        out.extend_from_slice(&sealed);
+        self.index += 1;
+        Ok(())
+    }
+
+    /// Take the next bytes of the payload, appending any chunks they complete to `out`.
+    ///
+    /// # Errors
+    ///
+    /// [`MntlError::EncryptionFailed`] if the cipher fails or the payload outgrows `u32` chunks.
+    pub fn push(&mut self, data: &[u8], out: &mut Vec<u8>) -> Result<(), MntlError> {
+        self.held.extend_from_slice(data);
+        let held = std::mem::take(&mut self.held);
+        let mut done = 0;
+        while held.len() - done > self.chunk {
+            self.seal(&held[done..done + self.chunk], false, out)?;
+            done += self.chunk;
+        }
+        self.held = Zeroizing::new(held[done..].to_vec());
+        Ok(())
+    }
+
+    /// End the payload, appending its last chunk to `out`.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::push`].
+    pub fn finish(mut self, out: &mut Vec<u8>) -> Result<(), MntlError> {
+        let held = std::mem::take(&mut self.held);
+        self.seal(&held, true, out)
+    }
+}
+
 /// Seal `plaintext` under the profile's master key in the chunked envelope,
 /// `chunk_size` bytes to a chunk ([`STREAM_CHUNK`], outside of tests).
 ///
 /// # Errors
 ///
-/// Returns [`MntlError::KeyWrapError`] if wrapping the content key fails, and
-/// [`MntlError::EncryptionFailed`] if the cipher does.
+/// As [`StreamEncryptor::new`] and [`StreamEncryptor::push`].
 pub fn encrypt_stream(mk: &MasterKey, profile_id: &str, plaintext: &[u8], chunk_size: u32) -> Result<Vec<u8>, MntlError> {
-    if chunk_size == 0 {
-        return Err(MntlError::InvalidCryptoMetadata("Chunk size must not be zero".into()));
-    }
-    let mut cek = Zeroizing::new([0u8; 32]);
-    OsRng.fill_bytes(cek.as_mut_slice());
-    let mut prefix = [0u8; PREFIX_LEN];
-    OsRng.fill_bytes(&mut prefix);
-
-    let mut wrapped_key = [0u8; WRAPPED_KEY_LEN];
-    KekAes256::from(*mk.expose())
-        .wrap(cek.as_slice(), &mut wrapped_key)
-        .map_err(|_| MntlError::KeyWrapError)?;
-    let crypto = CryptoMeta { iv: BASE64.encode(prefix), wrapped_key: BASE64.encode(wrapped_key) };
-    let header = EncryptedHeader { v: STREAM_VERSION, chunk: Some(chunk_size), ..EncryptedHeader::new(profile_id, crypto) };
-    let header_json = serde_json::to_vec(&header)?;
-    let header_len = u32::try_from(header_json.len()).map_err(|_| MntlError::InvalidHeaderSize)?;
-
-    let cipher = XChaCha20Poly1305::new(Key::from_slice(cek.as_slice()));
-    let chunks: Vec<&[u8]> = if plaintext.is_empty() { vec![&[]] } else { plaintext.chunks(chunk_size as usize).collect() };
-    let mut out = Vec::with_capacity(HEADER_OFFSET + header_json.len() + plaintext.len() + chunks.len() * TAG_LEN as usize);
-    out.extend_from_slice(MAGIC_MENC);
-    out.extend_from_slice(&header_len.to_le_bytes());
-    out.extend_from_slice(&header_json);
-    for (i, chunk) in chunks.iter().enumerate() {
-        let nonce = nonce(&prefix, i as u64, i + 1 == chunks.len())?;
-        let sealed = cipher
-            .encrypt(&nonce, Payload { msg: chunk, aad: &header_json })
-            .map_err(|_| MntlError::EncryptionFailed)?;
-        out.extend_from_slice(&sealed);
-    }
+    let (mut enc, mut out) = StreamEncryptor::new(mk, profile_id, chunk_size)?;
+    enc.push(plaintext, &mut out)?;
+    enc.finish(&mut out)?;
     Ok(out)
 }
 

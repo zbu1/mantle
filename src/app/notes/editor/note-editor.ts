@@ -96,6 +96,8 @@ import { dirOf } from '../vault-tree.model';
 
 /** Meta on a transaction that brings in an edit made in another pane, so it isn't saved again. */
 const OTHER_PANE = 'mantle:other-pane';
+/** Largest file sent to the backend in one message; bigger ones are uploaded in pieces of this size. */
+const UPLOAD_PIECE = 4 * 1024 * 1024;
 
 /** Asks for one file through the WebView's own picker; null if the user backs out. */
 function chooseFile(accept: string): Promise<File | null> {
@@ -447,6 +449,11 @@ export class NoteEditor {
   private imageContext(): ImageContext {
     const args = () => ({ noteRelPath: this.noteId() });
     const save = async (file: File) => {
+      // A video's type (`video/quicktime`) doesn't name its extension; its file name does.
+      const ext = file.type.startsWith('image/')
+        ? file.type.slice('image/'.length).replace('+xml', '')
+        : (file.name.split('.').pop()?.toLowerCase() ?? '');
+      if (file.size > UPLOAD_PIECE) return upload(file, ext);
       // A data URL is the cheapest way to get base64 out of a File.
       const dataUrl = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
@@ -454,11 +461,21 @@ export class NoteEditor {
         reader.onerror = () => reject(reader.error);
         reader.readAsDataURL(file);
       });
-      // A video's type (`video/quicktime`) doesn't name its extension; its file name does.
-      const ext = file.type.startsWith('image/')
-        ? file.type.slice('image/'.length).replace('+xml', '')
-        : (file.name.split('.').pop()?.toLowerCase() ?? '');
       return invoke<string>('save_attachment', { ...args(), data: dataUrl.slice(dataUrl.indexOf(',') + 1), ext });
+    };
+    // Large files go over in pieces, so neither side holds them whole.
+    const upload = async (file: File, ext: string) => {
+      const uploadId = await invoke<string>('begin_attachment_upload', { ...args(), ext });
+      try {
+        for (let at = 0; at < file.size; at += UPLOAD_PIECE) {
+          const piece = new Uint8Array(await file.slice(at, at + UPLOAD_PIECE).arrayBuffer());
+          await invoke('append_attachment_chunk', piece, { headers: { 'upload-id': uploadId } });
+        }
+        return await invoke<string>('finish_attachment_upload', { uploadId });
+      } catch (err) {
+        void invoke('abort_attachment_upload', { uploadId });
+        throw err;
+      }
     };
     // The plugin only logs a failure; the user needs to see it too.
     const reported = <A extends unknown[], R>(fn: (...a: A) => Promise<R>) => (...a: A) =>

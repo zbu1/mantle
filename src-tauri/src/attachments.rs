@@ -115,7 +115,7 @@ fn stored_ext(rel: &str, sealed: bool) -> String {
         .unwrap_or_default()
 }
 
-/// Largest attachment accepted. Sealed ones are encrypted whole in memory.
+/// Largest attachment accepted.
 const MAX_ATTACHMENT_BYTES: u64 = 100 * 1024 * 1024;
 
 fn too_large() -> String {
@@ -213,6 +213,98 @@ fn store(
         }
     };
     Ok(format!("{ATTACHMENTS_DIR}/{name}"))
+}
+
+enum StageMode {
+    Plain(Sha256),
+    Sealed(mntl_core::StreamEncryptor),
+}
+
+/// An attachment being written piece by piece into `attachments/`, never held
+/// whole: hashed as plaintext, or sealed in the chunked envelope. Only
+/// [`Self::finish`] puts it in place; dropping it earlier discards it.
+struct Staged {
+    dir: std::path::PathBuf,
+    dot_ext: String,
+    tmp: std::path::PathBuf,
+    file: fs::File,
+    len: u64,
+    mode: StageMode,
+    placed: bool,
+}
+
+impl Staged {
+    fn new(vault_root: &str, ext: &str, seal: Option<(&str, &mntl_core::MasterKey)>) -> Result<Self, String> {
+        use std::io::Write;
+        let (_, dot_ext, dir) = attachments_dir(vault_root, ext)?;
+        let mut id = [0u8; 16];
+        OsRng.fill_bytes(&mut id);
+        let tmp = dir.join(format!(".{}.tmp", hex(&id)));
+        crate::watcher::suppress(&tmp);
+        let mut file = fs::File::create(&tmp).map_err(|e| format!("Failed to save image: {e}"))?;
+        let mode = match seal {
+            Some((profile_id, mk)) => {
+                let (enc, head) = mntl_core::StreamEncryptor::new(mk, profile_id, mntl_core::STREAM_CHUNK).map_err(|e| e.to_string())?;
+                file.write_all(&head).map_err(|e| format!("Failed to save image: {e}"))?;
+                StageMode::Sealed(enc)
+            }
+            None => StageMode::Plain(Sha256::new()),
+        };
+        Ok(Self { dir, dot_ext, tmp, file, len: 0, mode, placed: false })
+    }
+
+    fn push(&mut self, data: &[u8]) -> Result<(), String> {
+        use std::io::Write;
+        self.len += data.len() as u64;
+        if self.len > MAX_ATTACHMENT_BYTES {
+            return Err(too_large());
+        }
+        let write = |file: &mut fs::File, bytes: &[u8]| file.write_all(bytes).map_err(|e| format!("Failed to save image: {e}"));
+        match &mut self.mode {
+            StageMode::Plain(hasher) => {
+                hasher.update(data);
+                write(&mut self.file, data)
+            }
+            StageMode::Sealed(enc) => {
+                let mut out = Vec::new();
+                enc.push(data, &mut out).map_err(|e| e.to_string())?;
+                write(&mut self.file, &out)
+            }
+        }
+    }
+
+    /// Move the file into place and return its vault-relative path.
+    fn finish(mut self) -> Result<String, String> {
+        use std::io::Write;
+        let name = match std::mem::replace(&mut self.mode, StageMode::Plain(Sha256::new())) {
+            StageMode::Plain(hasher) => format!("{}{}", hex(&hasher.finalize()[..16]), self.dot_ext),
+            StageMode::Sealed(enc) => {
+                let mut out = Vec::new();
+                enc.finish(&mut out).map_err(|e| e.to_string())?;
+                self.file.write_all(&out).map_err(|e| format!("Failed to save image: {e}"))?;
+                let mut id = [0u8; 16];
+                OsRng.fill_bytes(&mut id);
+                format!("{}{}{EXT_SEALED}", hex(&id), self.dot_ext)
+            }
+        };
+        let path = self.dir.join(&name);
+        crate::watcher::suppress(&path);
+        if !path.exists() {
+            self.file.sync_all().map_err(|e| format!("Failed to flush image: {e}"))?;
+            fs::rename(&self.tmp, &path).map_err(|e| format!("Failed to save image: {e}"))?;
+        }
+        self.placed = true;
+        let _ = fs::remove_file(&self.tmp);
+        Ok(format!("{ATTACHMENTS_DIR}/{name}"))
+    }
+}
+
+impl Drop for Staged {
+    fn drop(&mut self) {
+        if !self.placed {
+            let _ = fs::remove_file(&self.tmp);
+        }
+    }
 }
 
 /// The attachment at vault-relative `rel_path`, decrypted if it is sealed. One
@@ -770,8 +862,16 @@ fn delete_attachments_inner(vault_root: &str, paths: &[String]) -> Result<(), St
     Ok(())
 }
 
-/// Store an image for the note at `note_rel`: sealed under the note's profile
-/// if the note is encrypted, so its images are never less protected than it.
+/// The profile and key sealing the attachments of the note at `note_rel`, or
+/// `None` for a plaintext note: its images are never less protected than it.
+fn seal_for(vault_root: &str, note_rel: &str, keys: &SessionKeys) -> Result<Option<(String, mntl_core::MasterKey)>, String> {
+    if !note_rel.ends_with(EXT_ENCRYPTED) {
+        return Ok(None);
+    }
+    let header = read_header_prefix(&crate::hidden::resolve_note(vault_root, note_rel, keys)?)?;
+    master_key_for(vault_root, &header, keys).map(Some)
+}
+
 fn save_for_note(
     vault_root: &str,
     note_rel: &str,
@@ -779,12 +879,116 @@ fn save_for_note(
     ext: &str,
     keys: &SessionKeys,
 ) -> Result<String, String> {
-    if !note_rel.ends_with(EXT_ENCRYPTED) {
-        return store(vault_root, bytes, ext, None);
+    let seal = seal_for(vault_root, note_rel, keys)?;
+    store(vault_root, bytes, ext, seal.as_ref().map(|(id, mk)| (id.as_str(), mk)))
+}
+
+/// Chunked copy of `source` into `staged`, which is discarded on any error.
+fn stage_file(source: &Path, mut staged: Staged) -> Result<String, String> {
+    use std::io::Read;
+    let mut file = fs::File::open(source).map_err(|e| format!("Failed to read image: {e}"))?;
+    let mut buf = vec![0u8; 64 * 1024];
+    loop {
+        let n = file.read(&mut buf).map_err(|e| format!("Failed to read image: {e}"))?;
+        if n == 0 {
+            return staged.finish();
+        }
+        staged.push(&buf[..n])?;
     }
-    let header = read_header_prefix(&crate::hidden::resolve_note(vault_root, note_rel, keys)?)?;
-    let (profile_id, mk) = master_key_for(vault_root, &header, keys)?;
-    store(vault_root, bytes, ext, Some((&profile_id, &mk)))
+}
+
+enum Upload {
+    Staged(Staged),
+    /// A sealed type that isn't chunked (images), sealed whole on finish.
+    Buffered { note_rel: String, ext: String, bytes: Zeroizing<Vec<u8>> },
+}
+
+/// Attachments being uploaded in pieces by the webview, by upload id.
+#[derive(Default)]
+pub struct Uploads(std::sync::Mutex<HashMap<String, Upload>>);
+
+impl Uploads {
+    fn with<T>(&self, id: &str, f: impl FnOnce(&mut Upload) -> Result<T, String>) -> Result<T, String> {
+        let mut map = self.0.lock().map_err(|_| "Upload state poisoned".to_string())?;
+        let upload = map.get_mut(id).ok_or("Unknown upload")?;
+        let result = f(upload);
+        if result.is_err() {
+            map.remove(id);
+        }
+        result
+    }
+}
+
+/// Start uploading a file for the note at `note_rel_path` in pieces, for files
+/// too large to send in one message. Returns the upload's id.
+#[tauri::command]
+pub fn begin_attachment_upload(
+    active_vault: State<'_, ActiveVault>,
+    uploads: State<Uploads>,
+    note_rel_path: String,
+    ext: String,
+    keys: State<SessionKeys>,
+) -> Result<String, String> {
+    let vault_root = active_vault.root()?;
+    logged("begin_attachment_upload", || {
+        let seal = seal_for(&vault_root, &note_rel_path, &keys)?;
+        let upload = match &seal {
+            Some(_) if !streamed(&ext) => Upload::Buffered { note_rel: note_rel_path, ext, bytes: Zeroizing::new(Vec::new()) },
+            _ => Upload::Staged(Staged::new(&vault_root, &ext, seal.as_ref().map(|(id, mk)| (id.as_str(), mk)))?),
+        };
+        let mut id = [0u8; 16];
+        OsRng.fill_bytes(&mut id);
+        let id = hex(&id);
+        uploads.0.lock().map_err(|_| "Upload state poisoned".to_string())?.insert(id.clone(), upload);
+        Ok(id)
+    })
+}
+
+/// Add the next bytes (the request body) to the upload named by the `upload-id` header.
+#[tauri::command]
+pub fn append_attachment_chunk(uploads: State<Uploads>, request: tauri::ipc::Request<'_>) -> Result<(), String> {
+    let tauri::ipc::InvokeBody::Raw(data) = request.body() else {
+        return Err("Expected raw bytes".to_string());
+    };
+    let id = request.headers().get("upload-id").and_then(|v| v.to_str().ok()).ok_or("Missing upload id")?;
+    logged("append_attachment_chunk", || {
+        uploads.with(id, |upload| match upload {
+            Upload::Staged(staged) => staged.push(data),
+            Upload::Buffered { bytes, .. } => {
+                if (bytes.len() + data.len()) as u64 > MAX_ATTACHMENT_BYTES {
+                    return Err(too_large());
+                }
+                bytes.extend_from_slice(data);
+                Ok(())
+            }
+        })
+    })
+}
+
+/// End the upload, returning the vault-relative path to reference the file by.
+#[tauri::command]
+pub fn finish_attachment_upload(
+    active_vault: State<'_, ActiveVault>,
+    uploads: State<Uploads>,
+    upload_id: String,
+    keys: State<SessionKeys>,
+) -> Result<String, String> {
+    let vault_root = active_vault.root()?;
+    logged("finish_attachment_upload", || {
+        let upload = uploads.0.lock().map_err(|_| "Upload state poisoned".to_string())?.remove(&upload_id).ok_or("Unknown upload")?;
+        match upload {
+            Upload::Staged(staged) => staged.finish(),
+            Upload::Buffered { note_rel, ext, bytes } => save_for_note(&vault_root, &note_rel, &bytes, &ext, &keys),
+        }
+    })
+}
+
+/// Discard an upload that was abandoned.
+#[tauri::command]
+pub fn abort_attachment_upload(uploads: State<Uploads>, upload_id: String) {
+    if let Ok(mut map) = uploads.0.lock() {
+        map.remove(&upload_id);
+    }
 }
 
 /// Save a pasted or dropped image (base64 `data`) for the note at
@@ -826,6 +1030,11 @@ pub fn import_attachment(
         let (ext, _) = image_ext(&source_path).ok_or("Not a supported image, video or PDF file")?;
         if !note_rel_path.ends_with(EXT_ENCRYPTED) {
             return store_plain_file(&vault_root, &source, &ext).map(Some);
+        }
+        if streamed(&ext) {
+            let seal = seal_for(&vault_root, &note_rel_path, &keys)?;
+            let staged = Staged::new(&vault_root, &ext, seal.as_ref().map(|(id, mk)| (id.as_str(), mk)))?;
+            return stage_file(&source, staged).map(Some);
         }
         let size = fs::metadata(&source).map_err(|e| format!("Failed to read image: {e}"))?.len();
         if size > MAX_ATTACHMENT_BYTES {
@@ -1212,6 +1421,34 @@ text")).unwrap();
         assert_eq!(rel, store(&root_str, PNG, "png", None).unwrap(), "same hash name as the in-memory path");
         assert_eq!(fs::read(root.join(&rel)).unwrap(), PNG);
         assert!(store(&root_str, &vec![0; MAX_ATTACHMENT_BYTES as usize + 1], "png", None).is_err());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn staged_files_are_sealed_or_hashed_without_being_held_whole() {
+        let root = temp_dir("staged");
+        let root_str = root.to_string_lossy().into_owned();
+        let mk = mntl_core::MasterKey::from_bytes([7; 32]);
+        let data: Vec<u8> = (0..200_000u32).map(|i| i as u8).collect();
+
+        let mut sealed = Staged::new(&root_str, "mp4", Some(("p", &mk))).unwrap();
+        for piece in data.chunks(50_000) {
+            sealed.push(piece).unwrap();
+        }
+        let rel = sealed.finish().unwrap();
+        assert!(rel.ends_with(".mp4.enc"));
+        let blob = fs::read(root.join(&rel)).unwrap();
+        assert_eq!(&mntl_core::decrypt_stream(&mk, &blob).unwrap()[..], &data[..]);
+
+        let mut plain = Staged::new(&root_str, "mp4", None).unwrap();
+        plain.push(&data).unwrap();
+        let plain_rel = plain.finish().unwrap();
+        assert_eq!(fs::read(root.join(&plain_rel)).unwrap(), data);
+
+        let dropped = Staged::new(&root_str, "mp4", None).unwrap();
+        drop(dropped);
+        let stray: Vec<_> = fs::read_dir(root.join(ATTACHMENTS_DIR)).unwrap().filter(|e| e.as_ref().unwrap().file_name().to_string_lossy().ends_with(".tmp")).collect();
+        assert!(stray.is_empty());
         let _ = fs::remove_dir_all(&root);
     }
 

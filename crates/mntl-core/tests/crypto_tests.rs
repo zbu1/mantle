@@ -707,3 +707,19 @@ fn test_oversized_header_length_is_rejected_not_wrapped() {
     blob.extend_from_slice(b"{}");
     assert!(mntl_core::extract_encrypted_header(&blob).is_err());
 }
+
+#[test]
+fn test_stream_encryptor_accepts_any_split_of_the_payload() {
+    let mk = test_mk();
+    let plaintext: Vec<u8> = (0..100u8).collect();
+    for sizes in [vec![100], vec![1; 100], vec![16, 16, 68], vec![7, 40, 0, 53], vec![32, 32, 36]] {
+        let (mut enc, mut out) = mntl_core::StreamEncryptor::new(&mk, "p", 16).unwrap();
+        let mut at = 0;
+        for n in sizes {
+            enc.push(&plaintext[at..at + n], &mut out).unwrap();
+            at += n;
+        }
+        enc.finish(&mut out).unwrap();
+        assert_eq!(&decrypt_note(&mk, &out).unwrap()[..], &plaintext[..]);
+    }
+}
