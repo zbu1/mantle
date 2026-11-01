@@ -115,6 +115,23 @@ fn describe(world: &Snippet, diag: &SourceDiagnostic) -> String {
 /// may come from a synced vault) mustn't be able to hand it an enormous one.
 const MAX_CODE_LEN: usize = 100_000;
 
+const COMPILE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+const TIMEOUT_MSG: &str = "This snippet took too long to render";
+
+/// `work` on its own thread, given up on after `timeout`. Compiling can't
+/// be cancelled, so a runaway snippet keeps its thread (and memory) until the
+/// app exits; the lock lets it hold up only later renders, not pile up threads.
+// ponytail: memory is not capped; run compiles in a child process if that matters.
+fn run_within(work: impl FnOnce() -> TypstOutput + Send + 'static, timeout: std::time::Duration) -> TypstOutput {
+    static BUSY: Mutex<()> = Mutex::new(());
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _guard = BUSY.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = tx.send(work());
+    });
+    rx.recv_timeout(timeout).unwrap_or_else(|_| TypstOutput::Error { errors: vec![TIMEOUT_MSG.to_string()] })
+}
+
 #[tauri::command]
 pub async fn render_typst(code: String) -> Result<TypstOutput, String> {
     if code.len() > MAX_CODE_LEN {
@@ -126,7 +143,12 @@ pub async fn render_typst(code: String) -> Result<TypstOutput, String> {
     if let Some(hit) = cache.lock().unwrap().get(&key) {
         return Ok(hit.clone());
     }
-    let output = tauri::async_runtime::spawn_blocking(move || compile(&code)).await.map_err(|e| e.to_string())?;
+    let output = tauri::async_runtime::spawn_blocking(move || run_within(move || compile(&code), COMPILE_TIMEOUT))
+        .await
+        .map_err(|e| e.to_string())?;
+    if matches!(&output, TypstOutput::Error { errors } if errors[0] == TIMEOUT_MSG) {
+        return Ok(output);
+    }
     let mut cache = cache.lock().unwrap();
     // ponytail: drops the whole cache when full; LRU if notes with many snippets thrash it.
     if cache.len() >= CACHE_LIMIT {
@@ -150,6 +172,18 @@ mod tests {
     fn test_reports_errors_on_the_snippet_line() {
         let TypstOutput::Error { errors } = compile("ok\n#undefined_thing") else { panic!("expected an error") };
         assert!(errors[0].starts_with("Line 2:"), "{errors:?}");
+    }
+
+    #[test]
+    fn test_gives_up_on_a_slow_compile() {
+        let slow = || {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            TypstOutput::Svg { svg: String::new() }
+        };
+        let TypstOutput::Error { errors } = run_within(slow, std::time::Duration::from_millis(100)) else {
+            panic!("expected a timeout")
+        };
+        assert_eq!(errors[0], TIMEOUT_MSG);
     }
 
     #[test]

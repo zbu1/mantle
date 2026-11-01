@@ -269,14 +269,20 @@ pub(crate) fn seal_at(
     let path = resolve_rel_path(vault_root, &disk)?;
 
     let blob = mntl_core::encrypt_note_as(mk, profile_id, hiding.any(), encoded.as_bytes()).map_err(|e| e.to_string())?;
+    let previous = if replacing { fs::read(&path).ok() } else { None };
     write_atomic(&path, &blob)?;
     let verified = fs::read(&path)
         .ok()
         .and_then(|written| mntl_core::decrypt_note(mk, &written).ok())
         .is_some_and(|roundtrip| roundtrip.as_slice() == encoded.as_bytes());
     if !verified {
-        if !replacing {
-            let _ = fs::remove_file(&path);
+        match previous {
+            Some(old) => {
+                let _ = write_atomic(&path, &old);
+            }
+            None => {
+                let _ = fs::remove_file(&path);
+            }
         }
         return Err("The encrypted note failed verification".to_string());
     }
@@ -285,7 +291,11 @@ pub(crate) fn seal_at(
         if old_disk != disk {
             let old = resolve_rel_path(vault_root, old_disk)?;
             crate::watcher::suppress(&old);
-            fs::remove_file(&old).map_err(|e| format!("Failed to remove the old note file: {e}"))?;
+            if let Err(e) = fs::remove_file(&old) {
+                // Leave one copy, not two.
+                let _ = fs::remove_file(&path);
+                return Err(format!("Failed to remove the old note file: {e}"));
+            }
             if hiding.locations {
                 remove_emptied_dirs(vault_root, old_disk);
             }
@@ -350,23 +360,47 @@ pub(crate) fn hidden_inside(vault_root: &str, keys: &SessionKeys, rel_dir: &str)
 pub(crate) fn move_folder_tree(vault_root: &str, keys: &SessionKeys, from: &str, to: &str) -> Result<(), String> {
     check_components(to)?;
     let hidden = hidden_inside(vault_root, keys, from)?;
+    let mut renamed = None;
     if resolve_rel_dir(vault_root, "")?.join(from).exists() {
         let source = resolve_rel_path(vault_root, from)?;
         create_rel_dir(vault_root, to.rsplit_once('/').map_or("", |(dir, _)| dir))?;
         let dest = resolve_rel_path(vault_root, to)?;
         fs::rename(&source, &dest).map_err(|e| format!("Failed to move folder: {e}"))?;
+        renamed = Some((source, dest));
     } else if hidden.is_empty() {
         return Err(format!("\"{from}\" no longer exists"));
     }
     let moved = |path: &str| path.strip_prefix(from).map(|rest| format!("{to}{rest}"));
-    for (rel, mut note) in hidden {
+    // (old id, old entry, new id) of each note resealed so far, to undo on failure.
+    let mut done: Vec<(String, HiddenNote, String)> = Vec::new();
+    let result = hidden.into_iter().try_for_each(|(rel, original)| {
+        let mut note = original.clone();
         // A file that sat in the real folder moved with it.
         if let Some(disk) = note.disk.strip_prefix(&format!("{from}/")) {
             note.disk = format!("{to}/{disk}");
         }
         keys.put_hidden(vault_root, &rel, Some(note.clone()))?;
         let new_rel = moved(&rel).ok_or("Invalid hidden note path")?;
-        relocate(vault_root, keys, &rel, &note, &new_rel)?;
+        let relocated = relocate(vault_root, keys, &rel, &note, &new_rel);
+        if relocated.is_err() {
+            let _ = keys.put_hidden(vault_root, &rel, Some(original.clone()));
+        }
+        done.push((rel, original, new_rel));
+        relocated
+    });
+    if let Err(error) = result {
+        // Best effort: put every note and the folder back where they were.
+        for (rel, original, new_rel) in done.into_iter().rev() {
+            let mut current = keys.hidden_notes(vault_root).ok().and_then(|n| n.into_iter().find(|(r, _)| *r == new_rel));
+            if let Some((_, note)) = current.take() {
+                let _ = relocate(vault_root, keys, &new_rel, &note, &rel);
+            }
+            let _ = keys.put_hidden(vault_root, &rel, Some(original));
+        }
+        if let Some((source, dest)) = renamed {
+            let _ = fs::rename(dest, source);
+        }
+        return Err(error);
     }
     crate::history::follow(vault_root, from, to, crate::history::Scope::Keep, keys);
     Ok(())

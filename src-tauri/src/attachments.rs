@@ -22,7 +22,7 @@
 use crate::credentials::SessionKeys;
 use crate::logging::logged;
 use crate::vault::{
-    is_markdown_note, master_key_for, note_paths, read_header_prefix, read_note_inner, resolve_rel_dir,
+    is_markdown_note, master_key_for, note_paths, read_header_prefix, read_note_inner, NoteDocument, resolve_rel_dir,
     resolve_rel_path, write_atomic, EXT_ENCRYPTED, EXT_PLAIN, LOCKED_ERR_PREFIX,
 };
 use base64::engine::general_purpose::STANDARD as BASE64;
@@ -107,14 +107,15 @@ fn stored_ext(rel: &str, sealed: bool) -> String {
         .unwrap_or_default()
 }
 
-/// Write a file into `attachments/`, sealed under `seal` if given, and return
-/// its vault-relative path. `ext` may be empty, for a file without one.
-fn store(
-    vault_root: &str,
-    bytes: &[u8],
-    ext: &str,
-    seal: Option<(&str, &mntl_core::MasterKey)>,
-) -> Result<String, String> {
+/// Largest attachment accepted. Sealed ones are encrypted whole in memory.
+const MAX_ATTACHMENT_BYTES: u64 = 100 * 1024 * 1024;
+
+fn too_large() -> String {
+    format!("Attachments can be at most {} MB", MAX_ATTACHMENT_BYTES / 1024 / 1024)
+}
+
+/// The lowercased `ext`, its `.ext` form, and the existing `attachments/` folder.
+fn attachments_dir(vault_root: &str, ext: &str) -> Result<(String, String, std::path::PathBuf), String> {
     let ext = ext.to_ascii_lowercase();
     // Any type but a note's, which would turn the copy into a note.
     if !ext.chars().all(|c| c.is_ascii_alphanumeric()) || (!ext.is_empty() && is_note(&format!(".{ext}"))) {
@@ -125,6 +126,60 @@ fn store(
     fs::create_dir_all(root.join(ATTACHMENTS_DIR))
         .map_err(|e| format!("Failed to create the attachments folder: {e}"))?;
     let dir = resolve_rel_dir(vault_root, ATTACHMENTS_DIR)?;
+    Ok((ext, dot_ext, dir))
+}
+
+/// [`store`] for a plaintext file on disk: hashed and copied in chunks, never held whole.
+fn store_plain_file(vault_root: &str, source: &Path, ext: &str) -> Result<String, String> {
+    use std::io::Read;
+    let (_, dot_ext, dir) = attachments_dir(vault_root, ext)?;
+    let mut file = fs::File::open(source).map_err(|e| format!("Failed to read image: {e}"))?;
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; 64 * 1024];
+    let mut len = 0u64;
+    loop {
+        let n = file.read(&mut buf).map_err(|e| format!("Failed to read image: {e}"))?;
+        if n == 0 {
+            break;
+        }
+        len += n as u64;
+        if len > MAX_ATTACHMENT_BYTES {
+            return Err(too_large());
+        }
+        hasher.update(&buf[..n]);
+    }
+    let name = format!("{}{dot_ext}", hex(&hasher.finalize()[..16]));
+    let path = dir.join(&name);
+    if !path.exists() {
+        let tmp = dir.join(format!(".{name}.tmp"));
+        crate::watcher::suppress(&tmp);
+        crate::watcher::suppress(&path);
+        // Copy re-reads the file; a source that changed since hashing would be stored under the wrong name.
+        fs::copy(source, &tmp).map_err(|e| format!("Failed to save image: {e}"))?;
+        if fs::metadata(&tmp).map(|m| m.len()).ok() != Some(len) {
+            let _ = fs::remove_file(&tmp);
+            return Err("The file changed while it was being imported".to_string());
+        }
+        fs::rename(&tmp, &path).map_err(|e| {
+            let _ = fs::remove_file(&tmp);
+            format!("Failed to save image: {e}")
+        })?;
+    }
+    Ok(format!("{ATTACHMENTS_DIR}/{name}"))
+}
+
+/// Write a file into `attachments/`, sealed under `seal` if given, and return
+/// its vault-relative path. `ext` may be empty, for a file without one.
+fn store(
+    vault_root: &str,
+    bytes: &[u8],
+    ext: &str,
+    seal: Option<(&str, &mntl_core::MasterKey)>,
+) -> Result<String, String> {
+    if bytes.len() as u64 > MAX_ATTACHMENT_BYTES {
+        return Err(too_large());
+    }
+    let (ext, dot_ext, dir) = attachments_dir(vault_root, ext)?;
 
     let name = match seal {
         Some((profile_id, mk)) => {
@@ -539,6 +594,27 @@ fn referenced(vault_root: &str, note_rel: &str, content: &str, only: Option<&BTr
         .collect()
 }
 
+/// [`referenced`] by a whole note: its text plus any string in its properties,
+/// which may hold an attachment's path (a cover image, say).
+fn referenced_doc(vault_root: &str, note_rel: &str, doc: &NoteDocument, only: Option<&BTreeSet<String>>) -> HashSet<String> {
+    fn strings<'a>(value: &'a serde_json::Value, out: &mut Vec<&'a str>) {
+        match value {
+            serde_json::Value::String(s) => out.push(s),
+            serde_json::Value::Array(items) => items.iter().for_each(|v| strings(v, out)),
+            serde_json::Value::Object(map) => map.values().for_each(|v| strings(v, out)),
+            _ => {}
+        }
+    }
+    let mut used = referenced(vault_root, note_rel, &doc.content, only);
+    let mut values = Vec::new();
+    for property in doc.properties.iter().flatten() {
+        strings(&property.value, &mut values);
+    }
+    let in_properties = values.into_iter().filter_map(|src| resolve_attachment(vault_root, note_rel, src));
+    used.extend(in_properties.filter(|rel| only.is_none_or(|only| only.contains(rel))));
+    used
+}
+
 /// Which managed attachments could go along with some notes.
 #[derive(Serialize, Debug, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -577,7 +653,7 @@ fn unused_attachments_inner(
     for note in deleting {
         match read_note_inner(vault_root, note, keys) {
             Ok(doc) => found.extend(
-                referenced(vault_root, note, &doc.content, None).into_iter().filter(|rel| is_managed(rel)),
+                referenced_doc(vault_root, note, &doc, None).into_iter().filter(|rel| is_managed(rel)),
             ),
             Err(_) => unchecked.push(note.clone()),
         }
@@ -611,7 +687,7 @@ pub(crate) fn unreferenced(
         }
         match read_note_inner(vault_root, &note, keys) {
             Ok(doc) => {
-                let used = referenced(vault_root, &note, &doc.content, Some(&found));
+                let used = referenced_doc(vault_root, &note, &doc, Some(&found));
                 found.retain(|rel| !used.contains(rel));
             }
             Err(e) => {
@@ -627,7 +703,10 @@ pub(crate) fn unreferenced(
                     match raw {
                         Some(raw) => {
                             let used = referenced(vault_root, &note, &raw, Some(&found));
-                            found.retain(|rel| !used.contains(rel));
+                            // Its frontmatter is unparsed, so any mention of the file name counts.
+                            found.retain(|rel| {
+                                !used.contains(rel) && !rel.rsplit('/').next().is_some_and(|name| raw.contains(name))
+                            });
                         }
                         None => found.clear(),
                     }
@@ -705,6 +784,9 @@ pub fn save_attachment(
     keys: State<SessionKeys>,
 ) -> Result<String, String> {
     logged("save_attachment", || {
+        if data.len() as u64 / 4 * 3 > MAX_ATTACHMENT_BYTES {
+            return Err(too_large());
+        }
         let bytes = Zeroizing::new(BASE64.decode(data).map_err(|_| "Invalid image data".to_string())?);
         save_for_note(&vault_root, &note_rel_path, &bytes, &ext, &keys)
     })
@@ -721,6 +803,13 @@ pub fn import_attachment(
 ) -> Result<String, String> {
     logged("import_attachment", || {
         let (ext, _) = image_ext(&source_path).ok_or("Not a supported image, video or PDF file")?;
+        if !note_rel_path.ends_with(EXT_ENCRYPTED) {
+            return store_plain_file(&vault_root, Path::new(&source_path), &ext);
+        }
+        let size = fs::metadata(&source_path).map_err(|e| format!("Failed to read image: {e}"))?.len();
+        if size > MAX_ATTACHMENT_BYTES {
+            return Err(too_large());
+        }
         let bytes = Zeroizing::new(fs::read(&source_path).map_err(|e| format!("Failed to read image: {e}"))?);
         save_for_note(&vault_root, &note_rel_path, &bytes, &ext, &keys)
     })
@@ -1066,6 +1155,34 @@ mod tests {
         assert!(delete_attachments_inner(&root_str, &["a.mntl".into()]).is_err());
         delete_attachments_inner(&root_str, &[shared.clone()]).unwrap();
         assert!(!root.join(&shared).exists());
+    }
+
+    #[test]
+    fn unused_attachments_keeps_what_a_property_names() {
+        let root = temp_dir("unused-property");
+        let root_str = root.to_string_lossy().into_owned();
+        let cover = store(&root_str, PNG, "png", None).unwrap();
+        write_plain(&root, "a.mntl", "no images");
+        fs::write(root.join("b.md"), format!("---
+cover: {cover}
+---
+text")).unwrap();
+        let found = unused_attachments_inner(&root_str, &["a.mntl".into()], &[cover.clone()], &SessionKeys::default()).unwrap();
+        assert!(found.paths.is_empty(), "b.md's cover property uses it");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn imports_stream_plaintext_and_refuse_oversize() {
+        let root = temp_dir("import");
+        let root_str = root.to_string_lossy().into_owned();
+        let src = root.join("pic.png");
+        fs::write(&src, PNG).unwrap();
+        let rel = store_plain_file(&root_str, &src, "png").unwrap();
+        assert_eq!(rel, store(&root_str, PNG, "png", None).unwrap(), "same hash name as the in-memory path");
+        assert_eq!(fs::read(root.join(&rel)).unwrap(), PNG);
+        assert!(store(&root_str, &vec![0; MAX_ATTACHMENT_BYTES as usize + 1], "png", None).is_err());
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

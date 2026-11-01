@@ -53,14 +53,18 @@ pub fn spelling_suggestions(app: AppHandle, word: String) -> Result<Option<Vec<S
     Ok(Some(out))
 }
 
+/// With `session_only` the word is not saved, for one typed in an encrypted note.
 #[tauri::command]
-pub fn add_to_dictionary(app: AppHandle, word: String) -> Result<(), String> {
+pub fn add_to_dictionary(app: AppHandle, word: String, session_only: bool) -> Result<(), String> {
     let word = word.trim();
     if word.is_empty() || word.contains(['\n', '\r', '/']) {
         return Err("Not a word".into());
     }
     let mut s = speller(&app)?.lock().map_err(|e| e.to_string())?;
     s.dict.add(word).map_err(|e| e.to_string())?;
+    if session_only {
+        return Ok(());
+    }
     if let Some(dir) = s.words_file.parent() {
         fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }

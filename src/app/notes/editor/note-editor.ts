@@ -554,7 +554,7 @@ export class NoteEditor {
 
   /** Right-click on text: the clipboard, formatting, block types and inserts. */
   private async openTextMenu(event: MouseEvent, view: EditorView): Promise<void> {
-    const spelling = this.spellcheck.enabled() ? await spellingItems(view, event) : [];
+    const spelling = this.spellcheck.enabled() ? await spellingItems(view, event, this.noteId().endsWith('.enc')) : [];
     const hasSelection = !view.state.selection.empty;
     const inTable = isInTable(view.state);
     const run = (command: 'cut' | 'copy' | 'paste' | 'selectAll') => () => this.editContext.run(command);
@@ -782,8 +782,11 @@ export class NoteEditor {
   }
 }
 
-/** Fixes for the misspelled word under `event`, for the top of its menu. */
-async function spellingItems(view: EditorView, event: MouseEvent): Promise<ContextMenuItem[]> {
+/**
+ * Fixes for the misspelled word under `event`, for the top of its menu. In an
+ * encrypted note an added word lasts only the session: the list is plaintext.
+ */
+async function spellingItems(view: EditorView, event: MouseEvent, sessionOnly: boolean): Promise<ContextMenuItem[]> {
   const word = wordAt(view, event);
   if (!word) return [];
   const suggestions = await invoke<string[] | null>('spelling_suggestions', { word: word.text }).catch(() => null);
@@ -804,7 +807,7 @@ async function spellingItems(view: EditorView, event: MouseEvent): Promise<Conte
     kind: 'item',
     label: 'Add to Dictionary',
     action: () => {
-      void invoke('add_to_dictionary', { word: word.text }).then(() => {
+      void invoke('add_to_dictionary', { word: word.text, sessionOnly }).then(() => {
         forgetMisspelling(word.text);
         view.dispatch(view.state.tr.setMeta(spellcheckKey, true).setMeta('addToHistory', false));
       });
