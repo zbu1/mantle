@@ -1,11 +1,12 @@
-<div #toolbar class="relative mb-2 flex items-center gap-0.5">
+<div #toolbar class="relative mb-2 flex items-center gap-0.5 mobile:flex-wrap">
   <button type="button" title="New Note (Ctrl+N)" aria-label="New Note" [disabled]="!hasVault()" (click)="onNewNote()"
     class="inline-flex size-7 mobile:hidden shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary transition-colors hover:bg-primary hover:text-primary-foreground disabled:pointer-events-none disabled:opacity-40">
     <svg lucidePlus [size]="15"></svg>
   </button>
   <button type="button" title="New Folder" aria-label="New Folder" [disabled]="!hasVault()" (click)="onNewFolder()"
-    class="inline-flex size-7 mobile:size-10 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-background/60 hover:text-foreground disabled:pointer-events-none disabled:opacity-40">
+    class="inline-flex size-7 mobile:size-auto mobile:h-10 mobile:gap-1 mobile:px-2 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-background/60 hover:text-foreground disabled:pointer-events-none disabled:opacity-40">
     <svg lucideFolderPlus [size]="15"></svg>
+    <span class="hidden text-xs mobile:inline">Folder</span>
   </button>
 
   <button type="button" title="Sort" aria-label="Sort" [disabled]="!hasVault()" (click)="toggleMenu('sort')"
@@ -13,18 +14,20 @@
     class="inline-flex h-7 mobile:h-10 shrink-0 items-center gap-0.5 rounded-md pl-1.5 pr-1 text-muted-foreground hover:bg-background/60 hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
     [class.bg-background/60]="openMenu() === 'sort'" [class.text-foreground]="openMenu() === 'sort'">
     <svg lucideArrowDownAZ [size]="15"></svg>
+    <span class="hidden text-xs mobile:inline">Sort</span>
     <svg lucideChevronDown [size]="10"></svg>
   </button>
 
   <button type="button" [title]="anyFolderExpanded() ? 'Collapse All Folders' : 'Expand All Folders'"
     [attr.aria-label]="anyFolderExpanded() ? 'Collapse All Folders' : 'Expand All Folders'" [disabled]="!hasVault()"
     (click)="toggleAllFolders()"
-    class="inline-flex size-7 mobile:size-10 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-background/60 hover:text-foreground disabled:pointer-events-none disabled:opacity-40">
+    class="inline-flex size-7 mobile:size-auto mobile:h-10 mobile:gap-1 mobile:px-2 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-background/60 hover:text-foreground disabled:pointer-events-none disabled:opacity-40">
     @if (anyFolderExpanded()) {
     <svg lucideFoldVertical [size]="15"></svg>
     } @else {
     <svg lucideUnfoldVertical [size]="15"></svg>
     }
+    <span class="hidden text-xs mobile:inline">{{ anyFolderExpanded() ? 'Collapse' : 'Expand' }}</span>
   </button>
 
   <button type="button" title="Display Options" aria-label="Display Options" (click)="toggleMenu('display')"
@@ -32,6 +35,7 @@
     class="inline-flex h-7 mobile:h-10 shrink-0 items-center gap-0.5 rounded-md pl-1.5 pr-1 text-muted-foreground hover:bg-background/60 hover:text-foreground"
     [class.bg-background/60]="openMenu() === 'display'" [class.text-foreground]="openMenu() === 'display'">
     <svg lucideEye [size]="15"></svg>
+    <span class="hidden text-xs mobile:inline">View</span>
     <svg lucideChevronDown [size]="10"></svg>
   </button>
 

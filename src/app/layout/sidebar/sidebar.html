@@ -6,8 +6,9 @@
   @if (shown()) {
   <app-vault-header [(filter)]="filterQuery" (newNote)="onNewNote()" (newFolder)="onNewFolder()" />
 
-  <!-- The vault tree: the sidebar's body, always open, taking whatever height the sections below leave. -->
-  <div class="scrollbar-thin mr-1 flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain rounded-md px-1.5 py-1.5"
+  <!-- Desktop: the tree scrolls on its own above capped sections. Mobile: the wrapper scrolls tree and sections as one. -->
+  <div class="contents mobile:scrollbar-thin mobile:flex mobile:min-h-0 mobile:flex-1 mobile:flex-col mobile:overflow-y-auto mobile:overscroll-contain">
+  <div class="scrollbar-thin mr-1 flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain rounded-md px-1.5 py-1.5 mobile:flex-none mobile:overflow-visible"
     data-vault-tree [class.bg-primary/10]="dragState.hoveredDir() === ''"
     (dragenter)="onVaultBackgroundDragOver($event)" (dragover)="onVaultBackgroundDragOver($event)"
     (dragleave)="onVaultBackgroundDragLeave($event)" (drop)="onVaultBackgroundDrop($event)"
@@ -48,7 +49,7 @@
 
   <!-- Secondary sections: quieter, capped so the tree always keeps most of the height. -->
   @if (anySectionVisible()) {
-  <div class="scrollbar-thin mr-1 flex max-h-[40%] shrink-0 flex-col overflow-y-auto overscroll-contain border-t border-border px-1.5 py-1">
+  <div class="scrollbar-thin mr-1 flex max-h-[40%] shrink-0 flex-col overflow-y-auto overscroll-contain border-t mobile:max-h-none mobile:overflow-visible border-border px-1.5 py-1">
     @if (state.isSectionVisible('outline')) {
     <app-sidebar-section id="outline" label="Outline" [count]="outline.headings().length">
       @for (heading of outline.headings(); track $index) {
@@ -135,6 +136,28 @@
     @if (state.isSectionVisible('credentials')) {
     <app-credentials-section (openNote)="onOpenNote($event)" (noteContextMenu)="onNoteContextMenu($event)" />
     }
+  </div>
+  }
+  </div>
+  @if (selectionState.selectMode()) {
+  <div class="flex h-14 shrink-0 items-center gap-1 border-t border-border px-1.5">
+    <button type="button" aria-label="Exit selection" (click)="selectionState.exitSelectMode()"
+      class="inline-flex size-10 items-center justify-center rounded-lg text-muted-foreground active:bg-accent">
+      <svg lucideX [size]="18"></svg>
+    </button>
+    <span class="flex-1 text-sm font-medium tabular-nums">{{ selectedCount() }} selected</span>
+    <button type="button" aria-label="Move" [disabled]="selectedCount() === 0" (click)="bulkMove()"
+      class="inline-flex size-10 items-center justify-center rounded-lg active:bg-accent disabled:opacity-40">
+      <svg lucideFolderInput [size]="18"></svg>
+    </button>
+    <button type="button" aria-label="Favorite" [disabled]="!selectionAllNotes()" (click)="bulkFavorite()"
+      class="inline-flex size-10 items-center justify-center rounded-lg active:bg-accent disabled:opacity-40">
+      <svg lucideStar [size]="18"></svg>
+    </button>
+    <button type="button" aria-label="Delete" [disabled]="selectedCount() === 0" (click)="bulkDelete()"
+      class="inline-flex size-10 items-center justify-center rounded-lg text-destructive active:bg-accent disabled:opacity-40">
+      <svg lucideTrash2 [size]="18"></svg>
+    </button>
   </div>
   }
   }
