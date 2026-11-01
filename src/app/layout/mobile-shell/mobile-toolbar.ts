@@ -19,7 +19,8 @@ import {
   LucideRedo2,
   LucideSearch,
   LucideSquarePen,
-  LucideSquareSlash,
+  LucidePlus,
+  LucidePaperclip,
   LucideStrikethrough,
   LucideTextQuote,
   LucideUndo2,
@@ -48,12 +49,14 @@ import {
   toggleOrderedList,
   toggleTaskList,
 } from '../../notes/editor/prosemirror/editor-commands';
+import { pickImage } from '../../notes/editor/prosemirror/plugins/image-plugin';
 import { indentListItems } from '../../notes/editor/prosemirror/commands/indent-list-items';
 
 type Tool =
   | 'undo'
   | 'redo'
   | 'block'
+  | 'attach'
   | 'heading'
   | 'bold'
   | 'italic'
@@ -69,21 +72,22 @@ type Tool =
   | 'outdent';
 
 const TOOLS: readonly { id: Tool; label: string }[] = [
-  { id: 'undo', label: 'Undo' },
-  { id: 'redo', label: 'Redo' },
-  { id: 'block', label: 'Insert Block' },
-  { id: 'heading', label: 'Heading' },
   { id: 'bold', label: 'Bold' },
   { id: 'italic', label: 'Italic' },
+  { id: 'bullet', label: 'Bulleted List' },
+  { id: 'task', label: 'Task List' },
+  { id: 'heading', label: 'Heading' },
+  { id: 'block', label: 'Insert Block' },
+  { id: 'attach', label: 'Attach File' },
+  { id: 'undo', label: 'Undo' },
+  { id: 'redo', label: 'Redo' },
+  { id: 'indent', label: 'Indent' },
   { id: 'strike', label: 'Strikethrough' },
   { id: 'highlight', label: 'Highlight' },
   { id: 'code', label: 'Inline Code' },
   { id: 'link', label: 'Link to Note' },
-  { id: 'bullet', label: 'Bulleted List' },
   { id: 'ordered', label: 'Numbered List' },
-  { id: 'task', label: 'Task List' },
   { id: 'quote', label: 'Quote' },
-  { id: 'indent', label: 'Indent' },
   { id: 'outdent', label: 'Outdent' },
 ];
 
@@ -116,7 +120,8 @@ function cycleHeading(view: EditorView): void {
     LucideSquarePen,
     LucideUndo2,
     LucideRedo2,
-    LucideSquareSlash,
+    LucidePlus,
+    LucidePaperclip,
     LucideHeading,
     LucideBold,
     LucideItalic,
@@ -135,14 +140,20 @@ function cycleHeading(view: EditorView): void {
   host: { class: 'frame flex h-12 shrink-0 items-stretch' },
   template: `
     @if (editing()) {
-      <div role="toolbar" aria-label="Formatting" class="flex min-w-0 flex-1 items-stretch overflow-x-auto px-1 [scrollbar-width:none]">
+      <button type="button" aria-label="Hide Keyboard" (pointerdown)="$event.preventDefault()" (click)="stopEditing()"
+        class="inline-flex w-12 shrink-0 items-center justify-center border-r border-border text-primary active:bg-accent">
+        <svg lucideKeyboardOff [size]="19"></svg>
+      </button>
+      <div role="toolbar" aria-label="Formatting" class="flex min-w-0 flex-1 items-stretch overflow-x-auto px-1 [mask-image:linear-gradient(to_right,black_calc(100%-1.5rem),transparent)] [scrollbar-width:none]">
         @for (tool of tools; track tool.id) {
-          <button type="button" [attr.aria-label]="tool.label" [disabled]="!enabled(tool.id)" (pointerdown)="$event.preventDefault()" (click)="run(tool.id)"
-            class="inline-flex w-11 shrink-0 items-center justify-center rounded-lg text-foreground/80 active:bg-accent disabled:text-muted-foreground/40">
+          <button type="button" [attr.aria-label]="tool.label" [disabled]="!enabled(tool.id)" [attr.aria-pressed]="pressed(tool.id)" (pointerdown)="$event.preventDefault()" (click)="run(tool.id)"
+            [class]="pressed(tool.id) ? 'text-primary' : 'text-foreground/80'"
+            class="inline-flex w-11 shrink-0 items-center justify-center rounded-lg active:bg-accent disabled:text-muted-foreground/40">
             @switch (tool.id) {
               @case ('undo') { <svg lucideUndo2 [size]="19"></svg> }
               @case ('redo') { <svg lucideRedo2 [size]="19"></svg> }
-              @case ('block') { <svg lucideSquareSlash [size]="19"></svg> }
+              @case ('block') { <svg lucidePlus [size]="19"></svg> }
+              @case ('attach') { <svg lucidePaperclip [size]="19"></svg> }
               @case ('heading') { <svg lucideHeading [size]="19"></svg> }
               @case ('bold') { <svg lucideBold [size]="19"></svg> }
               @case ('italic') { <svg lucideItalic [size]="19"></svg> }
@@ -160,10 +171,6 @@ function cycleHeading(view: EditorView): void {
           </button>
         }
       </div>
-      <button type="button" aria-label="Hide Keyboard" (pointerdown)="$event.preventDefault()" (click)="stopEditing()"
-        class="inline-flex w-12 shrink-0 items-center justify-center border-l border-border text-primary active:bg-accent">
-        <svg lucideKeyboardOff [size]="19"></svg>
-      </button>
     } @else {
       <nav aria-label="Navigation" class="grid flex-1 grid-cols-5">
         <button type="button" aria-label="Vault" (click)="sidebarState.setCollapsed(false)" [class]="navButton">
@@ -227,6 +234,34 @@ export class MobileToolbar {
     return (tool !== 'undo' && tool !== 'redo') || this.editContext.canRun(tool);
   }
 
+  /** Whether the selection is inside `tool`'s format; null for tools that aren't toggles. */
+  protected pressed(tool: Tool): boolean | null {
+    this.editContext.transactions();
+    const view = this.editContext.editorView;
+    if (!view) return null;
+    const { state } = view;
+    const { $from, from, to, empty } = state.selection;
+    const inside = (...types: string[]) => {
+      for (let d = $from.depth; d > 0; d--) if (types.includes($from.node(d).type.name)) return true;
+      return false;
+    };
+    const marked = (name: string) =>
+      empty ? !!schema.marks[name].isInSet(state.storedMarks ?? $from.marks()) : state.doc.rangeHasMark(from, to, schema.marks[name]);
+    switch (tool) {
+      case 'bold': return marked('strong');
+      case 'italic': return marked('em');
+      case 'strike': return marked('strike');
+      case 'highlight': return marked('highlight');
+      case 'code': return marked('code');
+      case 'bullet': return inside('bullet_list');
+      case 'ordered': return inside('ordered_list');
+      case 'task': return inside('task_list');
+      case 'quote': return inside('blockquote');
+      case 'heading': return $from.parent.type === schema.nodes['heading'];
+      default: return null;
+    }
+  }
+
   protected run(tool: Tool): void {
     const view = this.editContext.editorView;
     if (!view) return;
@@ -234,6 +269,7 @@ export class MobileToolbar {
       case 'undo': return void executeCommand(view, undo);
       case 'redo': return void executeCommand(view, redo);
       case 'block': return typeTrigger(view, '/');
+      case 'attach': return void pickImage(view);
       case 'heading': return cycleHeading(view);
       case 'bold': return formatSelection(view, 'strong', '**');
       case 'italic': return formatSelection(view, 'em', '*');
