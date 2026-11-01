@@ -13,18 +13,12 @@
 //!                          content key (CEK) ──► XChaCha20-Poly1305(note)
 //! ```
 //!
-//! The KEK is never stored. The MK is stored wrapped by the KEK, once per
-//! profile, outside this crate (Mantle keeps it in `.mantle/profiles.json`).
-//! Each note stores its own CEK wrapped by the MK, in its envelope header.
+//! The KEK is never stored; the MK is stored wrapped by it (outside this
+//! crate); each note's header holds its CEK wrapped by the MK. So a password
+//! change just rewraps the MK and no note is rewritten.
 //!
-//! The indirection is what makes a password change cheap: re-derive the KEK
-//! from the new password and rewrap the same MK. Every note's wrapped CEK
-//! stays valid, so no note is rewritten.
-//!
-//! Neither key type implements `Serialize`, `Display`, or a derived `Debug` —
-//! their `Debug` impls are written by hand to print a redacted placeholder,
-//! because Mantle writes command errors verbatim to an on-disk log and a
-//! stray `{:?}` must be structurally incapable of leaking key material.
+//! The key types have no `Serialize`/`Display`, and a hand-written redacting
+//! `Debug`, so a stray `{:?}` can't leak a key into the on-disk log.
 
 use aes_kw::KekAes256;
 use base64::engine::general_purpose::STANDARD as BASE64;

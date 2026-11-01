@@ -65,19 +65,13 @@ export function zoomImage(url: string, caption: string): void {
 
 /**
  * Renders an image node, loading a vault image through the `mantle://`
- * protocol rather than its Markdown `src` — as a player, for a video, and as a
- * scrollable frame of its pages, for a PDF. A
- * missing image, or one whose profile is locked, shows the browser's own
- * broken-image box with its alt text.
+ * protocol rather than its Markdown `src`; a video becomes a player and a PDF
+ * a scrollable frame. A missing or locked one shows the broken-image box.
  *
- * On hover, buttons in its corner show its Markdown source and zoom it. A
- * click selects it; a second click zooms it. Right-clicking opens its
- * context menu.
- *
- * A selected one has resize handles (not on Android, where its context menu's
- * sizes stand in): the corner keeps an image's or video's shape and saves just
- * a width, the edges stretch it and save `WxH`. A PDF has no shape to keep, so
- * the corner saves both, and the bottom edge just a height unless it has a width.
+ * A selected one has resize handles (not on Android, where the context menu's
+ * sizes stand in): the corner keeps an image's or video's shape and saves a
+ * width, the edges save `WxH`. A PDF has no shape to keep, so its corner saves
+ * both and its bottom edge a height unless it has a width.
  */
 export class ImageView implements NodeView {
   readonly dom: HTMLElement;

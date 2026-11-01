@@ -88,15 +88,10 @@ pub struct CryptoMeta {
 ///
 /// # Why this struct stays minimal
 ///
-/// Because the header *is* the AAD, a field can never be added to an existing
-/// note's header without re-encrypting its body. So the header carries only
-/// what is needed to *find the key* — which profile, which wrapped content
-/// key, which nonce — and nothing that changes over a note's lifetime.
-///
-/// Everything else about a note (its title, tags, timestamps) belongs in the
-/// [`NoteFrontmatter`] of the plaintext document, which is sealed *inside* the
-/// ciphertext. That is what keeps the note format free to evolve: adding a
-/// field there is invisible to the envelope and costs no re-encryption.
+/// The header is the AAD, so a field can't be added to an existing note
+/// without re-encrypting it. It holds only what finds the key (profile,
+/// wrapped content key, nonce); everything else goes in the sealed
+/// [`NoteFrontmatter`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EncryptedHeader {
     /// Envelope format version; must equal [`ENVELOPE_VERSION`] to decrypt.
@@ -134,22 +129,8 @@ impl EncryptedHeader {
 
 /// The YAML frontmatter header of a plain `.mntl` note.
 ///
-/// A `.mntl` file is a plain UTF-8 Markdown document with this header
-/// rendered as a YAML frontmatter block at the top, e.g.:
-///
-/// ```text
-/// ---
-/// v: 2
-/// tags:
-/// - reference
-/// ---
-/// # My note
-///
-/// Body content in Markdown.
-/// ```
-///
-/// Unlike [`EncryptedHeader`], there is no `credential_profile` here: a
-/// plaintext note isn't encrypted under any credential.
+/// Rendered as YAML at the top of a `.mntl` file. Unlike [`EncryptedHeader`],
+/// it has no `credential_profile`.
 ///
 /// Adding an optional field here needs no [`NOTE_VERSION`] bump: a reader that
 /// doesn't know the field ignores it (serde skips unknown keys), and a note

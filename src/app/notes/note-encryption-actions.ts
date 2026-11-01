@@ -43,17 +43,12 @@ export const CONVERT_HELP =
 const stemOf = (relPath: string) => fileNameOf(relPath).replace(/\.(md|markdown)$/, '');
 
 /**
- * Encrypting, decrypting and re-homing individual notes, converting plain
- * Markdown files into Mantle notes, plus the context-menu entries that trigger
- * them.
+ * Encrypting, decrypting and re-homing notes, converting Markdown files into
+ * Mantle notes, and the menu entries that trigger them. Shared by the sidebar
+ * menu and the editor toolbar.
  *
- * Shared by the sidebar's note menu and the editor toolbar's encryption
- * button, which offer the same actions.
- *
- * The menu offers a single entry — "Encrypt…" or "Change Encryption…" — that
- * opens `NoteEncryptionModal`, where the profile (or removing encryption) is
- * chosen. That keeps the menu the same size however many profiles the vault
- * has, and gives unlocking or creating a profile somewhere to happen.
+ * The menu has one entry that opens `NoteEncryptionModal`, so it stays the same
+ * size however many profiles exist and unlocking or creating one has a place.
  */
 @Injectable({ providedIn: 'root' })
 export class NoteEncryptionActions {

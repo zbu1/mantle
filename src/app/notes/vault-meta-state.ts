@@ -79,17 +79,14 @@ function normalizeMeta(raw: unknown): VaultMeta {
 }
 
 /**
- * The open vault's persisted metadata (`.mantle/state.json`) — for now the
- * recently-opened note list and favorites are wired to the UI.
+ * The open vault's persisted metadata (`.mantle/state.json`).
  *
- * Favorites deliberately outlive their note disappearing from a scan: a file
- * that vanishes outside the app (e.g. mid-sync) keeps its entry, hidden, so it
- * comes back if the file does. Only an in-app delete (`forgetNote`) drops it.
+ * Favorites outlive their note vanishing from a scan (e.g. mid-sync), hidden,
+ * so they return with the file. Only an in-app delete (`forgetNote`) drops one.
  *
- * Deliberately independent of `VaultState` (which drives it via `load`/`unload`)
- * so the two services don't depend on each other. Until a load succeeds every
- * mutation is a no-op: saving would otherwise overwrite an existing file that
- * merely failed to parse with a set of defaults.
+ * Independent of `VaultState`, which drives it via `load`/`unload`. Until a
+ * load succeeds every mutation is a no-op, so a file that merely failed to
+ * parse isn't overwritten with defaults.
  */
 @Injectable({ providedIn: 'root' })
 export class VaultMetaState {

@@ -3,11 +3,8 @@
 //!
 //! This crate handles two note formats:
 //!
-//! - **`.mntl` (unencrypted)**: a plain UTF-8 Markdown file with a YAML
-//!   frontmatter header ([`NoteFrontmatter`]) at the top, exactly like a
-//!   standard Jekyll/Hugo-style note. It is human-readable and editable in
-//!   any text editor, and diffs cleanly in version control
-//!   ([`encode_unencrypted_note`] / [`decode_unencrypted_note`]).
+//! - **`.mntl` (unencrypted)**: Markdown with a YAML frontmatter header
+//!   ([`NoteFrontmatter`]) ([`encode_unencrypted_note`] / [`decode_unencrypted_note`]).
 //! - **`.mntl.enc` (encrypted)**: a zero-knowledge encrypted binary envelope.
 //!   A user password is stretched into a 256-bit Key Encryption Key (KEK)
 //!   with Argon2id ([`derive_kek_with_params`]), which wraps a per-profile [`MasterKey`].
@@ -18,17 +15,6 @@
 //!   [`EncryptedHeader`], and the ciphertext. The header is passed to the
 //!   cipher as associated data (AAD), so any tampering with it invalidates
 //!   decryption. See the [`keys`] module for the full key hierarchy.
-//!
-//! # `.mntl` frontmatter format
-//!
-//! ```text
-//! ---
-//! v: 2
-//! ---
-//! # My note
-//!
-//! Body content in Markdown.
-//! ```
 //!
 //! # `.mntl.enc` envelope layout
 //!
@@ -65,19 +51,6 @@
 //! let plaintext = decrypt_note(&master_key, &blob)?;
 //!
 //! assert_eq!(&plaintext[..], b"secret note contents");
-//! # Ok::<(), mntl_core::MntlError>(())
-//! ```
-//!
-//! Encoding and decoding an unencrypted note:
-//!
-//! ```
-//! use mntl_core::{encode_unencrypted_note, decode_unencrypted_note};
-//!
-//! let file = encode_unencrypted_note("# Grocery list\n\n- Milk\n- Eggs")?;
-//! assert!(file.starts_with("---\nv: 2\n---\n"));
-//!
-//! let content = decode_unencrypted_note(&file)?;
-//! assert_eq!(content, "# Grocery list\n\n- Milk\n- Eggs");
 //! # Ok::<(), mntl_core::MntlError>(())
 //! ```
 

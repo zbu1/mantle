@@ -63,20 +63,12 @@ interface ResizeSession {
 }
 
 /**
- * A floating, non-modal window: drag it by its title bar, resize it from any
- * edge or corner, minimize it to a chip docked in the bottom-right corner (unless
- * `minimizable` is off), maximize it to fill the app below its own title bar
- * (double-clicking the title bar does the same), or close it. Escape closes it
- * while focus is inside.
+ * A floating, non-modal window: draggable, resizable, minimizable to a chip
+ * (unless `minimizable` is off), maximizable, closable with Escape.
  *
- * Project the window's content as plain children and an optional icon with the
- * `windowIcon` attribute. Open/minimized/maximized state lives in a
- * `WindowModel`; position and size are kept here and outlive closing, so the
- * window reopens where you left it. Project the body under an `@if (state.isOpen())`
- * of your own, so it isn't kept alive while the window is closed.
- *
- * Styled like the app around it: the title bar sits on the grained `frame` like
- * the header, and its controls copy the header's.
+ * Open/minimized/maximized state lives in a `WindowModel`; position and size
+ * live here and outlive closing. Project the body under your own
+ * `@if (state.isOpen())` so it isn't kept alive while closed.
  */
 @Component({
   selector: 'app-window',
