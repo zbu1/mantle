@@ -32,7 +32,11 @@ const OVERLAY = '[role="dialog"], [role="menu"]:not(.invisible)';
   selector: 'app-mobile-shell',
   imports: [ContentArea, Sidebar, VaultMenu, Welcome, MobileToolbar, LucideFolderLock, LucideSettings, LucideCommand, LucideX, LucidePlus],
   templateUrl: './mobile-shell.html',
-  host: { class: 'flex min-h-0 flex-1 flex-col' },
+  host: {
+    class: 'flex min-h-0 flex-1 flex-col',
+    '(touchstart)': 'swipeStart($event)',
+    '(touchend)': 'swipeEnd($event)',
+  },
 })
 export class MobileShell {
   protected readonly vaultRoot = inject(VaultRootState);
@@ -70,6 +74,20 @@ export class MobileShell {
 
   protected requestFilesAccess(): void {
     androidBridge()?.requestFilesAccess();
+  }
+
+  private edgeSwipe: Touch | null = null;
+
+  /** A swipe in from the left screen edge opens the drawer. */
+  protected swipeStart(event: TouchEvent): void {
+    const touch = event.touches[0];
+    this.edgeSwipe = event.touches.length === 1 && touch.clientX < 24 ? touch : null;
+  }
+
+  protected swipeEnd(event: TouchEvent): void {
+    const touch = event.changedTouches[0];
+    if (this.edgeSwipe && touch.clientX - this.edgeSwipe.clientX > 60 && Math.abs(touch.clientY - this.edgeSwipe.clientY) < 40) this.openDrawer();
+    this.edgeSwipe = null;
   }
 
   protected openDrawer(): void {

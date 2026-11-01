@@ -53,7 +53,7 @@
     @if (!activeIsFile() && !lockedProfileId()) {
     <button type="button" [title]="sourceMode() ? 'Show formatted note' : 'Show Markdown source'" [attr.aria-pressed]="sourceMode()"
       (click)="tabsState.toggleSource(tab.id)" [class.text-primary]="sourceMode()" [class.text-muted-foreground]="!sourceMode()"
-      class="inline-flex h-7 w-7 mobile:size-10 mobile:rounded-lg shrink-0 items-center justify-center rounded hover:bg-surface hover:text-foreground">
+      class="inline-flex h-7 w-7 mobile:hidden shrink-0 items-center justify-center rounded hover:bg-surface hover:text-foreground">
       <svg lucideCodeXml [size]="15"></svg>
     </button>
     }
@@ -65,7 +65,7 @@
     <button type="button" [title]="(activeIsFavorite() ? 'Remove from Favorites' : 'Add to Favorites') + ' (Ctrl+Shift+B)'"
       [attr.aria-pressed]="activeIsFavorite()" (click)="toggleActiveFavorite()"
       [class.text-primary]="activeIsFavorite()" [class.text-muted-foreground]="!activeIsFavorite()"
-      class="inline-flex h-7 w-7 mobile:size-10 mobile:rounded-lg shrink-0 items-center justify-center rounded hover:bg-surface hover:text-foreground">
+      class="inline-flex h-7 w-7 mobile:hidden shrink-0 items-center justify-center rounded hover:bg-surface hover:text-foreground">
       <svg lucideStar [size]="15" [class.fill-current]="activeIsFavorite()"></svg>
     </button>
     }

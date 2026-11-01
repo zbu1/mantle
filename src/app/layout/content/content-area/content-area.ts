@@ -1,4 +1,4 @@
-import { Component, ElementRef, HostListener, computed, effect, inject, input, signal, viewChild } from '@angular/core';
+import { Component, ElementRef, HostListener, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
 import { VaultActions } from '../../../notes/vault-actions';
 import {
   LucideArrowLeft,
@@ -42,6 +42,7 @@ import { MarkdownNoticeState } from '../../../notes/markdown-notice-state';
 import { SidebarState } from '../../sidebar/sidebar-state';
 import { CONVERT_HELP, NoteEncryptionActions } from '../../../notes/note-encryption-actions';
 import { TabMenu } from '../../../notes/tab-menu';
+import { FindRequestState } from '../../../notes/find-request-state';
 import { EmptyTab } from '../../../notes/empty-tab/empty-tab';
 import { isMobile } from '../../../core/tauri-env';
 
@@ -239,6 +240,16 @@ export class ContentArea {
   }
 
   constructor() {
+    const findRequests = inject(FindRequestState);
+    effect(() => {
+      const request = findRequests.request();
+      if (!request) return;
+      untracked(() => {
+        if (!this.isActivePane() || !this.noteEditor() || this.sourceMode()) return;
+        this.find.set({ replace: request.replace });
+        this.findBar()?.focus();
+      });
+    });
     // `NoteEditor` normally triggers the load itself, but the locked panel
     // replaces the editor — so without this nothing would ever ask for the
     // note, and a locked note could never report that it's locked.

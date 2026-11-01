@@ -655,6 +655,8 @@ export function syntaxRevealPlugin(
   openFile?: (href: string) => void,
   openNote?: (target: string) => void,
 ): Plugin<DecorationSet> {
+  let pressStart: { at: number; x: number; y: number } | null = null;
+  let tapped = false;
   return new Plugin<DecorationSet>({
     key: syntaxRevealKey,
     state: {
@@ -698,9 +700,22 @@ export function syntaxRevealPlugin(
         return true;
       },
       handleDOMEvents: {
+        // On touch a short tap stands in for Ctrl-click; a long press falls through and reveals the link.
+        pointerdown: (_, event) => {
+          pressStart = event.pointerType === 'touch' ? { at: event.timeStamp, x: event.clientX, y: event.clientY } : null;
+          tapped = false;
+          return false;
+        },
+        pointerup: (_, event) => {
+          tapped = !!pressStart && event.timeStamp - pressStart.at < 500 &&
+            Math.hypot(event.clientX - pressStart.x, event.clientY - pressStart.y) < 10;
+          return false;
+        },
         // Ctrl/Cmd-click opens a link, before the click can reveal it.
         mousedown: (view, event) => {
-          if (event.button !== 0 || !(event.ctrlKey || event.metaKey)) return false;
+          const tap = tapped;
+          tapped = false;
+          if (event.button !== 0 || !(tap || event.ctrlKey || event.metaKey)) return false;
           const hit = view.posAtCoords({ left: event.clientX, top: event.clientY });
           const link = hit && linkAt(view.state.doc, hit.pos);
           if (link?.wiki && openNote) {

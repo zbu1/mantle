@@ -2,8 +2,6 @@ import { Component, DestroyRef, inject, output, signal } from '@angular/core';
 import { redo, undo } from 'prosemirror-history';
 import { EditorView } from 'prosemirror-view';
 import {
-  LucideArrowLeft,
-  LucideArrowRight,
   LucideBold,
   LucideCode,
   LucideHeading,
@@ -16,6 +14,8 @@ import {
   LucideListIndentIncrease,
   LucideListOrdered,
   LucideListTodo,
+  LucideMenu,
+  LucideEllipsis,
   LucideRedo2,
   LucideSearch,
   LucideSquarePen,
@@ -24,6 +24,16 @@ import {
   LucideTextQuote,
   LucideUndo2,
 } from '@lucide/angular';
+import { ContextMenuState } from '../../shared/context-menu/context-menu-state';
+import { ContextMenuItem } from '../../shared/context-menu/context-menu.model';
+import { FavoritesState } from '../../notes/favorites-state';
+import { FindRequestState } from '../../notes/find-request-state';
+import { NotesState } from '../../notes/notes-state';
+import { countText } from '../../notes/editor/note-editor';
+import { parseMarkdown } from '../../notes/editor/prosemirror/markdown-converter';
+import { isNotePath } from '../../notes/vault-tree.model';
+import { VaultMetaState } from '../../notes/vault-meta-state';
+import { SidebarState } from '../sidebar/sidebar-state';
 import { EditContextState } from '../../shared/edit-context-state';
 import { QuickSwitcherState } from '../../shared/quick-switcher/quick-switcher-state';
 import { TabsState } from '../../notes/tabs-state';
@@ -100,8 +110,8 @@ function cycleHeading(view: EditorView): void {
 @Component({
   selector: 'app-mobile-toolbar',
   imports: [
-    LucideArrowLeft,
-    LucideArrowRight,
+    LucideMenu,
+    LucideEllipsis,
     LucideSearch,
     LucideSquarePen,
     LucideUndo2,
@@ -156,11 +166,8 @@ function cycleHeading(view: EditorView): void {
       </button>
     } @else {
       <nav aria-label="Navigation" class="grid flex-1 grid-cols-5">
-        <button type="button" aria-label="Back" [disabled]="!tabsState.canGoBack()" (click)="tabsState.goBack()" [class]="navButton">
-          <svg lucideArrowLeft [size]="21"></svg>
-        </button>
-        <button type="button" aria-label="Forward" [disabled]="!tabsState.canGoForward()" (click)="tabsState.goForward()" [class]="navButton">
-          <svg lucideArrowRight [size]="21"></svg>
+        <button type="button" aria-label="Vault" (click)="sidebarState.setCollapsed(false)" [class]="navButton">
+          <svg lucideMenu [size]="21"></svg>
         </button>
         <button type="button" aria-label="New Note" (click)="newNote()" [class]="navButton">
           <svg lucideSquarePen [size]="21" class="text-primary"></svg>
@@ -173,6 +180,9 @@ function cycleHeading(view: EditorView): void {
             {{ tabsState.tabs().length }}
           </span>
         </button>
+        <button type="button" aria-label="More" (click)="openMore($event)" [class]="navButton">
+          <svg lucideEllipsis [size]="21"></svg>
+        </button>
       </nav>
     }
   `,
@@ -182,6 +192,12 @@ export class MobileToolbar {
   protected readonly quickSwitcher = inject(QuickSwitcherState);
   private readonly vaultActions = inject(VaultActions);
   private readonly editContext = inject(EditContextState);
+  protected readonly sidebarState = inject(SidebarState);
+  private readonly contextMenu = inject(ContextMenuState);
+  private readonly findRequests = inject(FindRequestState);
+  private readonly notesState = inject(NotesState);
+  private readonly favorites = inject(FavoritesState);
+  private readonly vaultMeta = inject(VaultMetaState);
 
   /** The open-tabs button was tapped. */
   readonly openTabs = output();
@@ -231,6 +247,43 @@ export class MobileToolbar {
 
   protected stopEditing(): void {
     (document.activeElement as HTMLElement | null)?.blur();
+  }
+
+  protected openMore(event: MouseEvent): void {
+    const tab = this.tabsState.tabs().find((t) => t.id === this.tabsState.activeId());
+    const noteId = tab?.noteId;
+    const isNote = !!noteId && isNotePath(noteId);
+    const items: ContextMenuItem[] = [
+      { kind: 'item', label: 'Back', disabled: !this.tabsState.canGoBack(), action: () => this.tabsState.goBack() },
+      { kind: 'item', label: 'Forward', disabled: !this.tabsState.canGoForward(), action: () => this.tabsState.goForward() },
+    ];
+    if (tab && isNote) {
+      const source = this.tabsState.sourceTabs().has(tab.id);
+      const content = this.notesState.getNote(noteId)?.content;
+      const stats = content === undefined ? null : countText(parseMarkdown(content));
+      items.push(
+        { kind: 'separator' },
+        { kind: 'item', label: 'Find in Note', disabled: source, action: () => this.findRequests.open(false) },
+        { kind: 'item', label: 'Replace in Note', disabled: source, action: () => this.findRequests.open(true) },
+        { kind: 'item', label: 'Markdown Source', checked: source, action: () => this.tabsState.toggleSource(tab.id) },
+      );
+      if (this.vaultMeta.loaded()) {
+        const favorite = this.favorites.isFavorite(noteId);
+        items.push({
+          kind: 'item',
+          label: favorite ? 'Remove from Favorites' : 'Add to Favorites',
+          icon: favorite ? 'unfavorite' : 'favorite',
+          action: () => this.favorites.toggle(noteId),
+        });
+      }
+      if (stats) {
+        items.push(
+          { kind: 'separator' },
+          { kind: 'item', label: `${stats.words} ${stats.words === 1 ? 'word' : 'words'} · ${stats.characters} characters`, disabled: true, action: () => undefined },
+        );
+      }
+    }
+    this.contextMenu.open(event, items);
   }
 
   protected newNote(): void {

@@ -1,6 +1,7 @@
 import { Component, ElementRef, HostListener, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { VaultActions } from '../../notes/vault-actions';
 import { HistoryState } from '../../notes/history/history-state';
+import { FindRequestState } from '../../notes/find-request-state';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import {
   LucideArrowLeft,
@@ -28,7 +29,7 @@ import { FavoritesState } from '../../notes/favorites-state';
 import { VaultMetaState } from '../../notes/vault-meta-state';
 import { VaultRenameState } from '../../notes/vault-rename-state';
 import { VaultState } from '../../notes/vault-state';
-import { SORT_MODES, flattenVaultNotes, folderPaths } from '../../notes/vault-tree.model';
+import { SORT_MODES, flattenVaultNotes, folderPaths, isNotePath } from '../../notes/vault-tree.model';
 import { isMobile, isTauri } from '../../core/tauri-env';
 import { SectionId, SidebarState } from '../../layout/sidebar/sidebar-state';
 import { CommandPaletteState } from './command-palette-state';
@@ -94,6 +95,7 @@ export class CommandPalette {
   private readonly favorites = inject(FavoritesState);
   private readonly zoom = inject(ZoomState);
   private readonly historyState = inject(HistoryState);
+  private readonly findRequests = inject(FindRequestState);
 
   protected readonly query = this.state.query;
   protected readonly selectedIndex = signal(0);
@@ -171,6 +173,12 @@ export class CommandPalette {
         keywords: ['close', 'tab'],
         run: () => this.tabsState.closeTab(activeTab.id),
       });
+      if (activeTab.noteId && isNotePath(activeTab.noteId)) {
+        items.push(
+          { id: 'find-in-note', label: 'Find in Note', keywords: ['find', 'search'], run: () => this.findRequests.open(false) },
+          { id: 'replace-in-note', label: 'Replace in Note', keywords: ['replace', 'find'], run: () => this.findRequests.open(true) },
+        );
+      }
       const tree = this.vaultState.tree();
       const noteId = activeTab.noteId;
       if (noteId && this.vaultMeta.loaded() && tree && flattenVaultNotes(tree).has(noteId)) {
