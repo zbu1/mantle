@@ -5,6 +5,7 @@ import { SidebarState } from '../layout/sidebar/sidebar-state';
 import { FavoritesState } from './favorites-state';
 import { NotePropertiesState } from './note-properties-state';
 import { NotesState } from './notes-state';
+import { ToastState } from '../shared/toast/toast-state';
 import { NoteShowingTab, NoteTab, TabsState } from './tabs-state';
 import { VaultMetaState } from './vault-meta-state';
 import { VaultSelectionState } from './vault-selection-state';
@@ -18,6 +19,7 @@ import { flattenTreeNodes, isNotePath } from './vault-tree.model';
 @Injectable({ providedIn: 'root' })
 export class TabMenu {
   private readonly tabsState = inject(TabsState);
+  private readonly toast = inject(ToastState);
   private readonly notesState = inject(NotesState);
   private readonly vaultState = inject(VaultState);
   private readonly vaultMeta = inject(VaultMetaState);
@@ -75,10 +77,10 @@ export class TabMenu {
         },
       },
       { kind: 'separator' },
-      { kind: 'item', label: 'Copy Path', icon: 'copy', action: () => void navigator.clipboard.writeText(tab.noteId) },
-      { kind: 'item', label: 'Copy Title', action: () => void navigator.clipboard.writeText(tab.title) },
+      { kind: 'item', label: 'Copy Path', icon: 'copy', action: () => this.toast.copy(tab.noteId) },
+      { kind: 'item', label: 'Copy Title', action: () => this.toast.copy(tab.title) },
       ...(isNote
-        ? [{ kind: 'item' as const, label: 'Copy Content', disabled: content === undefined, action: () => void navigator.clipboard.writeText(content ?? '') }]
+        ? [{ kind: 'item' as const, label: 'Copy Content', disabled: content === undefined, action: () => this.toast.copy(content ?? '') }]
         : []),
       { kind: 'separator' },
       {

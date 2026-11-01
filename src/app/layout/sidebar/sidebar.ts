@@ -16,6 +16,7 @@ import { TagGroup } from '../../notes/tags';
 import { VaultActions } from '../../notes/vault-actions';
 import { OutlineState } from '../../notes/editor/outline-state';
 import { OutlineHeading } from '../../notes/editor/prosemirror/outline';
+import { ToastState } from '../../shared/toast/toast-state';
 import { canUndoDelete } from '../../notes/vault-history-state';
 import { isMobile } from '../../core/tauri-env';
 import { focusNoteTitle } from '../../notes/tab-menu';
@@ -84,6 +85,7 @@ export class Sidebar {
   protected readonly shown = computed(() => isMobile || !this.state.collapsed());
   protected readonly vaultState = inject(VaultState);
   private readonly tabsState = inject(TabsState);
+  private readonly toast = inject(ToastState);
   private readonly contextMenuState = inject(ContextMenuState);
   private readonly clipboardState = inject(VaultClipboardState);
   protected readonly selectionState = inject(VaultSelectionState);
@@ -279,6 +281,7 @@ export class Sidebar {
 
   protected onOpenNoteInBackground(note: VaultNoteNode): void {
     this.tabsState.openNoteInBackground({ id: note.relPath, title: note.name });
+    this.toast.show('Opened in a new tab');
   }
 
   /** Files open in a read-only preview tab, which tabs tell apart from notes by extension. */
@@ -307,7 +310,7 @@ export class Sidebar {
       },
       { kind: 'separator' },
       { kind: 'item', desktopOnly: true, label: 'Show in File Explorer', icon: 'reveal', action: () => void this.vaultState.revealInFileExplorer(file.relPath) },
-      { kind: 'item', label: 'Copy Path', icon: 'copy', action: () => void navigator.clipboard.writeText(file.relPath) },
+      { kind: 'item', label: 'Copy Path', icon: 'copy', action: () => this.toast.copy(file.relPath) },
       { kind: 'separator' },
       { kind: 'item', label: 'Delete', icon: 'delete', danger: true, action: () => void this.deleteFile(file) },
     ];

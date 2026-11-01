@@ -25,6 +25,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { isMobile } from '../../core/tauri-env';
 
+import { ToastState } from '../../shared/toast/toast-state';
 import { AttachmentsState, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, attachmentUrl } from '../attachments-state';
 import { NotePropertiesState } from '../note-properties-state';
 import { NotesState } from '../notes-state';
@@ -184,6 +185,7 @@ export function countText(doc: ProseMirrorNode): { words: number; characters: nu
 })
 export class NoteEditor {
   private readonly notesState = inject(NotesState);
+  private readonly toast = inject(ToastState);
   private readonly editorFocus = inject(EditorFocusState);
   private readonly slashMenuState = inject(SlashMenuState);
   private readonly destroyRef = inject(DestroyRef);
@@ -548,7 +550,7 @@ export class NoteEditor {
         })),
       },
       { kind: 'separator' },
-      { kind: 'item', label: 'Copy Code', icon: 'copy', action: () => void navigator.clipboard.writeText(codeBody(node).text) },
+      { kind: 'item', label: 'Copy Code', icon: 'copy', action: () => this.toast.copy(codeBody(node).text) },
       { kind: 'item', label: 'Turn into Paragraph', icon: 'paragraph', action: () => codeBlockToParagraph(view, pos) },
     ]);
   }
@@ -677,7 +679,7 @@ export class NoteEditor {
         kind: 'item',
         label: 'Copy Path',
         icon: 'copy',
-        action: () => void navigator.clipboard.writeText(info?.relPath ?? src),
+        action: () => this.toast.copy(info?.relPath ?? src),
       },
       {
         kind: 'item',

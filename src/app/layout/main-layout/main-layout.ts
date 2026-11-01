@@ -9,6 +9,7 @@ import { CommandPalette } from '../../shared/command-palette/command-palette';
 import { ContextMenu } from '../../shared/context-menu/context-menu';
 import { Dialog } from '../../shared/dialog/dialog';
 import { MobileDialog } from '../../shared/dialog/mobile-dialog';
+import { Toast } from '../../shared/toast/toast';
 import { QuickSwitcher } from '../../shared/quick-switcher/quick-switcher';
 import { SettingsModal } from '../../shared/settings/settings-modal';
 import { VaultDragPreview } from '../../shared/vault-drag-preview/vault-drag-preview';
@@ -46,6 +47,7 @@ import { MobileShell } from '../mobile-shell/mobile-shell';
     SettingsModal,
     VaultDragPreview,
     QuickSwitcher,
+    Toast,
     CommandPalette,
     EncryptionPanel,
     HoverTooltipHost,
