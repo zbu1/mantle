@@ -344,16 +344,19 @@ export class ContentArea {
   }
 
   /** Reflects each keystroke into the tab title and sidebar entry right away; the on-disk rename is debounced. */
-  protected onTitleInput(tab: NoteShowingTab, value: string): void {
+  protected onTitleInput(tab: NoteShowingTab, input: HTMLTextAreaElement): void {
+    const value = input.value.replace(/\s*\n\s*/g, ' '); // pasted line breaks
+    if (value !== input.value) input.value = value;
     this.tabsState.updateTabTitle(tab.id, value);
     this.vaultState.renameNoteInTree(tab.noteId, tab.noteId, value);
     this.scheduleRename(tab.id);
   }
 
-  protected onTitleKeydown(event: KeyboardEvent, tab: NoteShowingTab, input: HTMLInputElement): void {
+  protected onTitleKeydown(event: KeyboardEvent, tab: NoteShowingTab, input: HTMLTextAreaElement): void {
     if (event.key === 'Enter') {
       event.preventDefault();
       input.blur();
+      document.querySelector<HTMLElement>('.ProseMirror')?.focus();
     } else if (event.key === 'Escape') {
       event.preventDefault();
       this.cancelPendingRename(tab.id);

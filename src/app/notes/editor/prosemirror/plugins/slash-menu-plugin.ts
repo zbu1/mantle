@@ -1,3 +1,4 @@
+import { placeAtCaret } from './popup-position';
 import { Plugin, PluginKey } from 'prosemirror-state';
 import { EditorView } from 'prosemirror-view';
 import { SlashMenuState } from '../../slash-menu/slash-menu-state';
@@ -102,15 +103,7 @@ export function createSlashMenuPlugin(
 
           slashMenuState.show(filtered, (item) => executeItem(view, item));
 
-          const coords = view.coordsAtPos(slashPos);
-          const editorRect = view.dom.getBoundingClientRect();
-
-          const left = Math.max(0, coords.left - editorRect.left);
-          const top = Math.max(0, coords.bottom - editorRect.top + 4);
-
-          panel.style.position = 'absolute';
-          panel.style.left = `${left}px`;
-          panel.style.top = `${top}px`;
+          placeAtCaret(panel, view, slashPos);
           panel.classList.remove('invisible', 'opacity-0', 'pointer-events-none');
           panel.classList.add('opacity-100');
         },

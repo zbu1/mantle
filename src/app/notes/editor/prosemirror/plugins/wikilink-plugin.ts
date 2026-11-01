@@ -1,3 +1,4 @@
+import { placeAtCaret } from './popup-position';
 import { Node as PMNode } from 'prosemirror-model';
 import { Plugin, PluginKey, TextSelection } from 'prosemirror-state';
 import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
@@ -118,11 +119,7 @@ export function wikilinkPlugin(context: WikilinkContext, menu: LinkMenuState, pa
 
           const el = panel();
           if (!el) return;
-          const coords = view.coordsAtPos(from);
-          const box = view.dom.getBoundingClientRect();
-          el.style.position = 'absolute';
-          el.style.left = `${Math.max(0, coords.left - box.left)}px`;
-          el.style.top = `${Math.max(0, coords.bottom - box.top + 4)}px`;
+          placeAtCaret(el, view, from);
           el.classList.remove('invisible', 'opacity-0', 'pointer-events-none');
         },
         destroy: hide,

@@ -53,7 +53,7 @@ describe('ContentArea', () => {
     fixture.detectChanges();
     await fixture.whenStable();
 
-    const input: HTMLInputElement = fixture.nativeElement.querySelector('input[type="text"]');
+    const input: HTMLTextAreaElement = fixture.nativeElement.querySelector('[data-note-title]');
     input.value = 'renamed-note';
     input.dispatchEvent(new Event('input'));
 
@@ -76,7 +76,7 @@ describe('ContentArea', () => {
     fixture.detectChanges();
     await fixture.whenStable();
 
-    const input: HTMLInputElement = fixture.nativeElement.querySelector('input[type="text"]');
+    const input: HTMLTextAreaElement = fixture.nativeElement.querySelector('[data-note-title]');
     input.value = 'renamed-note';
     input.dispatchEvent(new Event('input'));
     input.dispatchEvent(new Event('blur'));

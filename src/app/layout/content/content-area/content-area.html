@@ -119,9 +119,9 @@
   <app-file-preview [relPath]="tab.noteId" class="mx-6 mb-6" />
   } @else {
   <div class="mx-auto max-w-4xl px-6 pb-6 h-full min-w-0 w-full mobile:px-4">
-    <input #titleInput data-note-title type="text" [value]="tab.title" (input)="onTitleInput(tab, titleInput.value)"
+    <textarea #titleInput data-note-title rows="1" [value]="tab.title" (input)="onTitleInput(tab, titleInput)"
       (keydown)="onTitleKeydown($event, tab, titleInput)" (blur)="onTitleBlur(tab)"
-      class="mb-2 w-full min-w-0 truncate border-0 bg-transparent p-0 text-2xl font-semibold tracking-tight text-foreground outline-none! focus-visible:shadow-none" />
+      class="mb-2 block w-full min-w-0 resize-none field-sizing-content border-0 bg-transparent p-0 text-2xl font-semibold tracking-tight text-foreground outline-none! focus-visible:shadow-none"></textarea>
     @if (!lockedProfileId()) {
     <app-properties-panel [noteId]="tab.noteId" />
     }

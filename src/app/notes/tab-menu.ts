@@ -137,7 +137,7 @@ export class TabMenu {
 /** Focuses and selects the active note's title field once it has rendered. */
 export function focusNoteTitle(): void {
   setTimeout(() => {
-    const title = document.querySelector<HTMLInputElement>('[data-note-title]');
+    const title = document.querySelector<HTMLTextAreaElement>('[data-note-title]');
     title?.focus();
     title?.select();
   });
