@@ -12,7 +12,7 @@ const md = markdownIt('commonmark', { html: false });
 md.enable('strikethrough');
 
 /**
- * Obsidian `![[photo.png|300]]` image (and video and PDF) embeds, including the sealed
+ * Wiki-style `![[photo.png|300]]` image (and video and PDF) embeds, including the sealed
  * `….png.enc` an encrypted note's embed gets re-pointed at; embeds of anything
  * else (notes) stay text.
  */
@@ -192,12 +192,12 @@ export const markdownParser = new MarkdownParser(schema, md, {
   th: { block: 'table_cell', getAttrs: cellAlign },
   td: { block: 'table_cell', getAttrs: cellAlign },
   hardbreak: { node: 'hard_break' },
-  // Obsidian shows a single newline as a line break; CommonMark would join the lines.
+  // A single newline is a line break here; CommonMark would join the lines.
   softbreak: { node: 'hard_break' },
   image: {
     node: 'image',
     getAttrs: (tok) => {
-      // Obsidian's `![alt|300](src)` / `![alt|300x200](src)` size.
+      // A `![alt|300](src)` / `![alt|300x200](src)` size.
       const [, alt, size] = /^(.*?)(?:\|(\d+(?:x\d+)?))?$/s.exec(tok.children?.[0]?.content ?? '')!;
       return { src: tok.attrGet('src'), title: tok.attrGet('title') || null, alt: alt || null, size: size ?? null };
     },
@@ -385,12 +385,12 @@ export const markdownSerializer = new MarkdownSerializer(
       const { src, size } = node.attrs;
       if (node.attrs['embed']) state.write(`![[${src}${size ? `|${size}` : ''}]]`);
       else {
-        // Obsidian's size goes after the alt text: `![alt|300](src)`.
+        // The size goes after the alt text: `![alt|300](src)`.
         const sized = size ? node.type.create({ ...node.attrs, alt: `${node.attrs['alt'] ?? ''}|${size}` }) : node;
         defaultMarkdownSerializer.nodes['image'](state, sized, parent, index);
       }
     },
-    // A plain newline, not CommonMark's `\`, so Obsidian-style notes keep their source.
+    // A plain newline, not CommonMark's `\`, so notes keep their source.
     hard_break(state, node, parent, index) {
       for (let i = index + 1; i < parent.childCount; i++) {
         if (parent.child(i).type !== node.type) return state.write('\n');

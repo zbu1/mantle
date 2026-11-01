@@ -12,7 +12,7 @@
 //!   holds a known file.
 //!
 //! Notes reference attachments with ordinary Markdown (`![alt](attachments/…)`,
-//! `[spec](attachments/…)`), and Obsidian's `![[photo.png|300]]` / `[[doc.pdf]]`
+//! `[spec](attachments/…)`), and wiki-style `![[photo.png|300]]` / `[[doc.pdf]]`
 //! are read too. The webview loads images through the `mantle://` protocol
 //! ([`serve`]), which decrypts sealed ones in memory, so a decrypted image
 //! never touches the disk.
@@ -211,7 +211,7 @@ fn find_by_name(dir: &Path, rel_dir: &str, name: &str) -> Option<String> {
 /// The vault-relative path of the file a link or embed `src` in the note at
 /// `note_rel` points to, or `None` for a remote URL, a missing file or a note.
 ///
-/// Tried in the order Obsidian resolves them: relative to the note, then to
+/// Tried in the order wiki-style embeds are usually resolved: relative to the note, then to
 /// the vault root (which is how Mantle writes them), then — for a bare file
 /// name, as `![[photo.png]]` usually is — anywhere in the vault.
 pub(crate) fn resolve_attachment(vault_root: &str, note_rel: &str, src: &str) -> Option<String> {
@@ -322,7 +322,7 @@ pub(crate) struct Source {
 
 /// Every link and embed in `markdown` outside code, in document order: the
 /// destination of `[text](src "title")` / `![alt](src)` (inside its `<>`, if
-/// any) and the target of Obsidian's `[[src|alias]]` / `![[src|size]]`, each
+/// any) and the target of wiki-style `[[src|alias]]` / `![[src|size]]`, each
 /// without a `#fragment`.
 // ponytail: no reference-style links (`[text][ref]`); add them if converted
 // vaults turn out to use them.
@@ -889,7 +889,7 @@ mod tests {
     }
 
     #[test]
-    fn link_sources_finds_markdown_and_obsidian_links_and_embeds() {
+    fn link_sources_finds_markdown_and_wiki_links_and_embeds() {
         let md = "a ![x](one.png) b ![](<two words.png> \"t\") ![[three.png|300]] [[four.pdf#page=2]] \
                   [link](five.zip) [![img](six.png)](seven.pdf) [[Note|alias]] [x](#top) \\[no](esc.png) ![bad\n](x) \
                   | [[In table\\|alias]] | ![[eight.png\\|300]] |";

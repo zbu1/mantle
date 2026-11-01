@@ -521,7 +521,7 @@ export class CommandPalette {
 
   private async showAbout(): Promise<void> {
     await this.dialogState.alert(
-      'Mantle is a note-taking desktop app — an Obsidian-style vault of Markdown notes, with optional zero-knowledge encryption.',
+      'Mantle is a note-taking desktop app. Your notes are Markdown files in a vault, with optional zero-knowledge encryption.',
       { title: 'About Mantle', confirmLabel: 'OK' },
     );
   }

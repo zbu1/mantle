@@ -5,7 +5,7 @@
 //!
 //! - **`.mntl` (unencrypted)**: a plain UTF-8 Markdown file with a YAML
 //!   frontmatter header ([`NoteFrontmatter`]) at the top, exactly like a
-//!   standard Obsidian/Jekyll/Hugo note. It is human-readable and editable in
+//!   standard Jekyll/Hugo-style note. It is human-readable and editable in
 //!   any text editor, and diffs cleanly in version control
 //!   ([`encode_unencrypted_note`] / [`decode_unencrypted_note`]).
 //! - **`.mntl.enc` (encrypted)**: a zero-knowledge encrypted binary envelope.

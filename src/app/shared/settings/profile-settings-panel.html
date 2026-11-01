@@ -16,7 +16,7 @@
   </div>
   }
 </app-settings-row>
-<app-settings-row label="Profile ID" description="Immutable — used inside every note's encrypted header.">
+<app-settings-row label="Profile ID" description="Immutable. Used inside every note's encrypted header.">
   <span class="font-mono text-[11px] text-muted-foreground">{{ p.id }}</span>
 </app-settings-row>
 
@@ -31,7 +31,7 @@
     }
   </button>
 </app-settings-row>
-<app-settings-row label="Master Password" description="Notes stay readable — only the password changes.">
+<app-settings-row label="Master Password" description="Notes stay readable. Only the password changes.">
   <button type="button" (click)="changePassword()" [disabled]="!unlocked()"
     class="rounded-md border border-border px-2.5 py-1 text-xs text-foreground hover:bg-background disabled:pointer-events-none disabled:opacity-40">
     Change Master Password…

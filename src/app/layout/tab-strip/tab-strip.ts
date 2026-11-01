@@ -36,7 +36,7 @@ export const TAB_DRAG_MIME = 'application/x-mantle-tab';
       <button type="button" draggable="true" (dragstart)="onDragStart($event, tab)" (dragend)="dropIndex.set(null)"
         (dragover)="onDragOver($event, i, $event.currentTarget)" (click)="tabsState.setActive(tab.id)"
         (auxclick)="$event.button === 1 && tabsState.closeTab(tab.id)" (contextmenu)="tabMenu.open($event, tab)"
-        [title]="tab.missing ? tab.title + ' — file not found (moved or deleted outside Mantle)' : tab.title"
+        [title]="tab.missing ? tab.title + ' (file not found, moved or deleted outside Mantle)' : tab.title"
         class="group my-1 flex min-w-0 max-w-48 shrink-0 items-center gap-2 rounded-md border border-input px-3 text-xs [app-region:no-drag]"
         [class.bg-background]="active" [class.text-foreground]="active" [class.tab-active-rule]="active && paneActive()"
         [class.text-muted-foreground]="!active" [class.hover:bg-background/60]="!active" [class.opacity-60]="tab.missing"

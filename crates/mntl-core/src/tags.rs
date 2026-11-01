@@ -2,7 +2,7 @@
 //! Markdown file's own YAML frontmatter.
 //!
 //! A `.mntl` note keeps its tags in [`crate::NoteFrontmatter::tags`]. A plain
-//! Markdown file keeps them where Obsidian and similar tools do, in a `tags:`
+//! Markdown file keeps them where other tools do, in a `tags:`
 //! key of its frontmatter. That frontmatter belongs to whatever tool wrote the
 //! file, so [`set_markdown_tags`] edits only the `tags:` lines and leaves every
 //! other byte alone.
@@ -18,7 +18,7 @@ use serde_yaml::Value;
 ///
 /// A leading `#` and surrounding whitespace are dropped. What remains must be
 /// letters, digits, `-` and `_` only (so no spaces and no `/`: tags are flat),
-/// with at least one character that isn't a digit, as in Obsidian.
+/// with at least one character that isn't a digit, as in common tag syntax.
 ///
 /// Only input is held to this. Tags another tool wrote into a Markdown file
 /// are read as they are, see [`markdown_tags`].
@@ -147,7 +147,7 @@ mod tests {
     }
 
     #[test]
-    fn normalize_tag_accepts_obsidian_style_tags() {
+    fn normalize_tag_accepts_hashtag_style_tags() {
         assert_eq!(normalize_tag("  #idea "), Some("idea".into()));
         assert_eq!(normalize_tag("to-do_2"), Some("to-do_2".into()));
         assert_eq!(normalize_tag("Ärger"), Some("Ärger".into()));

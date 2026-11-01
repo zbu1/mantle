@@ -82,7 +82,7 @@ const baseNodes = OrderedMap.from<NodeSpec>({
       src: {},
       alt: { default: null },
       title: { default: null },
-      // Obsidian's `![[src|size]]` embed: `embed` keeps that syntax on save,
+      // A wiki-style `![[src|size]]` embed: `embed` keeps that syntax on save,
       // `size` is its "300" or "300x200".
       embed: { default: false },
       size: { default: null },

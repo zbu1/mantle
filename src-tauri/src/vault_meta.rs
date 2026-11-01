@@ -1,8 +1,8 @@
 //! Tauri commands for loading/saving a vault's own persisted UI metadata —
 //! favorites, manual sort order, and collapsed folders — stored inside the
 //! vault itself at `.mantle/state.json`, so it travels with the vault across
-//! machines and sync (Dropbox/git/etc.), the same way `.obsidian/` does for
-//! Obsidian. `.mantle` is a dotfile-prefixed directory, so `vault::scan_dir`
+//! machines and sync (Dropbox/git/etc.), the same way other vault tools keep their settings.
+//! `.mantle` is a dotfile-prefixed directory, so `vault::scan_dir`
 //! already skips it when building the note tree, and `watcher::is_hidden`
 //! already ignores writes under it when deciding whether to emit
 //! `vault-changed`.

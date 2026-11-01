@@ -535,7 +535,7 @@ Write this down or print it, and keep it somewhere safe. It is shown only once. 
     if (!profile) return false;
 
     const submitted = await this.dialogState.password(
-      `Choose a new password for "${profile.displayName}". Existing notes stay readable — only the password changes.`,
+      `Choose a new password for "${profile.displayName}". Existing notes stay readable. Only the password changes.`,
       { title: 'Change Master Password', confirmLabel: 'Change Password', requireConfirm: true },
       async ({ password }) => {
         if (password.length < MIN_PASSWORD_LENGTH) {

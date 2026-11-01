@@ -4,7 +4,7 @@ import { schema } from './schema';
 describe('markdown images', () => {
   const roundTrip = (markdown: string) => serializeMarkdown(parseMarkdown(markdown));
 
-  it('round-trips Markdown images and Obsidian embeds in their own syntax', () => {
+  it('round-trips Markdown images and wiki-style embeds in their own syntax', () => {
     expect(roundTrip('a ![cat](attachments/cat.png "Tom") b')).toBe('a ![cat](attachments/cat.png "Tom") b');
     expect(roundTrip('![[my cat.png|300]] and ![[dog.JPG]]')).toBe('![[my cat.png|300]] and ![[dog.JPG]]');
     expect(roundTrip('![[attachments/ab12.png.enc|300]]')).toBe('![[attachments/ab12.png.enc|300]]');
@@ -17,7 +17,7 @@ describe('markdown images', () => {
     expect(image.attrs).toMatchObject({ src: 'cat.png', embed: true, size: '300x200' });
   });
 
-  it("reads and keeps Obsidian's size on a Markdown image", () => {
+  it("reads and keeps its size on a Markdown image", () => {
     expect(parseMarkdown('![cat|300x200](cat.png)').firstChild!.firstChild!.attrs).toMatchObject({ alt: 'cat', size: '300x200' });
     expect(roundTrip('![cat|300](cat.png "Tom")')).toBe('![cat|300](cat.png "Tom")');
     expect(roundTrip('![|300](cat.png)')).toBe('![|300](cat.png)');

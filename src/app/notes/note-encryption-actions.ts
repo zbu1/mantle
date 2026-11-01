@@ -37,7 +37,7 @@ export const CONVERT_HELP =
   "in the vault's attachments folder.\n\n" +
   'What changes: the frontmatter becomes the note\'s properties, and the files it links or embeds are ' +
   'copied into attachments. The original goes to the system trash.\n\n' +
-  "What you lose: other Markdown apps (Obsidian, VS Code, …) can't open .mntl notes.";
+  "What you lose: other Markdown apps (VS Code, …) can't open .mntl notes.";
 
 /** A Markdown file's name without its extension: the name its note starts from. */
 const stemOf = (relPath: string) => fileNameOf(relPath).replace(/\.(md|markdown)$/, '');

@@ -66,7 +66,7 @@ export class EncryptionPanel {
     if (this.statusIcon() === 'unlocked') return `Unlocked with "${name}"`;
 
     const known = note.profile !== null && this.credentialsState.profileById(note.profile);
-    return known ? `Encrypted with "${name}"` : `Encrypted with "${name}" — not in this vault`;
+    return known ? `Encrypted with "${name}"` : `Encrypted with "${name}" (not in this vault)`;
   });
 
   protected readonly fileName = computed(() => this.note()?.relPath.split('/').pop() ?? '');
