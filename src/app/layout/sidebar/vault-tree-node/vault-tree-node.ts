@@ -21,6 +21,8 @@ import { VaultSelectionState } from '../../../notes/vault-selection-state';
 import { SidebarItemButton } from '../sidebar-item-button/sidebar-item-button';
 import { ExplorerRow } from '../explorer-row/explorer-row';
 import { ExplorerBody } from '../explorer-body/explorer-body';
+import { ItemStyleIcon } from '../../../shared/item-style/item-style';
+import { ItemStyleState } from '../../../notes/item-style-state';
 import { HoverTooltip } from '../../../shared/hover-tooltip/hover-tooltip';
 import { SidebarState } from '../sidebar-state';
 
@@ -44,6 +46,7 @@ EMPTY_DRAG_IMAGE.src =
     ExplorerBody,
     VaultTreeNode,
     HoverTooltip,
+    ItemStyleIcon,
     LucideChevronRight,
     LucideLock,
     LucideLockOpen,
@@ -52,6 +55,7 @@ EMPTY_DRAG_IMAGE.src =
   host: { class: 'contents' },
 })
 export class VaultTreeNode {
+  protected readonly itemStyles = inject(ItemStyleState);
   readonly node = input.required<VaultNode>();
   readonly depth = input(0);
   /**

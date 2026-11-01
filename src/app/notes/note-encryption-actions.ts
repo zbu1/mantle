@@ -5,6 +5,7 @@ import { ContextMenuFlatItem } from '../shared/context-menu/context-menu.model';
 import { DialogState } from '../shared/dialog/dialog-state';
 import { CredentialsState } from './credentials-state';
 import { FavoritesState } from './favorites-state';
+import { ItemStyleState } from './item-style-state';
 import { CreatedNote, VaultState } from './vault-state';
 import { NoteEncryptionModalState } from './note-encryption-modal/note-encryption-modal-state';
 import { NotesState } from './notes-state';
@@ -62,6 +63,7 @@ export class NoteEncryptionActions {
   private readonly tabsState = inject(TabsState);
   private readonly vaultMeta = inject(VaultMetaState);
   private readonly favorites = inject(FavoritesState);
+  private readonly styles = inject(ItemStyleState);
   private readonly dialogState = inject(DialogState);
   private readonly modalState = inject(NoteEncryptionModalState);
   private readonly history = inject(VaultHistoryState);
@@ -306,6 +308,7 @@ export class NoteEncryptionActions {
     await this.notesState.flushPending([note.relPath]);
     // Decrypting clears the sealed flag; a plaintext note's favorite lives in state.json.
     const wasFavorite = this.favorites.isFavorite(note.relPath);
+    const style = this.styles.of(note.relPath);
 
     try {
       const created = await invoke<CreatedNote>('decrypt_note_to_plaintext', {
@@ -315,6 +318,7 @@ export class NoteEncryptionActions {
       });
       this.retarget(note.relPath, created);
       if (wasFavorite) this.vaultMeta.addFavorites([created.relPath]);
+      this.vaultMeta.setStyle(created.relPath, style);
       logInfo(`Decrypted "${note.relPath}" to plaintext`);
       await this.vaultState.refresh();
       const profileId = note.profile;
@@ -431,9 +435,11 @@ export class NoteEncryptionActions {
         let created: CreatedNote;
         if (target === null) {
           const wasFavorite = this.favorites.isFavorite(note.relPath);
+          const style = this.styles.of(note.relPath);
           created = await invoke<CreatedNote>('decrypt_note_to_plaintext', { vaultRoot: root, relPath: note.relPath });
           this.retarget(note.relPath, created);
           if (wasFavorite) this.vaultMeta.addFavorites([created.relPath]);
+          this.vaultMeta.setStyle(created.relPath, style);
         } else {
           const command = note.encrypted ? 'move_note_to_profile' : 'encrypt_note_to_profile';
           created = await invoke<CreatedNote>(command, { vaultRoot: root, relPath: note.relPath, profileId: target });

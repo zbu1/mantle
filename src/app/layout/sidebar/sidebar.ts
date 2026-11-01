@@ -25,6 +25,8 @@ import { COLLAPSE_THRESHOLD, SIDEBAR_SECTIONS, SidebarState } from './sidebar-st
 import { TabsState } from '../../notes/tabs-state';
 import { VaultState } from '../../notes/vault-state';
 import { FavoritesState } from '../../notes/favorites-state';
+import { ItemStyleState } from '../../notes/item-style-state';
+import { ItemStylePickerState } from '../../shared/item-style/item-style-picker-state';
 import { VaultMetaState } from '../../notes/vault-meta-state';
 import { formatRelativeTime } from '../../notes/relative-time';
 import { VaultClipboardState } from '../../notes/vault-clipboard-state';
@@ -95,6 +97,8 @@ export class Sidebar {
   private readonly newEncryptedNoteState = inject(NewEncryptedNoteState);
   private readonly vaultMeta = inject(VaultMetaState);
   private readonly favorites = inject(FavoritesState);
+  private readonly itemStyles = inject(ItemStyleState);
+  private readonly stylePicker = inject(ItemStylePickerState);
   protected readonly tagsState = inject(TagsState);
   private readonly attachments = inject(AttachmentsState);
   private readonly editContext = inject(EditContextState);
@@ -397,9 +401,7 @@ export class Sidebar {
       { kind: 'separator' },
       { kind: 'item', label: 'Rename', icon: 'rename', action: () => this.renameState.renamingPath.set(note.relPath) },
       this.favoriteMenuItem(note.relPath),
-      // Planned: per-note icon and color.
-      { kind: 'item', label: 'Set Icon…', disabled: true, action: () => undefined },
-      { kind: 'item', label: 'Set Color…', disabled: true, action: () => undefined },
+      ...this.styleMenuItems([note.relPath]),
       { kind: 'separator' },
       { kind: 'item', label: 'Delete', icon: 'delete', danger: true, action: () => void this.deleteNote(note) },
     ];
@@ -525,6 +527,7 @@ export class Sidebar {
       },
       { kind: 'separator' },
       { kind: 'item', label: 'Rename', icon: 'rename', action: () => this.renameState.renamingPath.set(folder.relPath) },
+      ...this.styleMenuItems([folder.relPath]),
       this.folderSortMenu(folder.relPath),
       { kind: 'separator' },
       ...(markdown.length > 0 ? [this.convertMenuItem(markdown)] : []),
@@ -593,6 +596,22 @@ export class Sidebar {
       },
     ];
     this.contextMenuState.open(event, items);
+  }
+
+  private styleMenuItems(relPaths: readonly string[]): ContextMenuItem[] {
+    const pick = async (kind: 'icon' | 'color') => {
+      const choice = await this.stylePicker.pick(kind);
+      if (choice === undefined) return;
+      // Each item keeps the half that wasn't picked.
+      for (const relPath of relPaths) {
+        const current = this.itemStyles.of(relPath);
+        await this.itemStyles.set([relPath], { icon: current?.icon, color: current?.color, [kind]: choice ?? undefined });
+      }
+    };
+    return [
+      { kind: 'item', label: 'Set Icon…', action: () => void pick('icon') },
+      { kind: 'item', label: 'Set Color…', action: () => void pick('color') },
+    ];
   }
 
   private favoriteMenuItem(relPath: string): ContextMenuItem {

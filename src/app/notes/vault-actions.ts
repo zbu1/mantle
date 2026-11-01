@@ -186,6 +186,9 @@ export class VaultActions {
     const favorites = this.vaultMeta
       .favorites()
       .filter((relPath) => paths.some((path) => relPath === path || relPath.startsWith(`${path}/`)));
+    const styles = Object.entries(this.vaultMeta.styles()).filter(([relPath]) =>
+      paths.some((path) => relPath === path || relPath.startsWith(`${path}/`)),
+    );
     await this.trash(items);
     await this.attachments.delete(attachments);
     if (!canUndoDelete) return;
@@ -195,6 +198,7 @@ export class VaultActions {
       undo: async () => {
         await this.restore([...paths, ...attachments]);
         this.vaultMeta.addFavorites(favorites);
+        for (const [relPath, style] of styles) this.vaultMeta.setStyle(relPath, style);
       },
       redo: async () => {
         await this.trash(items);

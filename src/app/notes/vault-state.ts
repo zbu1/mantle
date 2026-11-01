@@ -8,6 +8,7 @@ import { TabsState } from './tabs-state';
 import { VaultMetaState } from './vault-meta-state';
 import { VaultRootState } from './vault-root-state';
 import { formatError, logError, logInfo } from '../core/logger';
+import { ItemStyle } from '../shared/item-style/item-style';
 import { FolderPickerState } from '../shared/folder-picker/folder-picker-state';
 
 const RECENT_KEY = 'mantle.vault.recent.v1';
@@ -436,6 +437,13 @@ export class VaultState {
     const tree = this.tree();
     if (!tree) return;
     this.tree.set(withNoteFields(tree, relPath, { favorite }));
+  }
+
+  /** Like `setNoteTagsInTree`, for an encrypted note's sealed icon and color. */
+  setNoteStyleInTree(relPath: string, style: ItemStyle | null): void {
+    const tree = this.tree();
+    if (!tree) return;
+    this.tree.set(withNoteFields(tree, relPath, { icon: style?.icon, color: style?.color }));
   }
 
   async renameNote(relPath: string, newName: string): Promise<CreatedNote> {

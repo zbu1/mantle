@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { formatError, logError } from '../core/logger';
 import { VaultHistoryState } from './vault-history-state';
 import { PROPERTY_TYPES, PropertyType, propertyTypeKey } from './properties';
+import { ItemStyle } from '../shared/item-style/item-style';
 import { SORT_MODES, SortMode } from './vault-tree.model';
 
 /** One recently-opened note: its vault-relative path and when it was opened (ms since the Unix epoch). */
@@ -28,6 +29,8 @@ export interface VaultMeta {
   recentNotes: RecentNote[];
   /** Each property's vault-wide type, by `propertyTypeKey`. */
   propertyTypes: Record<string, PropertyType>;
+  /** Icon and color of plaintext notes and folders, by relPath. */
+  styles: Record<string, ItemStyle>;
 }
 
 /** How many recent notes are kept in `state.json`; the sidebar shows fewer by default. */
@@ -36,7 +39,7 @@ export const MAX_RECENT_NOTES = 20;
 const SAVE_DEBOUNCE_MS = 500;
 
 function emptyMeta(): VaultMeta {
-  return { version: 1, favorites: [], order: {}, collapsedFolders: [], sortMode: 'name-asc', folderSort: {}, recentNotes: [], propertyTypes: {} };
+  return { version: 1, favorites: [], order: {}, collapsedFolders: [], sortMode: 'name-asc', folderSort: {}, recentNotes: [], propertyTypes: {}, styles: {} };
 }
 
 /** Tolerates a missing or partial payload, filling absent fields with defaults. */
@@ -59,6 +62,7 @@ function normalizeMeta(raw: unknown): VaultMeta {
       PROPERTY_TYPES.some((known) => known.id === type),
     ),
   );
+  meta.styles = meta.styles && typeof meta.styles === 'object' && !Array.isArray(meta.styles) ? meta.styles : {};
   // A mode from a newer build falls back rather than sorting nonsensically.
   if (!SORT_MODES.some((mode) => mode.id === meta.sortMode)) meta.sortMode = 'name-asc';
   meta.folderSort = Object.fromEntries(
@@ -108,6 +112,9 @@ export class VaultMetaState {
   /** Manual child order per folder, for the `manual` sort mode. */
   readonly order = computed<Readonly<Record<string, readonly string[]>>>(() => this.meta()?.order ?? {});
 
+  /** Icon and color of plaintext notes and folders, by relPath. */
+  readonly styles = computed<Readonly<Record<string, ItemStyle>>>(() => this.meta()?.styles ?? {});
+
   /** Hidden notes and virtual folders, which are never written here; see `setHiddenPaths`. */
   private readonly hiddenPaths = signal<ReadonlySet<string>>(new Set());
   /** Virtual folders collapsed this session: they can't be recorded, so they start expanded. */
@@ -129,6 +136,23 @@ export class VaultMetaState {
     this.updateList('recentNotes', (recents) => recents.filter((entry) => !paths.has(entry.relPath)));
     this.updateList('favorites', (favorites) => favorites.filter((relPath) => !paths.has(relPath)));
     this.updateList('collapsedFolders', (folders) => folders.filter((relPath) => !paths.has(relPath)));
+    this.updateStyles((styles) => Object.fromEntries(Object.entries(styles).filter(([relPath]) => !paths.has(relPath))));
+  }
+
+  /** Sets the icon and color of `relPath`, or clears them for null. Not for hidden folders, which aren't recorded. */
+  setStyle(relPath: string, style: ItemStyle | null): void {
+    if (this.hiddenPaths().has(relPath)) return;
+    this.updateStyles(({ [relPath]: _, ...rest }) => (style && (style.icon || style.color) ? { ...rest, [relPath]: style } : rest));
+  }
+
+  private updateStyles(update: (styles: Record<string, ItemStyle>) => Record<string, ItemStyle>): void {
+    const meta = this.meta();
+    if (!meta) return;
+    const next = update(meta.styles);
+    const same = Object.keys(next).length === Object.keys(meta.styles).length && Object.entries(next).every(([key, value]) => meta.styles[key] === value);
+    if (same) return;
+    this.meta.set({ ...meta, styles: next });
+    this.scheduleSave();
   }
 
   /** The vault-wide type of the property `name`, if it has been given one. */
@@ -276,6 +300,11 @@ export class VaultMetaState {
   renameNote(oldRelPath: string, newRelPath: string): void {
     this.renameRecent(oldRelPath, newRelPath);
     this.renameFavorite(oldRelPath, newRelPath);
+    this.updateStyles((styles) => {
+      if (oldRelPath === newRelPath || !(oldRelPath in styles)) return styles;
+      const { [oldRelPath]: style, ...rest } = styles;
+      return { ...rest, [newRelPath]: style };
+    });
   }
 
   setSortMode(sortMode: SortMode): void {
@@ -334,6 +363,7 @@ export class VaultMetaState {
       path === oldRelPath || path.startsWith(`${oldRelPath}/`) ? newRelPath + path.slice(oldRelPath.length) : path;
     this.updateList('collapsedFolders', (folders) => folders.map(move));
     this.updateList('favorites', (favorites) => favorites.map(move));
+    this.updateStyles((styles) => Object.fromEntries(Object.entries(styles).map(([key, value]) => [move(key), value])));
     this.updateList('recentNotes', (recents) => recents.map((entry) => (move(entry.relPath) === entry.relPath ? entry : { ...entry, relPath: move(entry.relPath) })));
     const meta = this.meta();
     const moved = (keys: object) => Object.keys(keys).some((key) => move(key) !== key);
@@ -347,6 +377,7 @@ export class VaultMetaState {
   forgetFolder(relPath: string): void {
     const gone = (path: string) => path === relPath || path.startsWith(`${relPath}/`);
     this.updateList('collapsedFolders', (folders) => folders.filter((path) => !gone(path)));
+    this.updateStyles((styles) => Object.fromEntries(Object.entries(styles).filter(([path]) => !gone(path))));
     const meta = this.meta();
     if (!meta || !Object.keys(meta.folderSort).some(gone)) return;
     this.meta.set({ ...meta, folderSort: Object.fromEntries(Object.entries(meta.folderSort).filter(([path]) => !gone(path))) });
@@ -357,6 +388,7 @@ export class VaultMetaState {
   forgetNote(relPath: string): void {
     this.removeRecent(relPath);
     this.removeFavorites([relPath]);
+    this.updateStyles(({ [relPath]: _, ...rest }) => rest);
   }
 
   private updateList<K extends 'recentNotes' | 'favorites' | 'collapsedFolders'>(key: K, update: (list: VaultMeta[K]) => VaultMeta[K]): void {

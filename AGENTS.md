@@ -22,6 +22,8 @@ Angular 22 (frontend, signals-based, no NgModules).
   vault-action history. Structural tree actions live in `VaultActions`, which
   keeps tabs/notes/`state.json` following moved paths and records each undo
   step; other actions (favorites, tags, encryption, profiles) record their own.
+  A note's or folder's icon and color (`ItemStyleState`, picked in `shared/item-style/`) live in
+  `state.json` `styles`, or sealed in `NoteFrontmatter` for encrypted notes (`set_note_style`).
   Undoing a delete restores from the OS trash (`restore_from_trash`; not on
   macOS, where deletes keep their confirmation).
 - **Android** (`src-tauri/gen/android/`, arm64, Android 10+): the same app,

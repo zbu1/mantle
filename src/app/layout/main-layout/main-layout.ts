@@ -16,6 +16,7 @@ import { HoverTooltipState } from '../../shared/hover-tooltip/hover-tooltip-stat
 import { EncryptionPanel } from '../../notes/encryption-panel/encryption-panel';
 import { NewEncryptedNote } from '../../notes/new-encrypted-note/new-encrypted-note';
 import { NoteEncryptionModal } from '../../notes/note-encryption-modal/note-encryption-modal';
+import { ItemStylePicker } from '../../shared/item-style/item-style-picker';
 import { MarkdownExportModal } from '../../notes/markdown-export/markdown-export-modal';
 import { VaultRootState } from '../../notes/vault-root-state';
 import { VaultState } from '../../notes/vault-state';
@@ -37,6 +38,7 @@ import { MobileShell } from '../mobile-shell/mobile-shell';
     NewEncryptedNote,
     NoteEncryptionModal,
     MarkdownExportModal,
+    ItemStylePicker,
     SettingsModal,
     VaultDragPreview,
     QuickSwitcher,

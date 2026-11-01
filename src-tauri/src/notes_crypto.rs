@@ -388,6 +388,8 @@ fn decrypt_note_inner(
         // A plaintext note's favorite lives in `.mantle/state.json`, where the
         // frontend moves it; a stale sealed flag would come back on re-encrypting.
         frontmatter.favorite = false;
+        frontmatter.icon = None;
+        frontmatter.color = None;
         frontmatter.location = None;
         frontmatter.name = None;
         let (body, _, _) = reseal_attachments(vault_root, rel_path, &body, None, keys, Relink::Convert)?;

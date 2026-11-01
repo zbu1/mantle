@@ -127,6 +127,12 @@ pub enum VaultNode {
         /// frontmatter. Always false for a locked note and for plaintext
         /// notes, whose favorites live in `.mantle/state.json`.
         favorite: bool,
+        /// A sealed icon and color, known only while the profile is unlocked;
+        /// a plaintext note's live in `.mantle/state.json`.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        icon: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        color: Option<String>,
         /// Last modified, in milliseconds since the Unix epoch (0 if unknown).
         modified: u64,
         /// Created, in milliseconds since the Unix epoch (0 where the file system doesn't record it).
@@ -233,6 +239,8 @@ struct NoteInfo {
     tags: Option<Vec<String>>,
     links: Option<Vec<String>>,
     favorite: bool,
+    icon: Option<String>,
+    color: Option<String>,
 }
 
 /// The [`NoteInfo`] of the note at `path`: read from a plaintext note, or by
@@ -247,16 +255,18 @@ fn read_note_info(path: &Path, file_name: &str, profile: Option<&str>, vault_roo
             tags: Some(h.tags),
             links: Some(links),
             favorite: h.favorite,
+            icon: h.icon,
+            color: h.color,
         });
     }
     let Ok(raw) = fs::read_to_string(path) else { return NoteInfo::default() };
     if is_markdown_note(file_name) {
         let (_, body) = mntl_core::split_markdown_frontmatter(&raw);
-        return NoteInfo { tags: Some(mntl_core::markdown_tags(&raw)), links: Some(wikilink_targets(body)), favorite: false };
+        return NoteInfo { tags: Some(mntl_core::markdown_tags(&raw)), links: Some(wikilink_targets(body)), ..NoteInfo::default() };
     }
     mntl_core::decode_note(&raw).map_or_else(
         |_| NoteInfo::default(),
-        |(h, body)| NoteInfo { tags: Some(h.tags), links: Some(wikilink_targets(&body)), favorite: false },
+        |(h, body)| NoteInfo { tags: Some(h.tags), links: Some(wikilink_targets(&body)), ..NoteInfo::default() },
     )
 }
 
@@ -352,7 +362,7 @@ fn scan_dir(
                     hidden.disk.insert(rel);
                     continue;
                 }
-                let NoteInfo { tags, links, favorite } =
+                let NoteInfo { tags, links, favorite, icon, color } =
                     read_note_info(&entry.path(), &name, profile.as_deref(), vault_root, keys);
                 notes.push(VaultNode::Note {
                     name: title,
@@ -362,6 +372,8 @@ fn scan_dir(
                     tags,
                     links,
                     favorite,
+                    icon,
+                    color,
                     modified,
                     created,
                     hidden: false,
@@ -450,6 +462,8 @@ fn insert_hidden(root: &mut Vec<VaultNode>, hidden: HiddenScan) -> HashMap<Strin
             tags: Some(frontmatter.tags),
             links: Some(links),
             favorite: frontmatter.favorite,
+            icon: frontmatter.icon,
+            color: frontmatter.color,
             modified,
             created,
             hidden: true,
@@ -958,6 +972,35 @@ pub(crate) fn set_note_favorite_inner(
     }
     let path = resolve_note(vault_root, rel_path, keys)?;
     reseal_note(vault_root, &path, keys, |frontmatter, _| frontmatter.favorite = favorite)
+}
+
+/// Set (or clear, with `None`) an encrypted note's sealed icon and color.
+#[tauri::command]
+pub fn set_note_style(
+    vault_root: String,
+    rel_path: String,
+    icon: Option<String>,
+    color: Option<String>,
+    keys: State<SessionKeys>,
+) -> Result<(), String> {
+    logged("set_note_style", || set_note_style_inner(&vault_root, &rel_path, icon, color, &keys))
+}
+
+fn set_note_style_inner(
+    vault_root: &str,
+    rel_path: &str,
+    icon: Option<String>,
+    color: Option<String>,
+    keys: &SessionKeys,
+) -> Result<(), String> {
+    if !rel_path.ends_with(EXT_ENCRYPTED) {
+        return Err("Only an encrypted note keeps its style in the note".to_string());
+    }
+    let path = resolve_note(vault_root, rel_path, keys)?;
+    reseal_note(vault_root, &path, keys, |frontmatter, _| {
+        frontmatter.icon = icon;
+        frontmatter.color = color;
+    })
 }
 
 /// Tags as the frontend sent them, minus blanks and case-insensitive
@@ -1899,6 +1942,31 @@ tags: [x]
         assert!(set_note_favorite_inner(&root_str, "secret.mntl.enc", false, &SessionKeys::default()).is_err());
         assert!(set_note_favorite_inner(&root_str, "plain.mntl", true, &unlocked).is_err());
 
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_encrypted_notes_style_is_sealed_and_survives_saves() {
+        let root = temp_dir("sealed-style");
+        let root_str = root.to_string_lossy().into_owned();
+        let mk = mntl_core::MasterKey::generate().unwrap();
+        let document = mntl_core::encode_unencrypted_note("Body").unwrap();
+        fs::write(root.join("secret.mntl.enc"), mntl_core::encrypt_note(&mk, "diary", document.as_bytes()).unwrap()).unwrap();
+        let keys = SessionKeys::default();
+        keys.unlock_for_test(&root_str, "diary", mk).unwrap();
+        let style_in = |keys: &SessionKeys| {
+            let VaultNode::Folder { children, .. } = scan_vault_inner(&root_str, keys).unwrap() else { panic!() };
+            match find_note(&children, "secret") {
+                VaultNode::Note { icon, color, .. } => (icon.clone(), color.clone()),
+                other => panic!("expected a note, got {other:?}"),
+            }
+        };
+        set_note_style_inner(&root_str, "secret.mntl.enc", Some("star".into()), Some("primary".into()), &keys).unwrap();
+        assert_eq!(style_in(&keys), (Some("star".into()), Some("primary".into())));
+        write_note_inner(&root_str, "secret.mntl.enc", "Edited", &[], None, &keys).unwrap();
+        assert_eq!(style_in(&keys), (Some("star".into()), Some("primary".into())));
+        assert_eq!(style_in(&SessionKeys::default()), (None, None), "a locked note reveals nothing");
+        assert!(set_note_style_inner(&root_str, "plain.mntl", None, None, &keys).is_err());
         let _ = fs::remove_dir_all(&root);
     }
 

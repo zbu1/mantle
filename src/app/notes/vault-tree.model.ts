@@ -63,6 +63,9 @@ export interface VaultNoteNode extends Timestamps {
    * in `VaultMetaState` instead; use `FavoritesState` to ask either way.
    */
   favorite?: boolean;
+  /** An encrypted note's sealed icon and color, known only while its profile is unlocked; use `ItemStyleState`. */
+  icon?: string;
+  color?: string;
   /**
    * A hidden note: its profile seals where it is and what it's called, so
    * this is listed (and known by its relPath) only while that profile is
@@ -134,7 +137,7 @@ export function withRenamedNote(root: VaultFolderNode, relPath: string, newRelPa
 export function withNoteFields(
   root: VaultFolderNode,
   relPath: string,
-  fields: Partial<Pick<VaultNoteNode, 'tags' | 'favorite' | 'links'>>,
+  fields: Partial<Pick<VaultNoteNode, 'tags' | 'favorite' | 'links' | 'icon' | 'color'>>,
 ): VaultFolderNode {
   const retag = (node: VaultNode): VaultNode => {
     if (node.type === 'file') return node;

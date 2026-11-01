@@ -4,7 +4,7 @@ import { installTauriMock } from '../../testing/tauri-mock';
 import { MAX_RECENT_NOTES, VaultMeta, VaultMetaState } from './vault-meta-state';
 
 function meta(overrides: Partial<VaultMeta> = {}): VaultMeta {
-  return { version: 1, favorites: [], order: {}, collapsedFolders: [], sortMode: 'name-asc', folderSort: {}, recentNotes: [], propertyTypes: {}, ...overrides };
+  return { version: 1, favorites: [], order: {}, collapsedFolders: [], sortMode: 'name-asc', folderSort: {}, recentNotes: [], propertyTypes: {}, styles: {}, ...overrides };
 }
 
 async function flushMicrotasks(): Promise<void> {
@@ -307,6 +307,22 @@ describe('VaultMetaState', () => {
       state.setPropertyType('Rating', 'number');
       jest.advanceTimersByTime(600);
       expect(saves().at(-1)!.state.propertyTypes).toEqual({ due: 'date', rating: 'number' });
+    });
+
+    it('follows icons and colors through renames and forgets them with the item', async () => {
+      mock.respondWith('load_vault_meta', meta({ styles: { 'a.mntl': { icon: 'star' }, 'Work/b.mntl': { color: 'primary' } } }));
+      await state.load('/vault');
+
+      state.renameNote('a.mntl', 'c.mntl');
+      state.renameFolder('Work', 'Jobs');
+      expect(state.styles()).toEqual({ 'c.mntl': { icon: 'star' }, 'Jobs/b.mntl': { color: 'primary' } });
+
+      state.setStyle('c.mntl', { icon: 'heart', color: 'success' });
+      state.forgetNote('Jobs/b.mntl');
+      state.setStyle('x.mntl', {});
+      expect(state.styles()).toEqual({ 'c.mntl': { icon: 'heart', color: 'success' } });
+      jest.advanceTimersByTime(600);
+      expect(saves().at(-1)!.state.styles).toEqual({ 'c.mntl': { icon: 'heart', color: 'success' } });
     });
 
     it('flushes a pending save to the old vault before switching to another', async () => {

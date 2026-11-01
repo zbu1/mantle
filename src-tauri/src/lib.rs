@@ -50,6 +50,7 @@ pub fn run() {
             vault::read_note,
             vault::write_note,
             vault::set_note_favorite,
+            vault::set_note_style,
             vault::create_note,
             vault::create_folder,
             vault::delete_note,

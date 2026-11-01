@@ -167,6 +167,13 @@ pub struct NoteFrontmatter {
     /// lives in the vault's `.mantle/state.json` instead. Omitted when false.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub favorite: bool,
+    /// The note's sidebar icon (a Lucide icon name) and color (a palette
+    /// name). Only encrypted notes use these, so they stay sealed; a plaintext
+    /// note's live in `.mantle/state.json`. Omitted when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
     /// The user's own properties (`due`, `status`, ...), in display order.
     /// Nested under one key so a property can't collide with the fields
     /// above. Omitted when empty. See [`crate::properties`].
@@ -189,6 +196,8 @@ impl Default for NoteFrontmatter {
             v: NOTE_VERSION,
             tags: Vec::new(),
             favorite: false,
+            icon: None,
+            color: None,
             properties: serde_yaml::Mapping::new(),
             location: None,
             name: None,

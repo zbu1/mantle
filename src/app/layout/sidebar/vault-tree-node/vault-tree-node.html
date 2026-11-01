@@ -13,7 +13,9 @@
   <app-explorer-row [label]="folder.name" [depth]="depth()" [baseIndent]="BASE_INDENT" [indentStep]="INDENT_STEP"
     [strong]="true" [expanded]="isExpanded()" [draggable]="true" [selected]="selectionState.isSelected(folder.relPath)"
     (toggle)="onFolderToggle(folder, $event)" (headerDragStart)="onFolderDragStart(folder, $event)"
-    (headerContextMenu)="folderContextMenu.emit({ event: $event, folder })" />
+    (headerContextMenu)="folderContextMenu.emit({ event: $event, folder })">
+    <app-item-style-icon explorerIcon [itemStyle]="itemStyles.of(folder.relPath)" fallback="folder" />
+  </app-explorer-row>
   }
   <app-explorer-body [expanded]="isExpanded()">
     <div class="py-px">
@@ -47,6 +49,7 @@
     [suppressNativeTitle]="true" [appHoverTooltip]="note.name"
     [appHoverTooltipSublabel]="encryptionStatus(note)" (clicked)="onNoteClick(note, $event)"
     (middleClicked)="openNoteInBackground.emit(note)" (contextMenu)="onNoteContextMenu(note, $event)">
+    <app-item-style-icon sidebarItemIcon [itemStyle]="itemStyles.of(note.relPath)" />
     @if (note.encrypted) {
     <!-- Icons are kept for what isn't plain text: which profile seals the note, and whether it's open. -->
     <span sidebarItemTrailing class="flex min-w-0 shrink items-center gap-1 pl-1 text-[11px] text-muted-foreground">

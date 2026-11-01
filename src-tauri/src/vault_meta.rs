@@ -73,6 +73,20 @@ pub struct VaultMeta {
     /// Note that this names properties used only in encrypted notes.
     #[serde(default)]
     pub property_types: BTreeMap<String, String>,
+    /// Icon and color of plaintext notes and of folders, by `rel_path`
+    /// (an encrypted note's are sealed in the note instead).
+    #[serde(default)]
+    pub styles: BTreeMap<String, ItemStyle>,
+}
+
+/// A note's or folder's sidebar icon (a Lucide icon name) and color (a
+/// palette name), either of which may be unset.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct ItemStyle {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
 }
 
 /// One entry in the recently-opened list.
@@ -103,6 +117,7 @@ impl Default for VaultMeta {
             folder_sort: BTreeMap::new(),
             recent_notes: Vec::new(),
             property_types: BTreeMap::new(),
+            styles: BTreeMap::new(),
         }
     }
 }
@@ -188,6 +203,7 @@ mod tests {
                 RecentNote { rel_path: "notes.mntl.enc".to_string(), opened_at: 1_757_900_000_000 },
             ],
             property_types: BTreeMap::from([("due".to_string(), "date".to_string())]),
+            styles: BTreeMap::from([("Work".to_string(), ItemStyle { icon: Some("star".to_string()), color: None })]),
         };
         save_vault_meta(root_str.clone(), state.clone()).unwrap();
 
