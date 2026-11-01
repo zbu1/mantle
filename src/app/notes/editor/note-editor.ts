@@ -32,6 +32,7 @@ import { sameProperties } from '../properties';
 import { VaultState } from '../vault-state';
 import { VaultRootState } from '../vault-root-state';
 import { ContextMenuState } from '../../shared/context-menu/context-menu-state';
+import { formatError } from '../../core/logger';
 import { DialogState } from '../../shared/dialog/dialog-state';
 import { EditContextState } from '../../shared/edit-context-state';
 import { EditorFocusState } from './editor-focus-state';
@@ -459,9 +460,15 @@ export class NoteEditor {
         : (file.name.split('.').pop()?.toLowerCase() ?? '');
       return invoke<string>('save_attachment', { ...args(), data: dataUrl.slice(dataUrl.indexOf(',') + 1), ext });
     };
+    // The plugin only logs a failure; the user needs to see it too.
+    const reported = <A extends unknown[], R>(fn: (...a: A) => Promise<R>) => (...a: A) =>
+      fn(...a).catch((err) => {
+        void this.dialogState.alert(formatError(err), { title: "Couldn't Add File", tone: 'error' });
+        throw err;
+      });
     return {
-      save,
-      pick: async () => {
+      save: reported(save),
+      pick: reported(async () => {
         // Android's file dialog hands back a `content://` URI, not a path the backend can read; the WebView's own picker gives the bytes.
         if (isMobile) {
           const file = await chooseFile([...IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS, 'pdf'].map((ext) => `.${ext}`).join(','));
@@ -472,7 +479,7 @@ export class NoteEditor {
           filters: [{ name: 'Images, Videos and PDFs', extensions: [...IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS, 'pdf'] }],
         });
         return sourcePath ? invoke<string>('import_attachment', { ...args(), sourcePath }) : null;
-      },
+}),
       url: (src) => attachmentUrl(args().vaultRoot, args().noteRelPath, src),
       open: (src) => void this.attachments.openLinked(this.noteId(), src),
       contextMenu: (event, view, pos, node) => void this.openImageMenu(event, view, pos, node),

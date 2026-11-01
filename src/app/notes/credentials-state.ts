@@ -202,7 +202,7 @@ export class CredentialsState {
         vaultRoot: root,
       });
       this.profiles.set(profiles);
-      this.biometric.set(await invoke('biometric_status', { vaultRoot: root }));
+      this.biometric.set(await invoke<{ available: boolean; enabled: string[] }>('biometric_status', { vaultRoot: root }).catch(() => ({ available: false, enabled: [] })));
     } catch (err) {
       logError(`Failed to load credential profiles: ${formatError(err)}`);
       this.error.set(String(err));
