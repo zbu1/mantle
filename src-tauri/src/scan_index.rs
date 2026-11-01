@@ -13,6 +13,7 @@
 
 use crate::vault::write_atomic;
 use mntl_core::MasterKey;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -23,6 +24,10 @@ use std::path::PathBuf;
 pub(crate) struct Indexed {
     pub tags: Vec<String>,
     pub links: Vec<String>,
+    /// Link sources in the text and strings in the properties, as written, for
+    /// finding which attachments a note uses without reading it.
+    pub refs: Vec<String>,
+    pub prop_refs: Vec<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub favorite: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -36,23 +41,26 @@ pub(crate) struct Indexed {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-struct Entry {
+struct Entry<V> {
     len: u64,
     modified: u64,
-    info: Indexed,
+    info: V,
 }
 
-/// One file's worth of entries: the ones a scan found current (`new`), against
-/// those it started from (`old`), so notes that were deleted drop out.
-#[derive(Default)]
-struct Section {
-    old: HashMap<String, Entry>,
-    new: HashMap<String, Entry>,
+/// One file's worth of entries: the ones a pass found current (`new`), against
+/// those it started from (`old`), so files that were deleted drop out.
+struct Section<V> {
+    old: HashMap<String, Entry<V>>,
+    new: HashMap<String, Entry<V>>,
     dirty: bool,
 }
 
-impl Section {
-    fn get_or(&mut self, rel: &str, (len, modified): (u64, u64), compute: impl FnOnce() -> Option<Indexed>) -> Option<Indexed> {
+impl<V: Serialize + DeserializeOwned + Clone> Section<V> {
+    fn with_old(old: HashMap<String, Entry<V>>) -> Self {
+        Self { old, new: HashMap::new(), dirty: false }
+    }
+
+    fn get_or(&mut self, rel: &str, (len, modified): (u64, u64), compute: impl FnOnce() -> Option<V>) -> Option<V> {
         // Without a modified time there's nothing to tell a changed file by.
         if modified == 0 {
             return compute();
@@ -72,69 +80,81 @@ impl Section {
     }
 }
 
-fn parse(bytes: &[u8]) -> HashMap<String, Entry> {
+fn parse<V: DeserializeOwned>(bytes: &[u8]) -> HashMap<String, Entry<V>> {
     serde_json::from_slice(bytes).unwrap_or_default()
 }
 
-pub(crate) struct ScanIndex {
-    mantle_dir: PathBuf,
-    plain: Section,
-    sealed: HashMap<String, (MasterKey, Section)>,
+/// Indexes of one kind of file, in one folder: a plaintext file and one sealed per profile.
+pub(crate) struct Store<V> {
+    dir: PathBuf,
+    plain_file: &'static str,
+    sealed_prefix: &'static str,
+    plain: Section<V>,
+    sealed: HashMap<String, (MasterKey, Section<V>)>,
 }
 
-impl ScanIndex {
+/// The index of a vault's notes.
+pub(crate) type ScanIndex = Store<Indexed>;
+
+impl Store<Indexed> {
     pub fn load(vault_root: &str) -> Self {
-        let mantle_dir = PathBuf::from(vault_root).join(".mantle");
-        let old = fs::read(mantle_dir.join("index.json")).map(|b| parse(&b)).unwrap_or_default();
-        Self { mantle_dir, plain: Section { old, ..Section::default() }, sealed: HashMap::new() }
+        Self::open(PathBuf::from(vault_root).join(".mantle"), "index.json", "index-")
+    }
+}
+
+impl<V: Serialize + DeserializeOwned + Clone> Store<V> {
+    /// Open the index whose plaintext part is `dir/plain_file` and whose sealed parts are `dir/<sealed_prefix><profile>.enc`.
+    pub fn open(dir: PathBuf, plain_file: &'static str, sealed_prefix: &'static str) -> Self {
+        let old = fs::read(dir.join(plain_file)).map(|b| parse(&b)).unwrap_or_default();
+        Self { dir, plain_file, sealed_prefix, plain: Section::with_old(old), sealed: HashMap::new() }
     }
 
-    /// The entry for the plaintext note at `rel`, read by `compute` if the index lacks a current one.
-    pub fn plain(&mut self, rel: &str, stamp: (u64, u64), compute: impl FnOnce() -> Option<Indexed>) -> Option<Indexed> {
+    /// The entry for the plaintext file at `rel`, read by `compute` if the index lacks a current one.
+    pub fn plain(&mut self, rel: &str, stamp: (u64, u64), compute: impl FnOnce() -> Option<V>) -> Option<V> {
         self.plain.get_or(rel, stamp, compute)
     }
 
-    /// As [`Self::plain`] for a note sealed under `profile`, whose index is read with `mk`.
+    /// As [`Self::plain`] for a file sealed under `profile`, whose index is read with `mk`.
     pub fn sealed(
         &mut self,
         profile: &str,
         mk: &MasterKey,
         rel: &str,
         stamp: (u64, u64),
-        compute: impl FnOnce() -> Option<Indexed>,
-    ) -> Option<Indexed> {
-        let dir = &self.mantle_dir;
+        compute: impl FnOnce() -> Option<V>,
+    ) -> Option<V> {
+        let (dir, prefix) = (&self.dir, self.sealed_prefix);
         let (_, section) = self.sealed.entry(profile.to_string()).or_insert_with(|| {
-            let old = fs::read(sealed_path(dir, profile))
+            let old = fs::read(sealed_path(dir, prefix, profile))
                 .ok()
                 .and_then(|blob| mntl_core::decrypt_note(mk, &blob).ok())
                 .map(|json| parse(&json))
                 .unwrap_or_default();
-            (mk.clone(), Section { old, ..Section::default() })
+            (mk.clone(), Section::with_old(old))
         });
         section.get_or(rel, stamp, compute)
     }
 
-    /// Write whatever sections changed. Failing to is no loss: the next scan reads those notes again.
+    /// Write whatever sections changed. Failing to is no loss: the next pass reads those files again.
     pub fn save(self) {
         if self.plain.changed() {
-            write_section(&self.mantle_dir.join("index.json"), &self.plain.new, None);
+            write_section(&self.dir.join(self.plain_file), &self.plain.new, None);
         }
         for (profile, (mk, section)) in self.sealed {
             if section.changed() {
-                write_section(&sealed_path(&self.mantle_dir, &profile), &section.new, Some((&profile, &mk)));
+                write_section(&sealed_path(&self.dir, self.sealed_prefix, &profile), &section.new, Some((&profile, &mk)));
             }
         }
     }
 }
 
-/// An id that isn't a plain name could climb out of `.mantle`; it just gets no index.
-fn sealed_path(dir: &std::path::Path, profile: &str) -> PathBuf {
+/// An id that isn't a plain name could climb out of the folder; it just gets no index.
+fn sealed_path(dir: &std::path::Path, prefix: &str, profile: &str) -> PathBuf {
     let safe = profile.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
-    dir.join(if safe { format!("index-{profile}.enc") } else { "index-invalid.enc".to_string() })
+    dir.join(format!("{prefix}{}.enc", if safe { profile } else { "invalid" }))
 }
 
-fn write_section(path: &std::path::Path, entries: &HashMap<String, Entry>, seal: Option<(&str, &MasterKey)>) {
+fn write_section<V: Serialize>(path: &std::path::Path, entries: &HashMap<String, Entry<V>>, seal: Option<(&str, &MasterKey)>) {
     let Ok(json) = serde_json::to_vec(entries) else { return };
     let bytes = match seal {
         Some((profile, mk)) => match mntl_core::encrypt_note(mk, profile, &json) {

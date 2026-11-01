@@ -23,8 +23,9 @@ use crate::session::{ask_path, ActiveVault, Ask};
 
 use crate::credentials::SessionKeys;
 use crate::logging::logged;
+use crate::scan_index::ScanIndex;
 use crate::vault::{
-    is_markdown_note, master_key_for, note_paths, read_header_prefix, read_note_inner, NoteDocument, resolve_rel_dir,
+    indexed_note, is_markdown_note, master_key_for, note_paths, read_header_prefix, read_note_inner, NoteDocument, resolve_rel_dir,
     resolve_rel_path, write_atomic, EXT_ENCRYPTED, EXT_PLAIN, LOCKED_ERR_PREFIX,
 };
 use base64::engine::general_purpose::STANDARD as BASE64;
@@ -676,14 +677,46 @@ pub fn attachment_info(active_vault: State<'_, ActiveVault>, note_rel_path: Stri
     })
 }
 
-/// The files that `content`, the text of the note at `note_rel`, references.
-/// With `only`, sources whose file name none of those paths has are skipped
-/// unresolved, which spares a vault-wide walk for every bare `![[name.png]]`
-/// in every note.
-fn referenced(vault_root: &str, note_rel: &str, content: &str, only: Option<&BTreeSet<String>>) -> HashSet<String> {
-    link_sources(content)
-        .into_iter()
-        .map(|source| &content[source.range])
+/// The link sources in `content`, as a note keeps them in the scan index.
+pub(crate) fn content_sources(content: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for source in link_sources(content) {
+        let src = &content[source.range];
+        if !out.iter().any(|s| s == src) {
+            out.push(src.to_string());
+        }
+    }
+    out
+}
+
+/// Every string among a note's property values, which may hold an
+/// attachment's path (a cover image, say).
+pub(crate) fn property_strings<'a>(values: impl IntoIterator<Item = &'a serde_yaml::Value>) -> Vec<String> {
+    fn walk(value: &serde_yaml::Value, out: &mut Vec<String>) {
+        match value {
+            serde_yaml::Value::String(s) if !s.contains(':') && !out.contains(s) => out.push(s.clone()),
+            serde_yaml::Value::Sequence(items) => items.iter().for_each(|v| walk(v, out)),
+            serde_yaml::Value::Mapping(map) => map.values().for_each(|v| walk(v, out)),
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    values.into_iter().for_each(|v| walk(v, &mut out));
+    out
+}
+
+/// The files that the link sources `content` and the property strings `props`
+/// of the note at `note_rel` lead to. With `only`, content sources whose file
+/// name none of those paths has are skipped unresolved, which spares a
+/// vault-wide walk for every bare `![[name.png]]` in every note.
+fn resolve_refs<'a>(
+    vault_root: &str,
+    note_rel: &str,
+    content: impl Iterator<Item = &'a str>,
+    props: impl Iterator<Item = &'a str>,
+    only: Option<&BTreeSet<String>>,
+) -> HashSet<String> {
+    let mut used: HashSet<String> = content
         .filter(|src| {
             only.is_none_or(|only| {
                 let src = percent_decode_str(src).decode_utf8_lossy();
@@ -692,28 +725,28 @@ fn referenced(vault_root: &str, note_rel: &str, content: &str, only: Option<&BTr
             })
         })
         .filter_map(|src| resolve_attachment(vault_root, note_rel, src))
-        .collect()
+        .collect();
+    used.extend(
+        props
+            .filter_map(|src| resolve_attachment(vault_root, note_rel, src))
+            .filter(|rel| only.is_none_or(|only| only.contains(rel))),
+    );
+    used
 }
 
-/// [`referenced`] by a whole note: its text plus any string in its properties,
-/// which may hold an attachment's path (a cover image, say).
+/// [`resolve_refs`] for the text of a note alone.
+fn referenced(vault_root: &str, note_rel: &str, content: &str, only: Option<&BTreeSet<String>>) -> HashSet<String> {
+    let sources = content_sources(content);
+    resolve_refs(vault_root, note_rel, sources.iter().map(String::as_str), std::iter::empty(), only)
+}
+
+/// [`resolve_refs`] for a whole note: its text plus its properties.
 fn referenced_doc(vault_root: &str, note_rel: &str, doc: &NoteDocument, only: Option<&BTreeSet<String>>) -> HashSet<String> {
-    fn strings<'a>(value: &'a serde_json::Value, out: &mut Vec<&'a str>) {
-        match value {
-            serde_json::Value::String(s) => out.push(s),
-            serde_json::Value::Array(items) => items.iter().for_each(|v| strings(v, out)),
-            serde_json::Value::Object(map) => map.values().for_each(|v| strings(v, out)),
-            _ => {}
-        }
-    }
-    let mut used = referenced(vault_root, note_rel, &doc.content, only);
-    let mut values = Vec::new();
-    for property in doc.properties.iter().flatten() {
-        strings(&property.value, &mut values);
-    }
-    let in_properties = values.into_iter().filter_map(|src| resolve_attachment(vault_root, note_rel, src));
-    used.extend(in_properties.filter(|rel| only.is_none_or(|only| only.contains(rel))));
-    used
+    let sources = content_sources(&doc.content);
+    let values: Vec<serde_yaml::Value> =
+        doc.properties.iter().flatten().filter_map(|p| serde_yaml::to_value(&p.value).ok()).collect();
+    let props = property_strings(&values);
+    resolve_refs(vault_root, note_rel, sources.iter().map(String::as_str), props.iter().map(String::as_str), only)
 }
 
 /// Which managed attachments could go along with some notes.
@@ -742,8 +775,6 @@ pub fn unused_attachments(
     logged("unused_attachments", || unused_attachments_inner(&vault_root, &deleting, &candidates, &keys))
 }
 
-// ponytail: reads every note in the vault per call; keep a reference index if
-// big vaults make deleting slow.
 fn unused_attachments_inner(
     vault_root: &str,
     deleting: &[String],
@@ -780,11 +811,23 @@ pub(crate) fn unreferenced(
     let profiles: HashMap<String, Option<String>> =
         found.iter().map(|rel| (rel.clone(), sealed_profile(vault_root, rel))).collect();
 
-    for (note, _) in note_paths(vault_root, keys)? {
+    let mut index = ScanIndex::load(vault_root);
+    for (note, disk) in note_paths(vault_root, keys)? {
         if found.is_empty() {
             break;
         }
         if skip.contains(&note) {
+            continue;
+        }
+        if let Some(info) = indexed_note(vault_root, &disk, keys, &mut index) {
+            let used = resolve_refs(
+                vault_root,
+                &note,
+                info.refs.iter().map(String::as_str),
+                info.prop_refs.iter().map(String::as_str),
+                Some(&found),
+            );
+            found.retain(|rel| !used.contains(rel));
             continue;
         }
         match read_note_inner(vault_root, &note, keys) {
@@ -816,6 +859,7 @@ pub(crate) fn unreferenced(
             }
         }
     }
+    index.save();
     Ok(found)
 }
 

@@ -268,12 +268,7 @@ struct NoteInfo {
 /// right now; like [`read_profile_id`], a scan never fails over one
 /// unreadable note.
 fn read_note_info(note: &ScanNote, profile: Option<&str>, vault_root: &str, keys: &SessionKeys, index: &mut ScanIndex) -> NoteInfo {
-    let info = if note.name.ends_with(EXT_ENCRYPTED) {
-        read_sealed_note(note, profile, vault_root, keys, index)
-    } else {
-        index.plain(&note.rel, note.stamp, || read_plain_note(&note.path, &note.name))
-    };
-    info.map_or_else(NoteInfo::default, |i| NoteInfo {
+    read_indexed(note, profile, vault_root, keys, index).map_or_else(NoteInfo::default, |i| NoteInfo {
         tags: Some(i.tags),
         links: Some(i.links),
         favorite: i.favorite,
@@ -282,14 +277,52 @@ fn read_note_info(note: &ScanNote, profile: Option<&str>, vault_root: &str, keys
     })
 }
 
+fn read_indexed(note: &ScanNote, profile: Option<&str>, vault_root: &str, keys: &SessionKeys, index: &mut ScanIndex) -> Option<Indexed> {
+    if note.name.ends_with(EXT_ENCRYPTED) {
+        read_sealed_note(note, profile, vault_root, keys, index)
+    } else {
+        index.plain(&note.rel, note.stamp, || read_plain_note(&note.path, &note.name))
+    }
+}
+
+/// What the scan index holds of the note file at vault-relative `disk`, read
+/// now if it's out of date; `None` if it can't be read (a locked profile, say).
+pub(crate) fn indexed_note(vault_root: &str, disk: &str, keys: &SessionKeys, index: &mut ScanIndex) -> Option<Indexed> {
+    let path = resolve_rel_path(vault_root, disk).ok()?;
+    let name = disk.rsplit('/').next()?.to_string();
+    let meta = fs::metadata(&path).ok()?;
+    let len = meta.len();
+    let (modified, _) = file_times(Ok(meta));
+    let profile = name.ends_with(EXT_ENCRYPTED).then(|| read_profile_id(&path)).flatten();
+    let note = ScanNote { path, name, rel: disk.to_string(), stamp: (len, modified) };
+    read_indexed(&note, profile.as_deref(), vault_root, keys, index)
+}
+
 fn read_plain_note(path: &Path, file_name: &str) -> Option<Indexed> {
     let raw = fs::read_to_string(path).ok()?;
     if is_markdown_note(file_name) {
         let (_, body) = mntl_core::split_markdown_frontmatter(&raw);
-        return Some(Indexed { tags: mntl_core::markdown_tags(&raw), links: wikilink_targets(body), ..Indexed::default() });
+        let props: Vec<serde_yaml::Value> = mntl_core::markdown_properties(&raw)
+            .into_iter()
+            .flatten()
+            .map(|(_, value)| value)
+            .collect();
+        return Some(Indexed {
+            tags: mntl_core::markdown_tags(&raw),
+            links: wikilink_targets(body),
+            refs: crate::attachments::content_sources(body),
+            prop_refs: crate::attachments::property_strings(&props),
+            ..Indexed::default()
+        });
     }
     let (h, body) = mntl_core::decode_note(&raw).ok()?;
-    Some(Indexed { tags: h.tags, links: wikilink_targets(&body), ..Indexed::default() })
+    Some(Indexed {
+        refs: crate::attachments::content_sources(&body),
+        prop_refs: crate::attachments::property_strings(h.properties.values()),
+        links: wikilink_targets(&body),
+        tags: h.tags,
+        ..Indexed::default()
+    })
 }
 
 /// The distinct targets of the `[[wikilinks]]` in `body`, outside code.
@@ -327,6 +360,8 @@ fn open_sealed(path: &Path, mk: &mntl_core::MasterKey) -> Option<Indexed> {
     let document = std::str::from_utf8(&document).ok()?;
     let (h, body) = mntl_core::decode_note(document).ok()?;
     Some(Indexed {
+        refs: crate::attachments::content_sources(&body),
+        prop_refs: crate::attachments::property_strings(h.properties.values()),
         tags: h.tags,
         links: wikilink_targets(&body),
         favorite: h.favorite,

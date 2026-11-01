@@ -157,20 +157,59 @@ fn write_snap(vault_root: &str, entry: &Entry, content: &str, scope: Option<(&st
     }
 }
 
-/// The sealed snapshot files, with whether each opened: a locked profile's
-/// stay closed and are left alone.
-fn sealed_snaps(vault_root: &str, keys: &SessionKeys) -> Vec<Snap> {
-    let Ok(read) = fs::read_dir(dir(vault_root)) else { return Vec::new() };
+/// What an index of sealed snapshots keeps of each: enough to list them without opening them.
+#[derive(Serialize, Deserialize, Clone)]
+struct SnapMeta {
+    path: String,
+    time: u64,
+}
+
+/// Every snapshot this session can list, with the profile each is sealed
+/// under (`None` for plaintext), but not its content. Sealed ones come from a
+/// sealed index, so only those that changed are opened; a locked profile's
+/// are left alone.
+fn entries(vault_root: &str, keys: &SessionKeys) -> Result<Vec<(Entry, Option<String>)>, String> {
     let mut out = Vec::new();
+    for entry in read_index(vault_root)? {
+        if dir(vault_root).join(format!("{}.{EXT_PLAIN}", entry.id)).is_file() {
+            out.push((entry, None));
+        }
+    }
+    let Ok(read) = fs::read_dir(dir(vault_root)) else { return Ok(out) };
+    let mut metas = crate::scan_index::Store::<SnapMeta>::open(dir(vault_root), "", "meta-");
     for item in read.flatten() {
         let path = item.path();
         if path.extension().and_then(|e| e.to_str()) != Some(EXT_SEALED) {
             continue;
         }
         let Some(id) = path.file_stem().and_then(|s| s.to_str()).map(str::to_string) else { continue };
-        out.extend(open_sealed(vault_root, keys, &path, id));
+        let Some(profile) = read_header_prefix(&path)
+            .ok()
+            .and_then(|head| mntl_core::extract_encrypted_header(&head).ok())
+            .map(|h| h.credential_profile)
+        else {
+            continue;
+        };
+        let Some(mk) = keys.get(vault_root, &profile).ok().flatten() else { continue };
+        let stamp = item.metadata().map_or((0, 0), |m| (m.len(), m.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_millis() as u64)));
+        let meta = metas.sealed(&profile, &mk, &id, stamp, || open_sealed(vault_root, keys, &path, id.clone()).map(|s| SnapMeta { path: s.entry.path, time: s.entry.time }));
+        if let Some(meta) = meta {
+            out.push((Entry { id, path: meta.path, time: meta.time }, Some(profile)));
+        }
     }
-    out
+    metas.save();
+    Ok(out)
+}
+
+/// The content of a snapshot listed by [`entries`].
+fn load(vault_root: &str, keys: &SessionKeys, entry: Entry, profile: Option<String>) -> Option<Snap> {
+    match profile {
+        None => {
+            let content = fs::read_to_string(dir(vault_root).join(format!("{}.{EXT_PLAIN}", entry.id))).ok()?;
+            Some(Snap { entry, content, profile: None })
+        }
+        Some(_) => open_sealed(vault_root, keys, &dir(vault_root).join(format!("{}.{EXT_SEALED}", entry.id)), entry.id),
+    }
 }
 
 /// The sealed snapshot `id` at `path`, if its profile is unlocked.
@@ -188,22 +227,15 @@ fn open_sealed(vault_root: &str, keys: &SessionKeys, path: &std::path::Path, id:
     })
 }
 
-/// Every snapshot this session can read.
-// ponytail: decrypts every unlocked sealed snapshot per call; add a sealed index if big vaults feel it.
+/// Every snapshot this session can read, with its content.
+#[cfg(test)]
 fn all(vault_root: &str, keys: &SessionKeys) -> Result<Vec<Snap>, String> {
-    let mut out = Vec::new();
-    for entry in read_index(vault_root)? {
-        if let Ok(content) = fs::read_to_string(dir(vault_root).join(format!("{}.{EXT_PLAIN}", entry.id))) {
-            out.push(Snap { entry, content, profile: None });
-        }
-    }
-    out.extend(sealed_snaps(vault_root, keys));
-    Ok(out)
+    Ok(entries(vault_root, keys)?.into_iter().filter_map(|(entry, profile)| load(vault_root, keys, entry, profile)).collect())
 }
 
-fn remove_files(vault_root: &str, snap: &Snap) {
-    let ext = if snap.profile.is_some() { EXT_SEALED } else { EXT_PLAIN };
-    let _ = fs::remove_file(dir(vault_root).join(format!("{}.{ext}", snap.entry.id)));
+fn remove_files(vault_root: &str, id: &str, sealed: bool) {
+    let ext = if sealed { EXT_SEALED } else { EXT_PLAIN };
+    let _ = fs::remove_file(dir(vault_root).join(format!("{id}.{ext}")));
 }
 
 /// Fold a save of `rel_path` into its open snapshot, or start a new one once
@@ -275,8 +307,9 @@ fn follow_inner(vault_root: &str, from: &str, to: &str, scope: Scope, keys: &Ses
     }
     let mut index = read_index(vault_root)?;
     let mut changed = false;
-    for snap in all(vault_root, keys)? {
-        let Some(path) = moved_path(&snap.entry.path, from, to) else { continue };
+    for (listed, profile) in entries(vault_root, keys)? {
+        let Some(path) = moved_path(&listed.path, from, to) else { continue };
+        let Some(snap) = load(vault_root, keys, listed, profile) else { continue };
         let entry = Entry { path, ..snap.entry.clone() };
         match (&scope, &snap.profile) {
             (Scope::Profile(profile, mk), _) => {
@@ -320,10 +353,10 @@ fn follow_inner(vault_root: &str, from: &str, to: &str, scope: Scope, keys: &Ses
 pub fn list_snapshots(active_vault: State<'_, ActiveVault>, rel_path: String, keys: State<SessionKeys>) -> Result<Vec<SnapshotInfo>, String> {
     let vault_root = active_vault.root()?;
     logged("list_snapshots", || {
-        let mut found: Vec<_> = all(&vault_root, &keys)?
+        let mut found: Vec<_> = entries(&vault_root, &keys)?
             .into_iter()
-            .filter(|s| s.entry.path == rel_path)
-            .map(|s| SnapshotInfo { id: s.entry.id, time: s.entry.time })
+            .filter(|(e, _)| e.path == rel_path)
+            .map(|(e, _)| SnapshotInfo { id: e.id, time: e.time })
             .collect();
         found.sort_by(|a, b| b.time.cmp(&a.time));
         Ok(found)
@@ -359,10 +392,10 @@ pub fn list_deleted_notes(active_vault: State<'_, ActiveVault>, keys: State<Sess
     let vault_root = active_vault.root()?;
     logged("list_deleted_notes", || {
         let mut newest: HashMap<String, Entry> = HashMap::new();
-        for snap in all(&vault_root, &keys)? {
-            let slot = newest.entry(snap.entry.path.clone()).or_insert_with(|| snap.entry.clone());
-            if snap.entry.time > slot.time {
-                *slot = snap.entry;
+        for (entry, _) in entries(&vault_root, &keys)? {
+            let slot = newest.entry(entry.path.clone()).or_insert_with(|| entry.clone());
+            if entry.time > slot.time {
+                *slot = entry;
             }
         }
         let mut gone = Vec::new();
@@ -415,14 +448,14 @@ pub fn prune_history(active_vault: State<'_, ActiveVault>, keys: State<SessionKe
         let meta = crate::vault_meta::read_vault_meta(&vault_root)?;
         let cutoff = now_ms().saturating_sub(u64::from(meta.snapshot_days) * 24 * 60 * 60 * 1000);
         let _guard = lock();
-        let (old, _): (Vec<_>, Vec<_>) = all(&vault_root, &keys)?.into_iter().partition(|s| s.entry.time < cutoff);
+        let old: Vec<_> = entries(&vault_root, &keys)?.into_iter().filter(|(e, _)| e.time < cutoff).collect();
         if old.is_empty() {
             return Ok(());
         }
         let mut index = read_index(&vault_root)?;
-        for snap in &old {
-            remove_files(&vault_root, snap);
-            index.retain(|e| e.id != snap.entry.id);
+        for (entry, profile) in &old {
+            remove_files(&vault_root, &entry.id, profile.is_some());
+            index.retain(|e| e.id != entry.id);
         }
         write_index(&vault_root, &index)
     })
