@@ -40,6 +40,8 @@ pub fn run() {
         .register_asynchronous_uri_scheme_protocol("mantle", attachments::protocol)
         .invoke_handler(tauri::generate_handler![
             spelling::spelling_suggestions,
+            spelling::spell_check,
+            spelling::add_to_dictionary,
             typst_render::render_typst,
             vault::scan_vault,
             vault::create_vault,

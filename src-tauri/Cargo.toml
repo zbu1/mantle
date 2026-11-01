@@ -40,12 +40,8 @@ typst-layout = "0.15.1"
 typst-svg = "0.15.1"
 typst-assets = { version = "0.15.1", features = ["fonts"] }
 comemo = "0.5.1"
-
+spellbook = "0.4.2"
 
 # Android has no OS trash; deletes there are permanent (`vault::move_to_trash`).
-# The OS spell checker behind the editor's spelling suggestions (`spelling.rs`).
-[target.'cfg(windows)'.dependencies]
-windows = { version = "0.62", features = ["Win32_Globalization", "Win32_System_Com"] }
-
 [target.'cfg(not(target_os = "android"))'.dependencies]
 trash = "5.2.6"

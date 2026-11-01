@@ -147,7 +147,7 @@
             <option value="5s">5 seconds</option>
           </select>
         </app-settings-row>
-        <app-settings-row label="Spellcheck">
+        <app-settings-row label="Spellcheck" description="English (US), checked on this device. Words you add are stored unencrypted in this app's local data, not in any vault.">
           <app-toggle [checked]="spellcheck()" (changed)="spellcheck.set($event)" />
         </app-settings-row>
         <app-settings-row label="Line Wrap">

@@ -65,6 +65,8 @@ Angular 22 (frontend, signals-based, no NgModules).
   the editor's code block view (no file or package access, cached in memory
   by content hash); ` ```mermaid ` blocks render in the frontend, the
   `mermaid` package loaded lazily on first use.
+  `src-tauri/src/spelling.rs` checks English (US) spelling with `spellbook` and a bundled
+  Hunspell dictionary; added words live in the app's local data (`dictionary.txt`), never in a vault.
   `src-tauri/src/export.rs` turns Mantle notes back into Markdown — in place
   (`convert_to_markdown`) or as a copy of the vault elsewhere (`export_vault`)
   — writing their `attachments/` files out decrypted where the user picks

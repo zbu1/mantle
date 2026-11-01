@@ -1,3 +1,4 @@
+import { SpellcheckState } from '../../notes/editor/spellcheck-state';
 import { Component, computed, effect, inject, signal } from '@angular/core';
 import { appLogDir, join } from '@tauri-apps/api/path';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
@@ -155,7 +156,7 @@ export class SettingsModal {
   // NotesState debounces saves by a fixed ~1s today; making that
   // configurable is new work.
   protected readonly autosaveDelay = signal<AutosaveDelay>('1s');
-  protected readonly spellcheck = signal(true);
+  protected readonly spellcheck = inject(SpellcheckState).enabled;
   protected readonly lineWrap = signal(true);
   protected readonly readableLineLength = signal(true);
   protected readonly typewriterScrolling = signal(false);

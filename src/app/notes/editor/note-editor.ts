@@ -47,6 +47,8 @@ import { enterAfterFold, foldedHeadings, headingFoldKey, headingFoldPlugin, setF
 import { calloutPlugin } from './prosemirror/plugins/callout-plugin';
 import { footnotePlugin } from './prosemirror/plugins/footnote-plugin';
 import { tocPlugin } from './prosemirror/plugins/toc-plugin';
+import { forgetMisspelling, spellcheckKey, spellcheckPlugin } from './prosemirror/plugins/spellcheck-plugin';
+import { SpellcheckState } from './spellcheck-state';
 import { OutlineState } from './outline-state';
 import { HeadingFoldState, NoteFolds } from './heading-fold-state';
 import { findPlugin, findStatus } from './prosemirror/plugins/find-plugin';
@@ -196,6 +198,7 @@ export class NoteEditor {
   private readonly tabsState = inject(TabsState);
   private readonly headingFolds = inject(HeadingFoldState);
   private readonly outline = inject(OutlineState);
+  private readonly spellcheck = inject(SpellcheckState);
 
   readonly noteId = input.required<string>();
   /** The tab showing the note, which keys its saved scroll position and selection. */
@@ -256,6 +259,7 @@ export class NoteEditor {
           footnotePlugin(),
           tocPlugin(),
           findPlugin(),
+          spellcheckPlugin(() => this.spellcheck.enabled()),
           dropCursor({ color: 'var(--primary)', width: 2 }),
           trailingParagraphPlugin(),
           taskMarkerPlugin(),
@@ -374,6 +378,12 @@ export class NoteEditor {
         if (!sameProperties(properties, note.properties)) tr = tr.setDocAttribute('properties', note.properties);
         if (tr.docChanged) view.dispatch(tr.setMeta('addToHistory', false));
       });
+    });
+
+    // Spellcheck switched on or off.
+    effect(() => {
+      this.spellcheck.enabled();
+      untracked(() => this.editorView?.dispatch(this.editorView.state.tr.setMeta(spellcheckKey, true)));
     });
 
     // The vault changed, so a link may lead somewhere (or nowhere) now.
@@ -537,7 +547,7 @@ export class NoteEditor {
 
   /** Right-click on text: the clipboard, formatting, block types and inserts. */
   private async openTextMenu(event: MouseEvent, view: EditorView): Promise<void> {
-    const spelling = await spellingItems(view, event);
+    const spelling = this.spellcheck.enabled() ? await spellingItems(view, event) : [];
     const hasSelection = !view.state.selection.empty;
     const inTable = isInTable(view.state);
     const run = (command: 'cut' | 'copy' | 'paste' | 'selectAll') => () => this.editContext.run(command);
@@ -783,6 +793,17 @@ async function spellingItems(view: EditorView, event: MouseEvent): Promise<Conte
     },
   }));
   if (!fixes.length) fixes.push({ kind: 'item', label: 'No suggestions', disabled: true, action: () => {} });
+  fixes.push({
+    kind: 'item',
+    label: 'Add to Dictionary',
+    action: () => {
+      void invoke('add_to_dictionary', { word: word.text }).then(() => {
+        forgetMisspelling(word.text);
+        view.dispatch(view.state.tr.setMeta(spellcheckKey, true).setMeta('addToHistory', false));
+      });
+      view.focus();
+    },
+  });
   return [...fixes, { kind: 'separator' }];
 }
 

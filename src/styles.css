@@ -861,3 +861,10 @@ button.focus-ring-inset:focus-visible,
   background: color-mix(in oklab, var(--primary) 45%, transparent);
   outline: 1px solid var(--primary);
 }
+
+/* Misspelled words (spellcheck-plugin). */
+.ProseMirror .spell-error {
+  text-decoration: underline wavy var(--destructive, #dc2626);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}

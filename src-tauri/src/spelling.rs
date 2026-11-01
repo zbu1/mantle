@@ -1,72 +1,86 @@
-//! Spelling suggestions for the editor's right-click menu, which replaces the
-//! webview's own menu and with it the suggestions that menu would have shown.
+//! English (US) spell checking with a bundled Hunspell dictionary. Words never
+//! leave the process. Added words live in one plaintext list in the app's local
+//! data, shared by every vault and never written into one.
 
-/// `None` when `word` is spelled right (or there's no spell checker to ask),
-/// else what it might have meant, best first.
+use spellbook::Dictionary;
+use std::{
+    fs,
+    path::PathBuf,
+    sync::{Mutex, OnceLock},
+};
+use tauri::{AppHandle, Manager};
+
+// ponytail: compiled in rather than a Tauri resource, so Android needs no
+// resource lookup; the cost is ~550 KB of binary.
+const AFF: &str = include_str!("../resources/dictionary/index.aff");
+const DIC: &str = include_str!("../resources/dictionary/index.dic");
+
+struct Speller {
+    dict: Dictionary,
+    words_file: PathBuf,
+}
+
+fn speller(app: &AppHandle) -> Result<&'static Mutex<Speller>, String> {
+    static SPELLER: OnceLock<Mutex<Speller>> = OnceLock::new();
+    if let Some(s) = SPELLER.get() {
+        return Ok(s);
+    }
+    let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    let words_file = dir.join("dictionary.txt");
+    let mut dict = Dictionary::new(AFF, DIC).map_err(|e| format!("Failed to load the dictionary: {e}"))?;
+    for word in fs::read_to_string(&words_file).unwrap_or_default().lines() {
+        let _ = dict.add(word.trim());
+    }
+    Ok(SPELLER.get_or_init(|| Mutex::new(Speller { dict, words_file })))
+}
+
+/// The words of `words` that are misspelled.
 #[tauri::command]
-pub fn spelling_suggestions(word: String) -> Option<Vec<String>> {
-    imp::suggestions(&word)
+pub fn spell_check(app: AppHandle, words: Vec<String>) -> Result<Vec<String>, String> {
+    let s = speller(&app)?.lock().map_err(|e| e.to_string())?;
+    Ok(words.into_iter().filter(|w| !s.dict.check(w)).collect())
 }
 
-// ponytail: Windows only (the OS spell checker WebView2 underlines with);
-// add NSSpellChecker / hunspell arms when other desktops need it.
-#[cfg(not(windows))]
-mod imp {
-    pub fn suggestions(_word: &str) -> Option<Vec<String>> {
-        None
+/// `None` when `word` is spelled right, else what it might have meant, best first.
+#[tauri::command]
+pub fn spelling_suggestions(app: AppHandle, word: String) -> Result<Option<Vec<String>>, String> {
+    let s = speller(&app)?.lock().map_err(|e| e.to_string())?;
+    if s.dict.check(&word) {
+        return Ok(None);
     }
+    let mut out = Vec::new();
+    s.dict.suggest(&word, &mut out);
+    Ok(Some(out))
 }
 
-#[cfg(windows)]
-mod imp {
-    use windows::core::{HSTRING, PWSTR};
-    use windows::Win32::Globalization::{GetUserDefaultLocaleName, ISpellChecker, ISpellCheckerFactory, SpellCheckerFactory};
-    use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoTaskMemFree, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED};
-
-    pub fn suggestions(word: &str) -> Option<Vec<String>> {
-        unsafe {
-            // Already initialized on most threads; either way, harmless.
-            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
-            let factory: ISpellCheckerFactory = CoCreateInstance(&SpellCheckerFactory, None, CLSCTX_INPROC_SERVER).ok()?;
-            let checker = checker(&factory)?;
-            let word = HSTRING::from(word);
-            let mut error = None;
-            // S_FALSE with no error means the word is fine.
-            let _ = checker.Check(&word).ok()?.Next(&mut error);
-            error?;
-            let suggestions = checker.Suggest(&word).ok()?;
-            let mut found = Vec::new();
-            let mut next = [PWSTR::null()];
-            while suggestions.Next(&mut next, None).is_ok() && !next[0].is_null() {
-                found.push(next[0].to_string().unwrap_or_default());
-                CoTaskMemFree(Some(next[0].0 as _));
-                next[0] = PWSTR::null();
-            }
-            Some(found)
-        }
+#[tauri::command]
+pub fn add_to_dictionary(app: AppHandle, word: String) -> Result<(), String> {
+    let word = word.trim();
+    if word.is_empty() || word.contains(['\n', '\r', '/']) {
+        return Err("Not a word".into());
     }
-
-    /// One for the user's language, else US English.
-    unsafe fn checker(factory: &ISpellCheckerFactory) -> Option<ISpellChecker> {
-        let mut locale = [0u16; 85];
-        let len = unsafe { GetUserDefaultLocaleName(&mut locale) };
-        let user = String::from_utf16_lossy(&locale[..(len.max(1) - 1) as usize]);
-        let found = [user.as_str(), "en-US"].into_iter().find_map(|tag| {
-            let tag = HSTRING::from(tag);
-            let supported = unsafe { factory.IsSupported(&tag) }.is_ok_and(|b| b.as_bool());
-            supported.then(|| unsafe { factory.CreateSpellChecker(&tag) }.ok()).flatten()
-        });
-        found
+    let mut s = speller(&app)?.lock().map_err(|e| e.to_string())?;
+    s.dict.add(word).map_err(|e| e.to_string())?;
+    if let Some(dir) = s.words_file.parent() {
+        fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
+    let mut list = fs::read_to_string(&s.words_file).unwrap_or_default();
+    list.push_str(word);
+    list.push('\n');
+    fs::write(&s.words_file, list).map_err(|e| format!("Failed to save the word: {e}"))
 }
 
-#[cfg(all(test, windows))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_suggests_only_for_misspellings() {
-        assert_eq!(spelling_suggestions("the".into()), None);
-        assert!(spelling_suggestions("teh".into()).is_some_and(|s| s.iter().any(|w| w == "the")));
+        let dict = Dictionary::new(AFF, DIC).unwrap();
+        assert!(dict.check("the"));
+        let mut out = Vec::new();
+        assert!(!dict.check("teh"));
+        dict.suggest("teh", &mut out);
+        assert!(out.iter().any(|w| w == "the"));
     }
 }
